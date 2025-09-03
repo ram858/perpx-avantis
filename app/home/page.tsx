@@ -250,10 +250,10 @@ export default function HomePage() {
             </button>
           </div>
 
-          <div className="space-y-4 sm:space-y-5 pb-6 sm:pb-8 px-0 sm:px-1">
+          <div className="space-y-5 sm:space-y-6 pb-6 sm:pb-8 px-0 sm:px-1">
             {allHoldings.slice(0, 3).map((holding, index) => (
               <Link key={index} href={holding.link}>
-                <div className="flex items-center justify-between p-4 sm:p-5 bg-[#1a1a1a] rounded-2xl hover:bg-[#202020] transition-colors cursor-pointer">
+                <div className="flex items-center justify-between p-4 sm:p-5 bg-[#1a1a1a] rounded-2xl hover:bg-[#202020] transition-colors cursor-pointer mb-4">
                   <div className="flex items-center space-x-3 sm:space-x-4">
                     <div
                       className="w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center"
@@ -308,10 +308,10 @@ export default function HomePage() {
 
             {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-              <div className="space-y-4">
+              <div className="space-y-5 sm:space-y-6">
                 {allHoldings.map((holding, index) => (
                   <Link key={index} href={holding.link}>
-                    <div className="flex items-center justify-between p-4 sm:p-5 bg-[#1a1a1a] rounded-2xl hover:bg-[#202020] transition-colors cursor-pointer">
+                    <div className="flex items-center justify-between p-4 sm:p-5 bg-[#1a1a1a] rounded-2xl hover:bg-[#202020] transition-colors cursor-pointer mb-4">
                       <div className="flex items-center space-x-3 sm:space-x-4">
                         <div
                           className="w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center"

@@ -3,9 +3,9 @@
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import Link from "next/link"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useParams } from "next/navigation"
-import type { JSX } from "react/jsx-runtime" // Import JSX from react/jsx-runtime
+import type { JSX } from "react/jsx-runtime"
 
 interface CoinData {
   name: string
@@ -14,6 +14,9 @@ interface CoinData {
   change: string
   changeColor: string
   icon: JSX.Element
+  marketCap?: string
+  volume24h?: string
+  supply?: string
 }
 
 interface CoinDataMap {
@@ -27,6 +30,9 @@ const coinData: CoinDataMap = {
     price: "$24,634.06",
     change: "+ $248.23 (+0.35)",
     changeColor: "text-[#27c47d]",
+    marketCap: "$481.2B",
+    volume24h: "$12.4B",
+    supply: "19.8M BTC",
     icon: (
       <div
         className="w-12 h-12 bg-[#f7931a] rounded-full flex items-center justify-center"
@@ -48,6 +54,9 @@ const coinData: CoinDataMap = {
     price: "$2,156.90",
     change: "+ $48.23 (+2.28)",
     changeColor: "text-[#27c47d]",
+    marketCap: "$259.1B",
+    volume24h: "$8.2B",
+    supply: "120.4M ETH",
     icon: (
       <div
         className="w-12 h-12 bg-[#627eea] rounded-full flex items-center justify-center"
@@ -67,6 +76,9 @@ const coinData: CoinDataMap = {
     price: "$1.00",
     change: "+ $0.002 (+0.2)",
     changeColor: "text-[#27c47d]",
+    marketCap: "$5.3B",
+    volume24h: "$156.2M",
+    supply: "5.3B DAI",
     icon: (
       <div className="w-12 h-12 bg-[#f4b731] rounded-full flex items-center justify-center" role="img" aria-label="DAI">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="text-white" aria-hidden="true">
@@ -83,15 +95,36 @@ export default function DetailPage() {
   const coin = params.coin as string
   const [activeTab, setActiveTab] = useState<"position" | "tradeHistory">("tradeHistory")
   const [selectedPeriod, setSelectedPeriod] = useState("1D")
+  const [isLoading, setIsLoading] = useState(true)
 
   const currentCoin = coinData[coin as keyof typeof coinData]
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsLoading(false)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [])
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#0d0d0d] text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-[#8759ff] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-[#b4b4b4]">Loading {coin} details...</p>
+        </div>
+      </div>
+    )
+  }
 
   if (!currentCoin) {
     return (
       <div className="min-h-screen bg-[#0d0d0d] text-white flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Coin Not Found</h1>
-          <p className="text-[#b4b4b4] mb-6">The requested cryptocurrency could not be found.</p>
+        <div className="text-center max-w-md px-6">
+          <h1 className="text-2xl font-bold mb-4">Cryptocurrency Not Found</h1>
+          <p className="text-[#b4b4b4] mb-6">
+            The requested cryptocurrency "{coin}" could not be found in our database.
+          </p>
           <Link href="/home">
             <Button className="bg-[#8759ff] hover:bg-[#7C3AED] text-white">Return to Home</Button>
           </Link>
@@ -135,13 +168,30 @@ export default function DetailPage() {
         </section>
 
         <section aria-labelledby="price-info">
-          <div className="space-y-2">
-            <h3 id="price-info" className="text-3xl font-bold text-white">
-              {currentCoin.price}
-            </h3>
-            <p className={`text-lg ${currentCoin.changeColor}`} aria-label={`Price change: ${currentCoin.change}`}>
-              {currentCoin.change}
-            </p>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <h3 id="price-info" className="text-3xl font-bold text-white">
+                {currentCoin.price}
+              </h3>
+              <p className={`text-lg ${currentCoin.changeColor}`} aria-label={`Price change: ${currentCoin.change}`}>
+                {currentCoin.change}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4 text-sm">
+              <div>
+                <p className="text-[#b4b4b4]">Market Cap</p>
+                <p className="text-white font-semibold">{currentCoin.marketCap}</p>
+              </div>
+              <div>
+                <p className="text-[#b4b4b4]">24h Volume</p>
+                <p className="text-white font-semibold">{currentCoin.volume24h}</p>
+              </div>
+              <div>
+                <p className="text-[#b4b4b4]">Supply</p>
+                <p className="text-white font-semibold">{currentCoin.supply}</p>
+              </div>
+            </div>
           </div>
         </section>
 

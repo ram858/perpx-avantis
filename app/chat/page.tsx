@@ -91,27 +91,6 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
 
   return (
     <div className="min-h-screen bg-[#0d0d0d] text-white flex flex-col relative">
-      {/* Status bar */}
-      <div className="flex justify-between items-center px-4 sm:px-6 py-2 sm:py-3 text-sm font-medium">
-        <span>9:41</span>
-        <div className="flex items-center space-x-1">
-          <div className="flex space-x-1">
-            <div className="w-1 h-3 bg-white rounded-full"></div>
-            <div className="w-1 h-3 bg-white rounded-full"></div>
-            <div className="w-1 h-3 bg-white rounded-full"></div>
-            <div className="w-1 h-3 bg-white/50 rounded-full"></div>
-          </div>
-          <svg width="18" height="12" viewBox="0 0 18 12" fill="none" className="ml-2">
-            <path
-              d="M1 3C1 1.89543 1.89543 1 3 1H15C16.1046 1 17 1.89543 17 3V9C17 10.1046 16.1046 11 15 11H3C1.89543 11 1 10.1046 1 9V3Z"
-              stroke="white"
-              strokeWidth="1"
-            />
-            <path d="M15 4H17V8H15V4Z" fill="white" />
-          </svg>
-        </div>
-      </div>
-
       {/* Header */}
       <header className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4">
         <Link href="/home" aria-label="Go back to home">
@@ -583,7 +562,7 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
               {/* Monitoring Status */}
               <Card className="bg-[#1a1a1a] border-[#262626] rounded-xl p-3 sm:p-4">
-                <div className="flex items-center space-x-2 mb-3">
+                <div className="flex items-start space-x-2 mb-3">
                   <div className="w-4 h-4 bg-[#2563eb] rounded flex items-center justify-center flex-shrink-0">
                     <span className="text-white text-xs">💻</span>
                   </div>
