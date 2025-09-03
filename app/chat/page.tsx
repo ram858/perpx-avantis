@@ -14,6 +14,9 @@ export default function ChatPage() {
   const [closingPositions, setClosingPositions] = useState<string[]>([])
   const [inputValue, setInputValue] = useState("")
   const [isTerminalExpanded, setIsTerminalExpanded] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
+  const [terminalPosition, setTerminalPosition] = useState({ right: 16, bottom: 80 }) // Default: right: 16px, bottom: 80px
   const [messages, setMessages] = useState([
     { type: "user", content: "I want to make $30 profit by investing $50", timestamp: "9:41 AM" },
     {
@@ -24,6 +27,8 @@ export default function ChatPage() {
     },
   ])
   const [showTyping, setShowTyping] = useState(false)
+  const [hasDragged, setHasDragged] = useState(false)
+  const [dragStartPosition, setDragStartPosition] = useState({ x: 0, y: 0 })
 
   const handleSendMessage = () => {
     if (inputValue.trim()) {
@@ -63,6 +68,117 @@ export default function ChatPage() {
   const toggleTerminal = () => {
     setIsTerminalExpanded(!isTerminalExpanded)
   }
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setDragStartPosition({ x: e.clientX, y: e.clientY })
+    setHasDragged(false)
+    setIsDragging(true)
+    const rect = (e.target as HTMLElement).closest(".terminal-widget")?.getBoundingClientRect()
+    if (rect) {
+      setDragOffset({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      })
+    }
+  }
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0]
+    setDragStartPosition({ x: touch.clientX, y: touch.clientY })
+    setHasDragged(false)
+    setIsDragging(true)
+    const rect = (e.target as HTMLElement).closest(".terminal-widget")?.getBoundingClientRect()
+    if (rect) {
+      setDragOffset({
+        x: touch.clientX - rect.left,
+        y: touch.clientY - rect.top,
+      })
+    }
+  }
+
+  const handleTerminalClick = () => {
+    if (!hasDragged) {
+      toggleTerminal()
+    }
+  }
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return
+
+      const moveDistance = Math.sqrt(
+        Math.pow(e.clientX - dragStartPosition.x, 2) + Math.pow(e.clientY - dragStartPosition.y, 2),
+      )
+
+      if (moveDistance > 5) {
+        // 5px threshold
+        setHasDragged(true)
+      }
+
+      const widgetWidth = 200
+      const widgetHeight = 120
+      const newRight = Math.max(
+        0,
+        Math.min(window.innerWidth - widgetWidth, window.innerWidth - (e.clientX + (widgetWidth - dragOffset.x))),
+      )
+      const newBottom = Math.max(
+        0,
+        Math.min(window.innerHeight - widgetHeight, window.innerHeight - (e.clientY - dragOffset.y)),
+      )
+
+      setTerminalPosition({ right: newRight, bottom: newBottom })
+    }
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isDragging) return
+      e.preventDefault()
+
+      const touch = e.touches[0]
+      const moveDistance = Math.sqrt(
+        Math.pow(touch.clientX - dragStartPosition.x, 2) + Math.pow(touch.clientY - dragStartPosition.y, 2),
+      )
+
+      if (moveDistance > 5) {
+        // 5px threshold
+        setHasDragged(true)
+      }
+
+      const widgetWidth = 200
+      const widgetHeight = 120
+      const newRight = Math.max(
+        0,
+        Math.min(window.innerWidth - widgetWidth, window.innerWidth - (touch.clientX + (widgetWidth - dragOffset.x))),
+      )
+      const newBottom = Math.max(
+        0,
+        Math.min(window.innerHeight - widgetHeight, window.innerHeight - (touch.clientY - dragOffset.y)),
+      )
+
+      setTerminalPosition({ right: newRight, bottom: newBottom })
+    }
+
+    const handleMouseUp = () => {
+      setIsDragging(false)
+    }
+
+    const handleTouchEnd = () => {
+      setIsDragging(false)
+    }
+
+    if (isDragging) {
+      document.addEventListener("mousemove", handleMouseMove)
+      document.addEventListener("mouseup", handleMouseUp)
+      document.addEventListener("touchmove", handleTouchMove, { passive: false })
+      document.addEventListener("touchend", handleTouchEnd)
+    }
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove)
+      document.removeEventListener("mouseup", handleMouseUp)
+      document.removeEventListener("touchmove", handleTouchMove)
+      document.removeEventListener("touchend", handleTouchEnd)
+    }
+  }, [isDragging, dragOffset, dragStartPosition])
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -520,20 +636,30 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
 
       {/* Small Terminal Widget */}
       {!isTerminalExpanded && (
-        <div className="fixed bottom-20 right-4 z-50">
-          <button
-            onClick={toggleTerminal}
-            className="bg-[#1a1a1a] border border-[#262626] rounded-lg p-3 shadow-lg hover:bg-[#262626] transition-colors"
+        <div
+          className={`terminal-widget fixed z-50 transition-all duration-75 ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
+          style={{
+            right: `${terminalPosition.right}px`,
+            bottom: `${terminalPosition.bottom}px`,
+          }}
+        >
+          <div
+            className="bg-[#1a1a1a] border border-[#262626] rounded-lg p-3 shadow-lg hover:bg-[#262626] transition-colors select-none"
+            onMouseDown={handleMouseDown}
+            onTouchStart={handleTouchStart}
+            onClick={handleTerminalClick}
           >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center space-x-1">
+                <div className="w-1 h-1 bg-[#696969] rounded-full"></div>
+                <div className="w-1 h-1 bg-[#696969] rounded-full"></div>
+                <div className="w-1 h-1 bg-[#696969] rounded-full"></div>
+              </div>
+            </div>
+
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 bg-[#27c47d] rounded-full animate-pulse"></div>
               <span className="text-white text-xs font-medium">Live</span>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-white">
-                <path
-                  d="M11.9999 21.3084L8.4419 17.7504L9.15589 17.0374L11.4999 19.3804V14.5004H12.4999V19.3754L14.8389 17.0314L15.5579 17.7504L11.9999 21.3084ZM6.24989 15.5584L2.69189 12.0004L6.24389 8.44838L6.95789 9.16238L4.61889 11.5004H9.49989V12.5004H4.62489L6.96889 14.8394L6.24989 15.5584ZM17.7499 15.5584L17.0369 14.8444L19.3799 12.5004H14.4999V11.5004H19.3749L17.0309 9.16138L17.7499 8.44238L21.3079 12.0004L17.7499 15.5584ZM11.4999 9.50038V4.62038L9.15589 6.96338L8.4419 6.24938L11.9999 2.69238L15.5579 6.25038L14.8439 6.96438L12.4999 4.61838V9.50038H11.4999Z"
-                  fill="currentColor"
-                />
-              </svg>
             </div>
             <div className="mt-2 text-xs text-[#b4b4b4]">
               <div className="flex items-center space-x-1">
@@ -542,7 +668,7 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
               </div>
               <div className="text-[#facc15]">PnL: $0.00 / $30</div>
             </div>
-          </button>
+          </div>
         </div>
       )}
 
