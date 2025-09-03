@@ -63,11 +63,11 @@ export default function LoadingPage() {
       <div className="relative z-10 flex flex-col items-center text-center space-y-12 max-w-sm mx-auto">
         {/* Logo/Icon */}
         <div className="relative">
-          <div className="w-24 h-24 rounded-full bg-gradient-to-br from-[#8759ff] to-[#A855F7] flex items-center justify-center animate-spin-slow">
+          <div className="w-24 h-24 bg-[#4A2C7C] rounded-2xl flex items-center justify-center shadow-lg">
             <img src="/trading-bot-icon.svg" alt="PrepX AI Bot" className="w-12 h-12" />
           </div>
           {/* Pulsing ring */}
-          <div className="absolute inset-0 w-24 h-24 rounded-full border-2 border-[#8759ff]/30 animate-ping"></div>
+          <div className="absolute inset-0 w-24 h-24 rounded-2xl border-2 border-[#8759ff]/30 animate-ping"></div>
         </div>
 
         {/* PrepX Title */}

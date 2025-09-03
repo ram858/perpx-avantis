@@ -1,7 +1,6 @@
 # PrepX - AI Trading Bot
 
-[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com/najbudin007s-projects/v0-prep-x)
-[![Built with v0](https://img.shields.io/badge/Built%20with-v0.app-black?style=for-the-badge)](https://v0.app/chat/projects/lq5gy0jLWsL)
+[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com/najbudin007s-projects/prep-x)
 
 ## 🚀 Overview
 
@@ -153,7 +152,7 @@ The project is optimized for Vercel deployment:
 2. Configure build settings (auto-detected)
 3. Deploy with zero configuration
 
-**Live Demo**: [https://vercel.com/najbudin007s-projects/v0-prep-x](https://vercel.com/najbudin007s-projects/v0-prep-x)
+**Live Demo**: [https://vercel.com/najbudin007s-projects/prep-x](https://vercel.com/najbudin007s-projects/prep-x)
 
 ### Other Platforms
 The app can be deployed on any platform supporting Next.js:
@@ -176,7 +175,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
-- Built with [v0.app](https://v0.app) - AI-powered development platform
+- Built with modern development tools and best practices
 - UI components from [shadcn/ui](https://ui.shadcn.com)
 - Icons from [Lucide](https://lucide.dev)
 - Fonts from [Geist](https://vercel.com/font)
@@ -185,8 +184,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For support and questions:
 - Create an issue on GitHub
-- Visit [v0.app](https://v0.app) for development assistance
+- Visit our documentation for development assistance
 
 ---
 
-**Built with ❤️ using v0.app**
+**Built with ❤️ using modern development practices**

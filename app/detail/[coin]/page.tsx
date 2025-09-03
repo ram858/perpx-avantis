@@ -123,7 +123,7 @@ export default function DetailPage() {
         <div className="text-center max-w-md px-6">
           <h1 className="text-2xl font-bold mb-4">Cryptocurrency Not Found</h1>
           <p className="text-[#b4b4b4] mb-6">
-            The requested cryptocurrency "{coin}" could not be found in our database.
+            The requested cryptocurrency &quot;{coin}&quot; could not be found in our database.
           </p>
           <Link href="/home">
             <Button className="bg-[#8759ff] hover:bg-[#7C3AED] text-white">Return to Home</Button>
@@ -137,7 +137,7 @@ export default function DetailPage() {
 
   return (
     <div className="min-h-screen bg-[#0d0d0d] text-white">
-      <div className="max-w-md mx-auto px-4 sm:px-6 space-y-6">
+      <div className="max-w-md mx-auto px-4 sm:px-6 space-y-6 momentum-scroll overflow-y-auto" style={{ height: '100vh' }}>
         {/* Header */}
         <header className="flex items-center justify-between py-4">
           <Link href="/home" aria-label="Go back to home">
@@ -351,7 +351,16 @@ export default function DetailPage() {
                 <Card className="bg-[#1a1a1a] border-[#262626] p-4 sm:p-6 rounded-2xl">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                     <div className="flex items-center space-x-3 min-w-0 flex-1">
-                      {currentCoin.icon}
+                      <div className="relative">
+                        {currentCoin.icon}
+                        {/* Flag Icon */}
+                        <div className="absolute -top-1 -right-1 w-6 h-6 bg-[#8759ff] rounded-full flex items-center justify-center">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className="text-white">
+                            <path d="M4 15s1-1 3-1 5 2 8 2 4-1 4-1V3s-1 1-3 1-5-2-8-2-4 1-4 1z" fill="currentColor"/>
+                            <line x1="4" y1="22" x2="4" y2="15" stroke="currentColor" strokeWidth="2"/>
+                          </svg>
+                        </div>
+                      </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center space-x-2 flex-wrap">
                           <span className="text-white font-semibold text-sm sm:text-base">BTC/USDC</span>

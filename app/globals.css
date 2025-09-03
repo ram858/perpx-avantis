@@ -121,6 +121,15 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Ensure global scrolling is enabled */
+    touch-action: auto;
+    overscroll-behavior-y: auto;
+  }
+
+  html,
+  body {
+    height: 100%;
+    overflow: auto;
   }
 
   /* Custom styles for PrepX app */
@@ -181,5 +190,11 @@
   .animate-gradient {
     background-size: 200% 200%;
     animation: gradient-shift 3s ease infinite;
+  }
+
+  /* Smooth momentum scrolling on iOS for scrollable containers */
+  .momentum-scroll {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
   }
 }

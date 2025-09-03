@@ -1,6 +1,7 @@
 "use client"
 import { Card } from "@/components/ui/card"
 import type React from "react"
+import Image from "next/image"
 
 import { Button } from "@/components/ui/button"
 import { useState, useEffect } from "react"
@@ -29,6 +30,8 @@ export default function ChatPage() {
   const [showTyping, setShowTyping] = useState(false)
   const [hasDragged, setHasDragged] = useState(false)
   const [dragStartPosition, setDragStartPosition] = useState({ x: 0, y: 0 })
+  const [showTradingGoals, setShowTradingGoals] = useState(false)
+  const [showTradingAnalysis, setShowTradingAnalysis] = useState(false)
 
   const handleSendMessage = () => {
     if (inputValue.trim()) {
@@ -67,6 +70,15 @@ export default function ChatPage() {
 
   const toggleTerminal = () => {
     setIsTerminalExpanded(!isTerminalExpanded)
+  }
+
+  const handleResetChat = () => {
+    setMessages([])
+    setInputValue("")
+    setShowTyping(false)
+    setTradingPhase("conversation")
+    setClosingPositions([])
+    setExpandedSections([])
   }
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -131,8 +143,8 @@ export default function ChatPage() {
 
     const handleTouchMove = (e: TouchEvent) => {
       if (!isDragging) return
-      e.preventDefault()
-
+      
+      // Only prevent default if we're actually dragging and have moved enough
       const touch = e.touches[0]
       const moveDistance = Math.sqrt(
         Math.pow(touch.clientX - dragStartPosition.x, 2) + Math.pow(touch.clientY - dragStartPosition.y, 2),
@@ -141,6 +153,8 @@ export default function ChatPage() {
       if (moveDistance > 5) {
         // 5px threshold
         setHasDragged(true)
+        // Only prevent default after we've confirmed we're dragging
+        e.preventDefault()
       }
 
       const widgetWidth = 200
@@ -168,6 +182,7 @@ export default function ChatPage() {
     if (isDragging) {
       document.addEventListener("mousemove", handleMouseMove)
       document.addEventListener("mouseup", handleMouseUp)
+      // Use passive: false only when we need to prevent default
       document.addEventListener("touchmove", handleTouchMove, { passive: false })
       document.addEventListener("touchend", handleTouchEnd)
     }
@@ -221,7 +236,12 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
           </svg>
         </Link>
 
-        <h1 className="text-lg sm:text-xl font-bold text-white">PrepX AI</h1>
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 bg-[#4A2C7C] rounded-xl flex items-center justify-center shadow-lg">
+            <Image src="/trading-bot-icon.svg" alt="Trading Bot" width={24} height={24} className="w-6 h-6" />
+          </div>
+          <h1 className="text-lg sm:text-xl font-bold text-white">PrepX AI</h1>
+        </div>
 
         <button aria-label="Share conversation" className="text-white hover:text-gray-300 transition-colors">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="text-white" aria-hidden="true">
@@ -238,7 +258,8 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
 
       {/* Chat Content */}
       <main
-        className="flex-1 px-3 sm:px-4 md:px-6 pb-28 sm:pb-32 space-y-3 sm:space-y-4 overflow-y-auto"
+        className="flex-1 px-3 sm:px-4 md:px-6 pb-28 sm:pb-32 space-y-3 sm:space-y-4 overflow-y-auto momentum-scroll"
+        style={{ touchAction: 'pan-y' }}
         role="log"
         aria-live="polite"
         aria-label="Chat conversation"
@@ -467,7 +488,7 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
                   <span className="text-white">-0.0149 USDC</span>
                 </div>
                 <div className="flex justify-between font-semibold">
-                  <span className="text-white">You'll Receive</span>
+                  <span className="text-white">You&apos;ll Receive</span>
                   <span className="text-white">20.7749 USDC</span>
                 </div>
               </div>
@@ -566,7 +587,7 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
       {/* Bottom Input */}
       <div className="fixed bottom-0 left-0 right-0 bg-[#0d0d0d] p-3 sm:p-4 border-t border-[#1a1a1a]">
         <div className="flex items-center space-x-2 sm:space-x-3 bg-[#262626] rounded-full px-3 sm:px-4 py-2.5 sm:py-3 max-w-full">
-          <button className="flex-shrink-0 p-1">
+          <button className="flex-shrink-0 p-1" aria-label="Reset chat" onClick={handleResetChat}>
             <svg width="18" height="18" viewBox="0 0 20 20" fill="none" className="text-white sm:w-5 sm:h-5">
               <path
                 d="M1.4 10.9C1.4 14.9 4.6 18.1 8.6 18.1C11.4 18.1 13.8 16.4 15 13.9"
@@ -608,19 +629,6 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
             className="flex-1 bg-transparent text-white placeholder:text-[#696969] outline-none text-sm sm:text-base min-w-0"
           />
 
-          <button className="flex-shrink-0 p-1">
-            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" className="text-white sm:w-5 sm:h-5">
-              <path
-                d="M10 15L15 10L10 5"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path d="M15 10H5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-
           <button
             onClick={handleSendMessage}
             className="w-8 h-8 sm:w-10 sm:h-10 bg-[#8759ff] rounded-full flex items-center justify-center flex-shrink-0"
@@ -631,7 +639,33 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
           </button>
         </div>
 
-        <p className="text-[#696969] text-xs text-center mt-2 sm:mt-3">Trade prompt costs 0.05 a-gPT</p>
+        {/* Footer Icons */}
+        <div className="flex items-center justify-center space-x-4 mt-2 sm:mt-3">
+          <div 
+            className="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => setIsTerminalExpanded(true)}
+          >
+            <img 
+              src="/hugeicons_trade-up.png" 
+              alt="Trade Up" 
+              className="w-5 h-5"
+            />
+            <span className="text-[#696969] text-xs">Trade</span>
+          </div>
+          <div 
+            className="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => setShowTradingGoals(true)}
+          >
+            <img 
+              src="/mage_goals.svg" 
+              alt="Goals" 
+              className="w-5 h-5"
+            />
+            <span className="text-[#696969] text-xs">Goals</span>
+          </div>
+        </div>
+        
+        <p className="text-[#696969] text-xs text-center mt-2">Trade prompt costs 0.05 a-gPT</p>
       </div>
 
       {/* Small Terminal Widget */}
@@ -641,10 +675,12 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
           style={{
             right: `${terminalPosition.right}px`,
             bottom: `${terminalPosition.bottom}px`,
+            touchAction: "none", // Prevent default touch behaviors
           }}
         >
           <div
             className="bg-[#1a1a1a] border border-[#262626] rounded-lg p-3 shadow-lg hover:bg-[#262626] transition-colors select-none"
+            style={{ touchAction: "none" }}
             onMouseDown={handleMouseDown}
             onTouchStart={handleTouchStart}
             onClick={handleTerminalClick}
@@ -794,6 +830,83 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
           animation: slide-up 0.3s ease-out;
         }
       `}</style>
+
+      {/* AI Trading Goals Modal */}
+      {showTradingGoals && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+          <div className="bg-[#1a1a1a] rounded-2xl p-6 w-full max-w-md mx-4 animate-slide-up">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 bg-[#8759ff] rounded-full flex items-center justify-center">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-white">
+                    <path d="M12 2L13.09 8.26L20 9L13.09 9.74L12 16L10.91 9.74L4 9L10.91 8.26L12 2Z" fill="currentColor"/>
+                  </svg>
+                </div>
+                <h2 className="text-xl font-bold text-white">AI Trading Goals</h2>
+              </div>
+              <button 
+                onClick={() => setShowTradingGoals(false)}
+                className="text-white hover:text-gray-300 transition-colors"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                  <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[#b4b4b4] text-sm mb-2">Target Profit</label>
+                <div className="flex items-center bg-[#262626] rounded-lg px-3 py-2">
+                  <span className="text-white text-lg font-semibold">$ 10</span>
+                  <span className="text-[#b4b4b4] ml-auto">USD</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[#b4b4b4] text-sm mb-2">Investment Amount</label>
+                <div className="flex items-center bg-[#262626] rounded-lg px-3 py-2">
+                  <span className="text-white text-lg font-semibold">$ 50</span>
+                  <span className="text-[#b4b4b4] ml-auto">USD</span>
+                </div>
+              </div>
+
+              <button className="w-full bg-[#262626] text-white font-bold py-3 rounded-lg hover:bg-[#333] transition-colors">
+                Start Trading
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trading Analysis Modal */}
+      {showTradingAnalysis && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end">
+          <div className="w-full bg-[#0d0d0d] rounded-t-3xl animate-slide-up max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-[#262626] flex-shrink-0">
+              <h2 className="text-white text-lg sm:text-xl font-bold">Trading Analysis</h2>
+              <button onClick={() => setShowTradingAnalysis(false)} className="text-white hover:text-[#b4b4b4] p-1">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                  <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+              <div className="bg-[#1a1a1a] rounded-xl p-4 border border-[#262626]">
+                <h3 className="text-white font-semibold mb-3">Market Overview</h3>
+                <p className="text-[#b4b4b4] text-sm">Current market conditions and analysis...</p>
+              </div>
+              
+              <div className="bg-[#1a1a1a] rounded-xl p-4 border border-[#262626]">
+                <h3 className="text-white font-semibold mb-3">Risk Assessment</h3>
+                <p className="text-[#b4b4b4] text-sm">Risk analysis and recommendations...</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+
