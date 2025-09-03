@@ -32,6 +32,8 @@ export default function ChatPage() {
   const [dragStartPosition, setDragStartPosition] = useState({ x: 0, y: 0 })
   const [showTradingGoals, setShowTradingGoals] = useState(false)
   const [showTradingAnalysis, setShowTradingAnalysis] = useState(false)
+  const [targetProfit, setTargetProfit] = useState<string>("10")
+  const [investmentAmount, setInvestmentAmount] = useState<string>("50")
 
   const handleSendMessage = () => {
     if (inputValue.trim()) {
@@ -858,16 +860,32 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
               <div>
                 <label className="block text-[#b4b4b4] text-sm mb-2">Target Profit</label>
                 <div className="flex items-center bg-[#262626] rounded-lg px-3 py-2">
-                  <span className="text-white text-lg font-semibold">$ 10</span>
-                  <span className="text-[#b4b4b4] ml-auto">USD</span>
+                  <span className="text-white text-lg font-semibold mr-2">$</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={targetProfit}
+                    onChange={(e) => setTargetProfit(e.target.value)}
+                    className="bg-transparent text-white text-lg font-semibold flex-1 outline-none"
+                    placeholder="10"
+                  />
+                  <span className="text-[#b4b4b4] ml-2">USD</span>
                 </div>
               </div>
 
               <div>
                 <label className="block text-[#b4b4b4] text-sm mb-2">Investment Amount</label>
                 <div className="flex items-center bg-[#262626] rounded-lg px-3 py-2">
-                  <span className="text-white text-lg font-semibold">$ 50</span>
-                  <span className="text-[#b4b4b4] ml-auto">USD</span>
+                  <span className="text-white text-lg font-semibold mr-2">$</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={investmentAmount}
+                    onChange={(e) => setInvestmentAmount(e.target.value)}
+                    className="bg-transparent text-white text-lg font-semibold flex-1 outline-none"
+                    placeholder="50"
+                  />
+                  <span className="text-[#b4b4b4] ml-2">USD</span>
                 </div>
               </div>
 
