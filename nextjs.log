@@ -1,0 +1,49 @@
+
+> prepx-ai-trading-bot@1.0.0 dev /Users/mokshya/Desktop/untitled folder/prep-x
+> next dev
+
+   ▲ Next.js 15.2.4
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.1.154:3000
+   - Environments: .env.local
+   - Experiments (use with caution):
+     ✓ optimizeCss
+
+ ✓ Starting...
+ ✓ Ready in 3.8s
+[Error: ENOENT: no such file or directory, scandir '/Users/mokshya/Desktop/untitled folder/prep-x/app'] {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'scandir',
+  path: '/Users/mokshya/Desktop/untitled folder/prep-x/app'
+}
+ ⨯ unhandledRejection: [Error: ENOENT: no such file or directory, scandir '/Users/mokshya/Desktop/untitled folder/prep-x/app'] {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'scandir',
+  path: '/Users/mokshya/Desktop/untitled folder/prep-x/app'
+}
+ ⨯ unhandledRejection:  [Error: ENOENT: no such file or directory, scandir '/Users/mokshya/Desktop/untitled folder/prep-x/app'] {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'scandir',
+  path: '/Users/mokshya/Desktop/untitled folder/prep-x/app'
+}
+[Error: ENOENT: no such file or directory, scandir '/Users/mokshya/Desktop/untitled folder/prep-x/app'] {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'scandir',
+  path: '/Users/mokshya/Desktop/untitled folder/prep-x/app'
+}
+ ⨯ unhandledRejection: [Error: ENOENT: no such file or directory, scandir '/Users/mokshya/Desktop/untitled folder/prep-x/app'] {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'scandir',
+  path: '/Users/mokshya/Desktop/untitled folder/prep-x/app'
+}
+ ⨯ unhandledRejection:  [Error: ENOENT: no such file or directory, scandir '/Users/mokshya/Desktop/untitled folder/prep-x/app'] {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'scandir',
+  path: '/Users/mokshya/Desktop/untitled folder/prep-x/app'
+}

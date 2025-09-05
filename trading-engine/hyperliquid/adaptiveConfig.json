@@ -1,0 +1,166 @@
+{
+  "riskPct": 2,
+  "targetROI": 0.5,
+  "atrPeriod": 14,
+  "minFallbackScore": 0.7,
+  "atrMultByRegime": {
+    "bullish": 1,
+    "neutral": 1.5,
+    "bearish": 2,
+    "flat_or_choppy": 1.5,
+    "volatile_uncertain": 2
+  },
+  "maxLeverageByRegime": {
+    "bullish": 50,
+    "neutral": 50,
+    "bearish": 50,
+    "flat_or_choppy": 50,
+    "volatile_uncertain": 50
+  },
+  "minRRR": 1.2,
+  "rrrMinByRegime": {
+    "bullish": 2,
+    "neutral": 1.5,
+    "bearish": 1.25,
+    "flat_or_choppy": 1.5,
+    "volatile_uncertain": 1.25
+  },
+  "enabledRegimes": [
+    "bullish",
+    "neutral",
+    "bearish",
+    "flat_or_choppy",
+    "volatile_uncertain"
+  ],
+  "hyperliquidLeverageLimits": {
+    "BTC": {
+      "maxLeverage": 40,
+      "tiered": false
+    },
+    "ETH": {
+      "maxLeverage": 25,
+      "tiered": false
+    },
+    "BNB": {
+      "maxLeverage": 10,
+      "tiered": false
+    },
+    "SOL": {
+      "maxLeverage": 10,
+      "tiered": false
+    },
+    "DOGE": {
+      "maxLeverage": 10,
+      "tiered": false
+    },
+    "ADA": {
+      "maxLeverage": 3,
+      "tiered": false
+    },
+    "AVAX": {
+      "maxLeverage": 10,
+      "tiered": false
+    },
+    "ATOM": {
+      "maxLeverage": 10,
+      "tiered": false
+    },
+    "FIL": {
+      "maxLeverage": 10,
+      "tiered": false
+    },
+    "NEAR": {
+      "maxLeverage": 20,
+      "tiered": false
+    },
+    "OP": {
+      "maxLeverage": 50,
+      "tiered": false
+    },
+    "MKR": {
+      "maxLeverage": 10,
+      "tiered": false
+    },
+    "IMX": {
+      "maxLeverage": 10,
+      "tiered": false
+    },
+    "ARB": {
+      "maxLeverage": 10,
+      "tiered": false
+    },
+    "ALGO": {
+      "maxLeverage": 5,
+      "tiered": false
+    },
+    "AAVE": {
+      "maxLeverage": 10,
+      "tiered": false
+    },
+    "SAND": {
+      "maxLeverage": 5,
+      "tiered": false
+    },
+    "GALA": {
+      "maxLeverage": 10,
+      "tiered": false
+    },
+    "COMP": {
+      "maxLeverage": 5,
+      "tiered": false
+    },
+    "SNX": {
+      "maxLeverage": 10,
+      "tiered": false
+    },
+    "SUSHI": {
+      "maxLeverage": 10,
+      "tiered": false
+    },
+    "FET": {
+      "maxLeverage": 10,
+      "tiered": false
+    },
+    "SUI": {
+      "maxLeverage": 10,
+      "tiered": false
+    },
+    "PYTH": {
+      "maxLeverage": 10,
+      "tiered": false
+    },
+    "JUP": {
+      "maxLeverage": 50,
+      "tiered": false
+    },
+    "WIF": {
+      "maxLeverage": 5,
+      "tiered": false
+    },
+    "WLD": {
+      "maxLeverage": 10,
+      "tiered": false
+    },
+    "TAO": {
+      "maxLeverage": 5,
+      "tiered": false
+    },
+    "EIGEN": {
+      "maxLeverage": 5,
+      "tiered": false
+    }
+  },
+  "leverageSafetySettings": {
+    "useSymbolSpecificLimits": true,
+    "regimeBasedReduction": false,
+    "maxRegimeLeverageMultiplier": 1,
+    "minLeverage": 1,
+    "maxLeverage": 50,
+    "tieredLeverageEnabled": true,
+    "positionSizeThresholds": {
+      "small": 10000,
+      "medium": 100000,
+      "large": 1000000
+    }
+  }
+}

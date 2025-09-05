@@ -41,6 +41,15 @@ const nextConfig = {
   // Compression and caching
   compress: true,
   poweredByHeader: false,
+  // API rewrites for integrated backend
+  async rewrites() {
+    return [
+      {
+        source: '/api/trading/:path*',
+        destination: 'http://localhost:3001/api/trading/:path*',
+      },
+    ]
+  },
 }
 
 export default nextConfig

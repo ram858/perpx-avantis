@@ -1,4 +1,5 @@
 import Link from "next/link"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 
 export default function WelcomePage() {
@@ -25,9 +26,11 @@ export default function WelcomePage() {
       {/* Main content */}
       <div className="relative z-10 flex flex-col items-center text-center space-y-8">
         <div className="relative w-64 h-64 flex items-center justify-center">
-          <img
+          <Image
             src="/trading-illustration.svg"
             alt="PrepX Trading Bot Illustration"
+            width={256}
+            height={256}
             className="w-full h-full object-contain"
           />
         </div>

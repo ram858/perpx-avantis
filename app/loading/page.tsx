@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import Image from "next/image"
 
 export default function LoadingPage() {
   const [progress, setProgress] = useState(0)
@@ -64,7 +65,7 @@ export default function LoadingPage() {
         {/* Logo/Icon */}
         <div className="relative">
           <div className="w-24 h-24 bg-[#4A2C7C] rounded-2xl flex items-center justify-center shadow-lg">
-            <img src="/trading-bot-icon.svg" alt="PrepX AI Bot" className="w-12 h-12" />
+            <Image src="/trading-bot-icon.svg" alt="PrepX AI Bot" width={48} height={48} className="w-12 h-12" />
           </div>
           {/* Pulsing ring */}
           <div className="absolute inset-0 w-24 h-24 rounded-2xl border-2 border-[#8759ff]/30 animate-ping"></div>

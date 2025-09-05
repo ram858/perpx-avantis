@@ -1,0 +1,4 @@
+{"timestamp":"2025-09-02T03:52:35.467Z","event":"SESSION_START","sessionId":"session_1756785155008","budget":1000,"metadata":{"profitGoal":200,"maxPositions":5,"timestamp":"2025-09-02T03:52:35.467Z"}}
+{"timestamp":"2025-09-02T03:52:36.231Z","event":"POSITION_UPDATE","symbol":"ALL","exitPrice":0,"pnl":0,"totalPnL":251.74516199999994,"openPositions":0,"sessionId":"session_1756785155008","cycleNumber":1}
+{"timestamp":"2025-09-02T03:54:56.704Z","event":"POSITION_UPDATE","symbol":"ALL","exitPrice":0,"pnl":0,"totalPnL":251.4527219999999,"openPositions":0,"sessionId":"session_1756785155008","cycleNumber":2}
+{"timestamp":"2025-09-02T03:55:07.802Z","event":"POSITION_UPDATE","symbol":"ALL","exitPrice":0,"pnl":0,"totalPnL":251.1039420000002,"openPositions":0,"sessionId":"session_1756785155008","cycleNumber":3}

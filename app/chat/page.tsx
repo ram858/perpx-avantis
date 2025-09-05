@@ -6,8 +6,11 @@ import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import { useTrading } from "@/lib/hooks/useTrading"
+import { useSearchParams } from "next/navigation"
 
 export default function ChatPage() {
+  const searchParams = useSearchParams()
   const [expandedSections, setExpandedSections] = useState<string[]>([])
   const [tradingPhase, setTradingPhase] = useState<"initial" | "active" | "closing" | "completed" | "conversation">(
     "conversation",
@@ -18,15 +21,7 @@ export default function ChatPage() {
   const [isDragging, setIsDragging] = useState(false)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const [terminalPosition, setTerminalPosition] = useState({ right: 16, bottom: 80 }) // Default: right: 16px, bottom: 80px
-  const [messages, setMessages] = useState([
-    { type: "user", content: "I want to make $30 profit by investing $50", timestamp: "9:41 AM" },
-    {
-      type: "bot",
-      content:
-        'Trade Already Exists - You Are Only Allowed To Run One Perp Prompt (Ex, I Want To Make $10 By Investing $100" At A Time. Please Wait For The Positions To Hit Profit Goal or Closed Or Liquidated To Run Another Prompt.',
-      timestamp: "9:42 AM",
-    },
-  ])
+  const [messages, setMessages] = useState<Array<{type: "user" | "bot", content: string, timestamp: string}>>([])
   const [showTyping, setShowTyping] = useState(false)
   const [hasDragged, setHasDragged] = useState(false)
   const [dragStartPosition, setDragStartPosition] = useState({ x: 0, y: 0 })
@@ -34,8 +29,83 @@ export default function ChatPage() {
   const [showTradingAnalysis, setShowTradingAnalysis] = useState(false)
   const [targetProfit, setTargetProfit] = useState<string>("10")
   const [investmentAmount, setInvestmentAmount] = useState<string>("50")
+  const [showLiveCard, setShowLiveCard] = useState(true)
 
-  const handleSendMessage = () => {
+  // Trading integration
+  const {
+    tradingSession,
+    startTrading,
+    stopTrading,
+  } = useTrading()
+
+  // Update trading phase based on session status
+  useEffect(() => {
+    if (tradingSession?.status === 'running') {
+      setTradingPhase('active')
+    } else if (tradingSession?.status === 'completed') {
+      setTradingPhase('completed')
+    } else if (tradingSession?.status === 'stopped') {
+      setTradingPhase('completed')
+    }
+  }, [tradingSession])
+
+  // Auto-start trading if parameters are provided
+  useEffect(() => {
+    const profit = searchParams.get('profit')
+    const investment = searchParams.get('investment')
+    
+    if (profit && investment && !tradingSession) {
+      const profitNum = parseInt(profit)
+      const investmentNum = parseInt(investment)
+      
+      if (profitNum > 0 && investmentNum > 0) {
+        // Add initial message
+        setMessages([{
+          type: "user",
+          content: `I want to make $${profitNum} profit by investing $${investmentNum}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        }])
+        
+        // Start trading session
+        startTrading({
+          maxBudget: investmentNum,
+          profitGoal: profitNum,
+          maxPerSession: 5
+        }).then(sessionId => {
+          if (sessionId) {
+            setTradingPhase("active")
+            setMessages(prev => [...prev, {
+              type: "bot",
+              content: `🚀 Starting trading session to make $${profitNum} profit with $${investmentNum} investment. Monitoring markets and executing trades...`,
+              timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            }])
+          } else {
+            setMessages(prev => [...prev, {
+              type: "bot",
+              content: "❌ Failed to start trading session. Please check your configuration and try again.",
+              timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            }])
+          }
+        }).catch(err => {
+          console.error('Error starting trading:', err)
+          setMessages(prev => [...prev, {
+            type: "bot",
+            content: "❌ Error starting trading session. Please try again.",
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          }])
+        })
+      }
+    } else if (!profit && !investment && messages.length === 0) {
+      // Add welcome message if no parameters and no messages
+      setMessages([{
+        type: "bot",
+        content: "👋 Welcome to PrepX AI Trading Bot! I'm here to help you with automated trading. You can start a trade by saying 'I want to make $X profit by investing $Y' or go to the home page to set your trading parameters.",
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      }])
+    }
+  }, [searchParams, tradingSession, startTrading, messages.length])
+
+  const handleSendMessage = async () => {
     if (inputValue.trim()) {
       const newMessage = {
         type: "user" as const,
@@ -43,12 +113,75 @@ export default function ChatPage() {
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       }
       setMessages((prev) => [...prev, newMessage])
+      
+      // Check if this is a trading prompt
+      const tradingPrompt = inputValue.trim().toLowerCase()
+      if (tradingPrompt.includes('make') && tradingPrompt.includes('profit') && tradingPrompt.includes('investing')) {
+        // Extract profit and investment amounts
+        const profitMatch = tradingPrompt.match(/\$(\d+)/g)
+        const investmentMatch = tradingPrompt.match(/\$(\d+)/g)
+        
+        if (profitMatch && investmentMatch && profitMatch.length >= 2) {
+          const profitGoal = parseInt(profitMatch[0].replace('$', ''))
+          const investmentAmount = parseInt(investmentMatch[1].replace('$', ''))
+          
+          // Check if there's already an active trading session
+          if (tradingSession?.status === 'running') {
+            setMessages((prev) => [...prev, {
+              type: "bot",
+              content: "Trade Already Exists - You Are Only Allowed To Run One Perp Prompt At A Time. Please Wait For The Positions To Hit Profit Goal or Closed Or Liquidated To Run Another Prompt.",
+              timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            }])
+          } else {
+            // Start new trading session
+            setShowTyping(true)
+            const sessionId = await startTrading({
+              maxBudget: investmentAmount,
+              profitGoal: profitGoal,
+              maxPerSession: 5
+            })
+            
+            if (sessionId) {
+              setTradingPhase("active")
+              setMessages((prev) => [...prev, {
+                type: "bot",
+                content: `🚀 Starting trading session to make $${profitGoal} profit with $${investmentAmount} investment. Monitoring markets and executing trades...`,
+                timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+              }])
+            } else {
+              setMessages((prev) => [...prev, {
+                type: "bot",
+                content: "❌ Failed to start trading session. Please check your configuration and try again.",
+                timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+              }])
+            }
+            setShowTyping(false)
+          }
+        } else {
+          setShowTyping(true)
+          setTimeout(() => {
+            setShowTyping(false)
+            setMessages((prev) => [...prev, {
+              type: "bot",
+              content: "I understand you want to trade, but I need specific amounts. Please specify: 'I want to make $X profit by investing $Y'",
+              timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            }])
+          }, 2000)
+        }
+      } else {
+        // Regular chat message
+        setShowTyping(true)
+        setTimeout(() => {
+          setShowTyping(false)
+          setMessages((prev) => [...prev, {
+            type: "bot",
+            content: "I'm your PrepX AI Trading Bot! I can help you start automated trading sessions. To begin trading, please specify your profit goal and investment amount like: 'I want to make $30 profit by investing $50'. You can also go to the home page to set your parameters and start trading.",
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          }])
+        }, 2000)
+      }
+      
       setInputValue("")
-
-      setShowTyping(true)
-      setTimeout(() => {
-        setShowTyping(false)
-      }, 2000)
     }
   }
 
@@ -62,12 +195,51 @@ export default function ChatPage() {
     setExpandedSections((prev) => (prev.includes(section) ? prev.filter((s) => s !== section) : [...prev, section]))
   }
 
-  const handleClosePosition = (positionId: string) => {
+  const handleClosePosition = async (positionId: string) => {
+    if (!tradingSession?.sessionId) {
+      console.error('No active trading session to close');
+      return;
+    }
+
     setClosingPositions((prev) => [...prev, positionId])
-    setTimeout(() => {
-      setClosingPositions((prev) => prev.filter((id) => id !== positionId))
-      setTradingPhase("completed")
-    }, 2000)
+    
+    try {
+      // Stop the trading session
+      const success = await stopTrading(tradingSession.sessionId, true);
+      
+      if (success) {
+        // Add a message to chat indicating position was closed
+        const closeMessage = {
+          type: "bot" as const,
+          content: `✅ Position closed successfully! Trading session stopped. Final PnL: $${tradingSession.pnl?.toFixed(2) || '0.00'}`,
+          timestamp: new Date().toISOString()
+        };
+        setMessages(prev => [...prev, closeMessage]);
+        
+        // Update trading phase
+        setTradingPhase("completed");
+      } else {
+        // Add error message to chat
+        const errorMessage = {
+          type: "bot" as const,
+          content: "❌ Failed to close position. Please try again.",
+          timestamp: new Date().toISOString()
+        };
+        setMessages(prev => [...prev, errorMessage]);
+      }
+    } catch (error) {
+      console.error('Error closing position:', error);
+      // Add error message to chat
+      const errorMessage = {
+        type: "bot" as const,
+        content: "❌ Error closing position. Please try again.",
+        timestamp: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      // Remove from closing positions list
+      setClosingPositions((prev) => prev.filter((id) => id !== positionId));
+    }
   }
 
   const toggleTerminal = () => {
@@ -197,30 +369,6 @@ export default function ChatPage() {
     }
   }, [isDragging, dragOffset, dragStartPosition])
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setMessages((prev) => [...prev, { type: "user", content: "What is BOME", timestamp: "9:45 AM" }])
-      setShowTyping(true)
-
-      setTimeout(() => {
-        setShowTyping(false)
-        setMessages((prev) => [
-          ...prev,
-          {
-            type: "bot",
-            content: `The term "BOME" can refer to several distinct entities across different fields:
-
-1. Book of Meme (BOME)
-
-Book of Meme (BOME) is a memecoin integrated into an experimental project known as the Book of Meme. Launched on the Solana blockchain, BOME serves as the primary utility token within the Book of Meme ecosystem. Inspired by vibrant meme culture, BOME aims to reshape web3 culture by combining memes with decentralized storage solutions, cryptocurrency trading, and gambling. The project utilizes decentralized storage solutions like Arweave and IPFS to permanently preserve meme culture on the blockchain. The BOME token operates on the Solana blockchain and is used within the ecosystem to facilitate transactions, trading, and gambling. The Book of Meme project seeks to establish the digital equivalent of a traditional book.`,
-            timestamp: "9:45 AM",
-          },
-        ])
-      }, 2000)
-    }, 3000)
-
-    return () => clearTimeout(timer)
-  }, [])
 
   return (
     <div className="min-h-screen bg-[#0d0d0d] text-white flex flex-col relative">
@@ -260,7 +408,7 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
 
       {/* Chat Content */}
       <main
-        className="flex-1 px-3 sm:px-4 md:px-6 pb-28 sm:pb-32 space-y-3 sm:space-y-4 overflow-y-auto momentum-scroll"
+        className="flex-1 px-2 sm:px-3 md:px-4 pb-32 sm:pb-36 space-y-3 sm:space-y-4 overflow-y-auto momentum-scroll"
         style={{ touchAction: 'pan-y' }}
         role="log"
         aria-live="polite"
@@ -429,14 +577,52 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
         )}
 
         {tradingPhase === "active" && (
-          <div className="space-y-4">
-            {/* Preparing message */}
-            <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4">
-              <p className="text-[#b4b4b4] text-sm sm:text-base">Preparing to execute trades based on analysis</p>
+          <div className="space-y-6 px-4 sm:px-6 py-4">
+            {/* Trading Session Status */}
+            <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4 mx-2 sm:mx-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-[#27c47d] rounded-full animate-pulse"></div>
+                  <span className="text-[#27c47d] text-sm font-medium">Trading Active</span>
+                </div>
+                <span className="text-[#b4b4b4] text-sm">Session: {tradingSession?.sessionId?.slice(-8) || 'N/A'}</span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 mb-3">
+                <div>
+                  <p className="text-[#b4b4b4] text-sm">Current PnL</p>
+                  <p className="text-white font-semibold">${tradingSession?.pnl?.toFixed(2) || '0.00'}</p>
+                </div>
+                <div>
+                  <p className="text-[#b4b4b4] text-sm">Target Profit</p>
+                  <p className="text-white font-semibold">${tradingSession?.config?.profitGoal || '0'}</p>
+                </div>
+                <div>
+                  <p className="text-[#b4b4b4] text-sm">Open Positions</p>
+                  <p className="text-white font-semibold">{tradingSession?.openPositions || 0}</p>
+                </div>
+                <div>
+                  <p className="text-[#b4b4b4] text-sm">Cycle</p>
+                  <p className="text-white font-semibold">{tradingSession?.cycle || 0}</p>
+                </div>
+              </div>
+              
+              <div className="w-full bg-[#262626] rounded-full h-2">
+                <div 
+                  className="bg-[#27c47d] h-2 rounded-full transition-all duration-300" 
+                  style={{ 
+                    width: `${Math.min(100, ((tradingSession?.pnl || 0) / (tradingSession?.config?.profitGoal || 1)) * 100)}%` 
+                  }}
+                ></div>
+              </div>
+              <p className="text-[#b4b4b4] text-xs mt-2">
+                Progress: {((tradingSession?.pnl || 0) / (tradingSession?.config?.profitGoal || 1) * 100).toFixed(1)}%
+              </p>
             </Card>
 
-            {/* LINK/USD Position Detail */}
-            <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4">
+            {/* Show position cards when trading is active */}
+            {tradingSession && (
+              <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4 mx-2 sm:mx-4">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center space-x-3">
                   <div className="w-8 h-8 bg-[#2563eb] rounded-full flex items-center justify-center">
@@ -448,7 +634,10 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
                   <span className="bg-[#dc3545] text-white px-2 py-1 rounded text-xs font-medium">SELL</span>
                   <span className="text-white font-semibold">31x</span>
                 </div>
-                <button className="text-[#b4b4b4] hover:text-white">
+                <button 
+                  onClick={() => handleClosePosition("link")}
+                  className="text-[#b4b4b4] hover:text-white transition-colors"
+                >
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                     <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                   </svg>
@@ -525,13 +714,14 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
                 <span className="text-white">2.0145</span>.
               </p>
             </Card>
+            )}
           </div>
         )}
 
         {tradingPhase === "completed" && (
-          <div className="space-y-4 mt-6">
+          <div className="space-y-6 mt-6 px-4 sm:px-6 py-4">
             {/* Position Closed - INJ/USD */}
-            <Card className="bg-[#1a1a1a] border-l-4 border-l-[#27c47d] border-[#262626] rounded-2xl p-4">
+            <Card className="bg-[#1a1a1a] border-l-4 border-l-[#27c47d] border-[#262626] rounded-2xl p-4 mx-2 sm:mx-4">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[#27c47d] text-sm font-medium">Position closed</span>
                 <span className="text-[#b4b4b4] text-sm">9:48 AM</span>
@@ -587,7 +777,7 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
       </main>
 
       {/* Bottom Input */}
-      <div className="fixed bottom-0 left-0 right-0 bg-[#0d0d0d] p-3 sm:p-4 border-t border-[#1a1a1a]">
+      <div className="fixed bottom-0 left-0 right-0 bg-[#0d0d0d] p-4 sm:p-5 border-t border-[#1a1a1a]">
         <div className="flex items-center space-x-2 sm:space-x-3 bg-[#262626] rounded-full px-3 sm:px-4 py-2.5 sm:py-3 max-w-full">
           <button className="flex-shrink-0 p-1" aria-label="Reset chat" onClick={handleResetChat}>
             <svg width="18" height="18" viewBox="0 0 20 20" fill="none" className="text-white sm:w-5 sm:h-5">
@@ -645,11 +835,16 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
         <div className="flex items-center justify-center space-x-4 mt-2 sm:mt-3">
           <div 
             className="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity"
-            onClick={() => setIsTerminalExpanded(true)}
+            onClick={() => {
+              setIsTerminalExpanded(true)
+              setShowLiveCard(true) // Show the live card when opening trading activity
+            }}
           >
-            <img 
+            <Image 
               src="/hugeicons_trade-up.png" 
               alt="Trade Up" 
+              width={20}
+              height={20}
               className="w-5 h-5"
             />
             <span className="text-[#696969] text-xs">Trade</span>
@@ -658,20 +853,33 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
             className="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity"
             onClick={() => setShowTradingGoals(true)}
           >
-            <img 
+            <Image 
               src="/mage_goals.svg" 
               alt="Goals" 
+              width={20}
+              height={20}
               className="w-5 h-5"
             />
             <span className="text-[#696969] text-xs">Goals</span>
           </div>
+          {!showLiveCard && (
+            <div 
+              className="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() => setShowLiveCard(true)}
+            >
+              <div className="w-5 h-5 bg-[#27c47d] rounded-full flex items-center justify-center">
+                <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+              </div>
+              <span className="text-[#696969] text-xs">Live</span>
+            </div>
+          )}
         </div>
         
         <p className="text-[#696969] text-xs text-center mt-2">Trade prompt costs 0.05 a-gPT</p>
       </div>
 
       {/* Small Terminal Widget */}
-      {!isTerminalExpanded && (
+      {!isTerminalExpanded && showLiveCard && (
         <div
           className={`terminal-widget fixed z-50 transition-all duration-75 ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
           style={{
@@ -693,6 +901,17 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
                 <div className="w-1 h-1 bg-[#696969] rounded-full"></div>
                 <div className="w-1 h-1 bg-[#696969] rounded-full"></div>
               </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowLiveCard(false)
+                }}
+                className="text-[#696969] hover:text-white transition-colors p-1"
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <path d="M9 3L3 9M3 3L9 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
             </div>
 
             <div className="flex items-center space-x-2">
@@ -702,9 +921,13 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
             <div className="mt-2 text-xs text-[#b4b4b4]">
               <div className="flex items-center space-x-1">
                 <span className="text-[#27c47d]">●</span>
-                <span>Monitoring trade 15</span>
+                <span>
+                  {tradingSession ? `Monitoring ${tradingSession.sessionId}` : 'No active trade'}
+                </span>
               </div>
-              <div className="text-[#facc15]">PnL: $0.00 / $30</div>
+              <div className="text-[#facc15]">
+                PnL: ${tradingSession?.pnl?.toFixed(2) || '0.00'} / ${tradingSession?.config?.profitGoal || '0'}
+              </div>
             </div>
           </div>
         </div>
@@ -716,7 +939,13 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
           <div className="w-full bg-[#0d0d0d] rounded-t-3xl animate-slide-up max-h-[85vh] sm:max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-4 sm:p-6 border-b border-[#262626] flex-shrink-0">
               <h2 className="text-white text-lg sm:text-xl font-bold">Live Trading Activity</h2>
-              <button onClick={toggleTerminal} className="text-white hover:text-[#b4b4b4] p-1">
+              <button 
+                onClick={() => {
+                  toggleTerminal()
+                  setShowLiveCard(false) // Also hide the small live card when closing the modal
+                }} 
+                className="text-white hover:text-[#b4b4b4] p-1"
+              >
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
                   <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 </svg>
@@ -731,24 +960,32 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
                     <span className="text-white text-xs">💻</span>
                   </div>
                   <span className="text-[#58a6ff] font-mono text-xs sm:text-sm break-all">
-                    ********** Monitoring trade 15**********
+                    {tradingSession ? `********** Monitoring ${tradingSession.sessionId} **********` : 'No active trading session'}
                   </span>
                 </div>
 
                 <div className="space-y-2 text-xs sm:text-sm">
-                  <div className="text-[#b4b4b4]">Total allowed positions: 4 for budget is 60</div>
+                  <div className="text-[#b4b4b4]">
+                    Total allowed positions: {tradingSession?.config?.maxPerSession || 0} for budget is {tradingSession?.config?.maxBudget || 0}
+                  </div>
                   <div className="flex items-center space-x-2">
                     <span className="text-[#facc15] flex-shrink-0">💰</span>
-                    <span className="text-white">Total PnL: $0.00 / $30</span>
+                    <span className="text-white">
+                      Total PnL: ${tradingSession?.pnl?.toFixed(2) || '0.00'} / ${tradingSession?.config?.profitGoal || '0'}
+                    </span>
                   </div>
                   <div className="flex items-center space-x-2">
                     <span className="text-[#b4b4b4] flex-shrink-0">🔒</span>
-                    <span className="text-white">Open positions: 0</span>
+                    <span className="text-white">Open positions: {tradingSession?.openPositions || 0}</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-[#b4b4b4] flex-shrink-0">🔄</span>
+                    <span className="text-white">Cycle: {tradingSession?.cycle || 0}</span>
                   </div>
                   <div className="flex items-start space-x-2">
                     <span className="text-[#27c47d] flex-shrink-0 mt-0.5">✅</span>
                     <span className="text-white break-words">
-                      Tokens to watch: INJ_USD, ARB_USD, ZRO_USD, SUI_USD, ENA_USD, ADA_USD
+                      Status: {tradingSession?.status || 'No active session'}
                     </span>
                   </div>
                 </div>
@@ -889,7 +1126,62 @@ Book of Meme (BOME) is a memecoin integrated into an experimental project known 
                 </div>
               </div>
 
-              <button className="w-full bg-[#262626] text-white font-bold py-3 rounded-lg hover:bg-[#333] transition-colors">
+              <button 
+                onClick={async () => {
+                  // Validate inputs
+                  const profit = parseFloat(targetProfit);
+                  const investment = parseFloat(investmentAmount);
+                  
+                  if (!profit || profit <= 0) {
+                    alert('Please enter a valid target profit amount');
+                    return;
+                  }
+                  
+                  if (!investment || investment <= 0) {
+                    alert('Please enter a valid investment amount');
+                    return;
+                  }
+                  
+                  if (investment < 10) {
+                    alert('Minimum investment amount is $10');
+                    return;
+                  }
+                  
+                  try {
+                    // Start trading with the specified parameters
+                    await startTrading({
+                      profitGoal: profit,
+                      maxBudget: investment,
+                      maxPerSession: 5
+                    });
+                    
+                    // Close the modal
+                    setShowTradingGoals(false);
+                    
+                    // Show the live trading card
+                    setShowLiveCard(true);
+                    
+                    // Add a message to the chat indicating trading has started
+                    const newMessage = {
+                      type: "bot" as const,
+                      content: `🚀 Trading session started! I'm now working to achieve your target profit of $${targetProfit} with an investment of $${investmentAmount}. I'll keep you updated on the progress and show you real-time trading activity.`,
+                      timestamp: new Date().toISOString()
+                    };
+                    setMessages(prev => [...prev, newMessage]);
+                    
+                  } catch (error) {
+                    console.error('Failed to start trading:', error);
+                    // Add error message to chat
+                    const errorMessage = {
+                      type: "bot" as const,
+                      content: "❌ Sorry, I couldn't start the trading session. Please try again or check your connection.",
+                      timestamp: new Date().toISOString()
+                    };
+                    setMessages(prev => [...prev, errorMessage]);
+                  }
+                }}
+                className="w-full bg-[#8759ff] hover:bg-[#7C3AED] text-white font-bold py-3 rounded-lg transition-colors"
+              >
                 Start Trading
               </button>
             </div>

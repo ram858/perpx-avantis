@@ -1,0 +1,707 @@
+{
+  "SOL": {
+    "hl": "SOL",
+    "binance": "SOLUSDT"
+  },
+  "APT": {
+    "hl": "APT",
+    "binance": "APTUSDT"
+  },
+  "ATOM": {
+    "hl": "ATOM",
+    "binance": "ATOMUSDT"
+  },
+  "BTC": {
+    "hl": "BTC",
+    "binance": "BTCUSDT"
+  },
+  "ETH": {
+    "hl": "ETH",
+    "binance": "ETHUSDT"
+  },
+  "MATIC": {
+    "hl": "MATIC",
+    "binance": "MATICUSDT"
+  },
+  "BNB": {
+    "hl": "BNB",
+    "binance": "BNBUSDT"
+  },
+  "AVAX": {
+    "hl": "AVAX",
+    "binance": "AVAXUSDT"
+  },
+  "GMT": {
+    "hl": "GMT",
+    "binance": "GMTUSDT"
+  },
+  "DYDX": {
+    "hl": "DYDX",
+    "binance": "DYDXUSDT"
+  },
+  "APE": {
+    "hl": "APE",
+    "binance": "APEUSDT"
+  },
+  "OP": {
+    "hl": "OP",
+    "binance": "OPUSDT"
+  },
+  "KPEPE": {
+    "hl": "kPEPE",
+    "binance": "KPEPEUSDT"
+  },
+  "ARB": {
+    "hl": "ARB",
+    "binance": "ARBUSDT"
+  },
+  "RLB": {
+    "hl": "RLB",
+    "binance": "RLBUSDT"
+  },
+  "WLD": {
+    "hl": "WLD",
+    "binance": "WLDUSDT"
+  },
+  "HPOS": {
+    "hl": "HPOS",
+    "binance": "HPOSUSDT"
+  },
+  "UNIBOT": {
+    "hl": "UNIBOT",
+    "binance": "UNIBOTUSDT"
+  },
+  "COMP": {
+    "hl": "COMP",
+    "binance": "COMPUSDT"
+  },
+  "FXS": {
+    "hl": "FXS",
+    "binance": "FXSUSDT"
+  },
+  "MKR": {
+    "hl": "MKR",
+    "binance": "MKRUSDT"
+  },
+  "AAVE": {
+    "hl": "AAVE",
+    "binance": "AAVEUSDT"
+  },
+  "SNX": {
+    "hl": "SNX",
+    "binance": "SNXUSDT"
+  },
+  "RNDR": {
+    "hl": "RNDR",
+    "binance": "RNDRUSDT"
+  },
+  "LDO": {
+    "hl": "LDO",
+    "binance": "LDOUSDT"
+  },
+  "SUI": {
+    "hl": "SUI",
+    "binance": "SUIUSDT"
+  },
+  "INJ": {
+    "hl": "INJ",
+    "binance": "INJUSDT"
+  },
+  "STX": {
+    "hl": "STX",
+    "binance": "STXUSDT"
+  },
+  "FTM": {
+    "hl": "FTM",
+    "binance": "FTMUSDT"
+  },
+  "KSHIB": {
+    "hl": "kSHIB",
+    "binance": "KSHIBUSDT"
+  },
+  "OX": {
+    "hl": "OX",
+    "binance": "OXUSDT"
+  },
+  "FRIEND": {
+    "hl": "FRIEND",
+    "binance": "FRIENDUSDT"
+  },
+  "ZRO": {
+    "hl": "ZRO",
+    "binance": "ZROUSDT"
+  },
+  "BLZ": {
+    "hl": "BLZ",
+    "binance": "BLZUSDT"
+  },
+  "BANANA": {
+    "hl": "BANANA",
+    "binance": "BANANAUSDT"
+  },
+  "FTT": {
+    "hl": "FTT",
+    "binance": "FTTUSDT"
+  },
+  "TRB": {
+    "hl": "TRB",
+    "binance": "TRBUSDT"
+  },
+  "CANTO": {
+    "hl": "CANTO",
+    "binance": "CANTOUSDT"
+  },
+  "BIGTIME": {
+    "hl": "BIGTIME",
+    "binance": "BIGTIMEUSDT"
+  },
+  "NTRN": {
+    "hl": "NTRN",
+    "binance": "NTRNUSDT"
+  },
+  "KAS": {
+    "hl": "KAS",
+    "binance": "KASUSDT"
+  },
+  "BLUR": {
+    "hl": "BLUR",
+    "binance": "BLURUSDT"
+  },
+  "TIA": {
+    "hl": "TIA",
+    "binance": "TIAUSDT"
+  },
+  "BSV": {
+    "hl": "BSV",
+    "binance": "BSVUSDT"
+  },
+  "TON": {
+    "hl": "TON",
+    "binance": "TONUSDT"
+  },
+  "ADA": {
+    "hl": "ADA",
+    "binance": "ADAUSDT"
+  },
+  "MINA": {
+    "hl": "MINA",
+    "binance": "MINAUSDT"
+  },
+  "POLYX": {
+    "hl": "POLYX",
+    "binance": "POLYXUSDT"
+  },
+  "GAS": {
+    "hl": "GAS",
+    "binance": "GASUSDT"
+  },
+  "AXL": {
+    "hl": "AXL",
+    "binance": "AXLUSDT"
+  },
+  "PENDLE": {
+    "hl": "PENDLE",
+    "binance": "PENDLEUSDT"
+  },
+  "STG": {
+    "hl": "STG",
+    "binance": "STGUSDT"
+  },
+  "FET": {
+    "hl": "FET",
+    "binance": "FETUSDT"
+  },
+  "STRAX": {
+    "hl": "STRAX",
+    "binance": "STRAXUSDT"
+  },
+  "NEAR": {
+    "hl": "NEAR",
+    "binance": "NEARUSDT"
+  },
+  "MEME": {
+    "hl": "MEME",
+    "binance": "MEMEUSDT"
+  },
+  "ORDI": {
+    "hl": "ORDI",
+    "binance": "ORDIUSDT"
+  },
+  "BADGER": {
+    "hl": "BADGER",
+    "binance": "BADGERUSDT"
+  },
+  "NEO": {
+    "hl": "NEO",
+    "binance": "NEOUSDT"
+  },
+  "ZEN": {
+    "hl": "ZEN",
+    "binance": "ZENUSDT"
+  },
+  "FIL": {
+    "hl": "FIL",
+    "binance": "FILUSDT"
+  },
+  "PYTH": {
+    "hl": "PYTH",
+    "binance": "PYTHUSDT"
+  },
+  "RUNE": {
+    "hl": "RUNE",
+    "binance": "RUNEUSDT"
+  },
+  "SUSHI": {
+    "hl": "SUSHI",
+    "binance": "SUSHIUSDT"
+  },
+  "ILV": {
+    "hl": "ILV",
+    "binance": "ILVUSDT"
+  },
+  "MAV": {
+    "hl": "MAV",
+    "binance": "MAVUSDT"
+  },
+  "IMX": {
+    "hl": "IMX",
+    "binance": "IMXUSDT"
+  },
+  "KBONK": {
+    "hl": "kBONK",
+    "binance": "KBONKUSDT"
+  },
+  "NFTI": {
+    "hl": "NFTI",
+    "binance": "NFTIUSDT"
+  },
+  "SUPER": {
+    "hl": "SUPER",
+    "binance": "SUPERUSDT"
+  },
+  "USTC": {
+    "hl": "USTC",
+    "binance": "USTCUSDT"
+  },
+  "JUP": {
+    "hl": "JUP",
+    "binance": "JUPUSDT"
+  },
+  "JOE": {
+    "hl": "JOE",
+    "binance": "JOEUSDT"
+  },
+  "GALA": {
+    "hl": "GALA",
+    "binance": "GALAUSDT"
+  },
+  "RSR": {
+    "hl": "RSR",
+    "binance": "RSRUSDT"
+  },
+  "KLUNC": {
+    "hl": "kLUNC",
+    "binance": "KLUNCUSDT"
+  },
+  "JTO": {
+    "hl": "JTO",
+    "binance": "JTOUSDT"
+  },
+  "ACE": {
+    "hl": "ACE",
+    "binance": "ACEUSDT"
+  },
+  "WIF": {
+    "hl": "WIF",
+    "binance": "WIFUSDT"
+  },
+  "CAKE": {
+    "hl": "CAKE",
+    "binance": "CAKEUSDT"
+  },
+  "PEOPLE": {
+    "hl": "PEOPLE",
+    "binance": "PEOPLEUSDT"
+  },
+  "ENS": {
+    "hl": "ENS",
+    "binance": "ENSUSDT"
+  },
+  "ETC": {
+    "hl": "ETC",
+    "binance": "ETCUSDT"
+  },
+  "XAI": {
+    "hl": "XAI",
+    "binance": "XAIUSDT"
+  },
+  "MANTA": {
+    "hl": "MANTA",
+    "binance": "MANTAUSDT"
+  },
+  "UMA": {
+    "hl": "UMA",
+    "binance": "UMAUSDT"
+  },
+  "REQ": {
+    "hl": "REQ",
+    "binance": "REQUSDT"
+  },
+  "ONDO": {
+    "hl": "ONDO",
+    "binance": "ONDOUSDT"
+  },
+  "ALT": {
+    "hl": "ALT",
+    "binance": "ALTUSDT"
+  },
+  "ZETA": {
+    "hl": "ZETA",
+    "binance": "ZETAUSDT"
+  },
+  "DYM": {
+    "hl": "DYM",
+    "binance": "DYMUSDT"
+  },
+  "MAVIA": {
+    "hl": "MAVIA",
+    "binance": "MAVIAUSDT"
+  },
+  "W": {
+    "hl": "W",
+    "binance": "WUSDT"
+  },
+  "PANDORA": {
+    "hl": "PANDORA",
+    "binance": "PANDORAUSDT"
+  },
+  "AI": {
+    "hl": "AI",
+    "binance": "AIUSDT"
+  },
+  "TAO": {
+    "hl": "TAO",
+    "binance": "TAOUSDT"
+  },
+  "PIXEL": {
+    "hl": "PIXEL",
+    "binance": "PIXELUSDT"
+  },
+  "AR": {
+    "hl": "AR",
+    "binance": "ARUSDT"
+  },
+  "TNSR": {
+    "hl": "TNSR",
+    "binance": "TNSRUSDT"
+  },
+  "SAGA": {
+    "hl": "SAGA",
+    "binance": "SAGAUSDT"
+  },
+  "MERL": {
+    "hl": "MERL",
+    "binance": "MERLUSDT"
+  },
+  "HBAR": {
+    "hl": "HBAR",
+    "binance": "HBARUSDT"
+  },
+  "POPCAT": {
+    "hl": "POPCAT",
+    "binance": "POPCATUSDT"
+  },
+  "OMNI": {
+    "hl": "OMNI",
+    "binance": "OMNIUSDT"
+  },
+  "EIGEN": {
+    "hl": "EIGEN",
+    "binance": "EIGENUSDT"
+  },
+  "REZ": {
+    "hl": "REZ",
+    "binance": "REZUSDT"
+  },
+  "NOT": {
+    "hl": "NOT",
+    "binance": "NOTUSDT"
+  },
+  "TURBO": {
+    "hl": "TURBO",
+    "binance": "TURBOUSDT"
+  },
+  "IO": {
+    "hl": "IO",
+    "binance": "IOUSDT"
+  },
+  "BRETT": {
+    "hl": "BRETT",
+    "binance": "BRETTUSDT"
+  },
+  "ZK": {
+    "hl": "ZK",
+    "binance": "ZKUSDT"
+  },
+  "BLAST": {
+    "hl": "BLAST",
+    "binance": "BLASTUSDT"
+  },
+  "LISTA": {
+    "hl": "LISTA",
+    "binance": "LISTAUSDT"
+  },
+  "MEW": {
+    "hl": "MEW",
+    "binance": "MEWUSDT"
+  },
+  "RENDER": {
+    "hl": "RENDER",
+    "binance": "RENDERUSDT"
+  },
+  "KDOGS": {
+    "hl": "kDOGS",
+    "binance": "KDOGSUSDT"
+  },
+  "POL": {
+    "hl": "POL",
+    "binance": "POLUSDT"
+  },
+  "CATI": {
+    "hl": "CATI",
+    "binance": "CATIUSDT"
+  },
+  "CELO": {
+    "hl": "CELO",
+    "binance": "CELOUSDT"
+  },
+  "HMSTR": {
+    "hl": "HMSTR",
+    "binance": "HMSTRUSDT"
+  },
+  "SCR": {
+    "hl": "SCR",
+    "binance": "SCRUSDT"
+  },
+  "NEIROETH": {
+    "hl": "NEIROETH",
+    "binance": "NEIROETHUSDT"
+  },
+  "KNEIRO": {
+    "hl": "kNEIRO",
+    "binance": "KNEIROUSDT"
+  },
+  "GOAT": {
+    "hl": "GOAT",
+    "binance": "GOATUSDT"
+  },
+  "MOODENG": {
+    "hl": "MOODENG",
+    "binance": "MOODENGUSDT"
+  },
+  "PURR": {
+    "hl": "PURR",
+    "binance": "PURRUSDT"
+  },
+  "GRASS": {
+    "hl": "GRASS",
+    "binance": "GRASSUSDT"
+  },
+  "PNUT": {
+    "hl": "PNUT",
+    "binance": "PNUTUSDT"
+  },
+  "XLM": {
+    "hl": "XLM",
+    "binance": "XLMUSDT"
+  },
+  "CHILLGUY": {
+    "hl": "CHILLGUY",
+    "binance": "CHILLGUYUSDT"
+  },
+  "SAND": {
+    "hl": "SAND",
+    "binance": "SANDUSDT"
+  },
+  "ALGO": {
+    "hl": "ALGO",
+    "binance": "ALGOUSDT"
+  },
+  "ICP": {
+    "hl": "ICP",
+    "binance": "ICPUSDT"
+  },
+  "IOTA": {
+    "hl": "IOTA",
+    "binance": "IOTAUSDT"
+  },
+  "VET": {
+    "hl": "VET",
+    "binance": "VETUSDT"
+  },
+  "HYPE": {
+    "hl": "HYPE",
+    "binance": "HYPEUSDT"
+  },
+  "ME": {
+    "hl": "ME",
+    "binance": "MEUSDT"
+  },
+  "MOVE": {
+    "hl": "MOVE",
+    "binance": "MOVEUSDT"
+  },
+  "VIRTUAL": {
+    "hl": "VIRTUAL",
+    "binance": "VIRTUALUSDT"
+  },
+  "PENGU": {
+    "hl": "PENGU",
+    "binance": "PENGUUSDT"
+  },
+  "USUAL": {
+    "hl": "USUAL",
+    "binance": "USUALUSDT"
+  },
+  "FARTCOIN": {
+    "hl": "FARTCOIN",
+    "binance": "FARTCOINUSDT"
+  },
+  "AIXBT": {
+    "hl": "AIXBT",
+    "binance": "AIXBTUSDT"
+  },
+  "AI16Z": {
+    "hl": "AI16Z",
+    "binance": "AI16ZUSDT"
+  },
+  "ZEREBRO": {
+    "hl": "ZEREBRO",
+    "binance": "ZEREBROUSDT"
+  },
+  "BIO": {
+    "hl": "BIO",
+    "binance": "BIOUSDT"
+  },
+  "SPX": {
+    "hl": "SPX",
+    "binance": "SPXUSDT"
+  },
+  "GRIFFAIN": {
+    "hl": "GRIFFAIN",
+    "binance": "GRIFFAINUSDT"
+  },
+  "S": {
+    "hl": "S",
+    "binance": "SUSDT"
+  },
+  "MORPHO": {
+    "hl": "MORPHO",
+    "binance": "MORPHOUSDT"
+  },
+  "TRUMP": {
+    "hl": "TRUMP",
+    "binance": "TRUMPUSDT"
+  },
+  "ANIME": {
+    "hl": "ANIME",
+    "binance": "ANIMEUSDT"
+  },
+  "MELANIA": {
+    "hl": "MELANIA",
+    "binance": "MELANIAUSDT"
+  },
+  "VINE": {
+    "hl": "VINE",
+    "binance": "VINEUSDT"
+  },
+  "VVV": {
+    "hl": "VVV",
+    "binance": "VVVUSDT"
+  },
+  "JELLYJELLY": {
+    "hl": "JELLYJELLY",
+    "binance": "JELLYJELLYUSDT"
+  },
+  "JELLY": {
+    "hl": "JELLY",
+    "binance": "JELLYUSDT"
+  },
+  "BERA": {
+    "hl": "BERA",
+    "binance": "BERAUSDT"
+  },
+  "TST": {
+    "hl": "TST",
+    "binance": "TSTUSDT"
+  },
+  "LAYER": {
+    "hl": "LAYER",
+    "binance": "LAYERUSDT"
+  },
+  "IP": {
+    "hl": "IP",
+    "binance": "IPUSDT"
+  },
+  "OM": {
+    "hl": "OM",
+    "binance": "OMUSDT"
+  },
+  "KAITO": {
+    "hl": "KAITO",
+    "binance": "KAITOUSDT"
+  },
+  "CHZ": {
+    "hl": "CHZ",
+    "binance": "CHZUSDT"
+  },
+  "NIL": {
+    "hl": "NIL",
+    "binance": "NILUSDT"
+  },
+  "PAXG": {
+    "hl": "PAXG",
+    "binance": "PAXGUSDT"
+  },
+  "PROMPT": {
+    "hl": "PROMPT",
+    "binance": "PROMPTUSDT"
+  },
+  "BABY": {
+    "hl": "BABY",
+    "binance": "BABYUSDT"
+  },
+  "WCT": {
+    "hl": "WCT",
+    "binance": "WCTUSDT"
+  },
+  "HYPER": {
+    "hl": "HYPER",
+    "binance": "HYPERUSDT"
+  },
+  "ZORA": {
+    "hl": "ZORA",
+    "binance": "ZORAUSDT"
+  },
+  "INIT": {
+    "hl": "INIT",
+    "binance": "INITUSDT"
+  },
+  "DOOD": {
+    "hl": "DOOD",
+    "binance": "DOODUSDT"
+  },
+  "DOGE": {
+    "hl": "DOGE",
+    "binance": "DOGEUSDT"
+  },
+  "LAUNCHCOIN": {
+    "hl": "LAUNCHCOIN",
+    "binance": "LAUNCHCOINUSDT"
+  },
+  "NXPC": {
+    "hl": "NXPC",
+    "binance": "NXPCUSDT"
+  }
+}
+

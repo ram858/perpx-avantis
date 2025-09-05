@@ -1,0 +1,63 @@
+{
+    "name": "hyperliquid-bot",
+    "version": "1.0.0",
+    "description": "Hyperliquid Trading Bot with PM2 deployment",
+    "main": "index.ts",
+    "scripts": {
+        "start": "npx ts-node index.ts",
+        "dev": "npx ts-node index.ts",
+        "build": "tsc",
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "test:restart": "npx ts-node test-restart.ts",
+        "pm2:start": "pm2 start ecosystem.config.js --env production",
+        "pm2:stop": "pm2 stop trading-bot3",
+        "pm2:restart": "pm2 restart trading-bot3",
+        "pm2:delete": "pm2 delete trading-bot3",
+        "pm2:logs": "pm2 logs trading-bot3",
+        "pm2:status": "pm2 status",
+        "pm2:monit": "pm2 monit",
+        "pm2:save": "pm2 save",
+        "pm2:startup": "pm2 startup",
+        "deploy": "./deploy.sh"
+    },
+    "keywords": [
+        "hyperliquid",
+        "trading",
+        "bot",
+        "cryptocurrency",
+        "defi"
+    ],
+    "author": "Subash Mokshya",
+    "license": "MIT",
+    "dependencies": {
+        "@nktkas/hyperliquid": "^0.19.1",
+        "@types/node-telegram-bot-api": "^0.64.10",
+        "axios": "^1.9.0",
+        "csv-parse": "^5.6.0",
+        "decimal.js": "^10.4.3",
+        "dotenv": "^16.3.1",
+        "https-proxy-agent": "^7.0.6",
+        "node-fetch": "^3.3.2",
+        "node-telegram-bot-api": "^0.66.0",
+        "socks-proxy-agent": "^8.0.5",
+        "technicalindicators": "^3.1.0",
+        "viem": "^1.19.9"
+    },
+    "devDependencies": {
+        "@types/node": "^20.5.0",
+        "ts-node": "^10.9.1",
+        "typescript": "^5.1.6"
+    },
+    "engines": {
+        "node": ">=18.0.0",
+        "npm": ">=8.0.0"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/subashmokshya/hyperliquid.git"
+    },
+    "bugs": {
+        "url": "https://github.com/subashmokshya/hyperliquid/issues"
+    },
+    "homepage": "https://github.com/subashmokshya/hyperliquid#readme"
+}

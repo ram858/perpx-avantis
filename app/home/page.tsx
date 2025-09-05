@@ -10,6 +10,8 @@ import { useState } from "react"
 export default function HomePage() {
   const [isHoldingsExpanded, setIsHoldingsExpanded] = useState(false)
   const [isBalanceVisible, setIsBalanceVisible] = useState(true)
+  const [targetProfit, setTargetProfit] = useState("10")
+  const [investmentAmount, setInvestmentAmount] = useState("50")
 
   const allHoldings = [
     {
@@ -195,7 +197,8 @@ export default function HomePage() {
                   </span>
                   <Input
                     className="bg-[#262626] border-[#404040] text-white pl-7 sm:pl-8 pr-12 sm:pr-16 py-3 sm:py-4 rounded-2xl text-base sm:text-lg"
-                    defaultValue="10"
+                    value={targetProfit}
+                    onChange={(e) => setTargetProfit(e.target.value)}
                   />
                   <span className="absolute right-3 sm:right-4 top-1/2 transform -translate-y-1/2 text-[#b4b4b4] text-sm sm:text-base">
                     USD
@@ -211,7 +214,8 @@ export default function HomePage() {
                   </span>
                   <Input
                     className="bg-[#262626] border-[#404040] text-white pl-7 sm:pl-8 pr-12 sm:pr-16 py-3 sm:py-4 rounded-2xl text-base sm:text-lg"
-                    defaultValue="50"
+                    value={investmentAmount}
+                    onChange={(e) => setInvestmentAmount(e.target.value)}
                   />
                   <span className="absolute right-3 sm:right-4 top-1/2 transform -translate-y-1/2 text-[#b4b4b4] text-sm sm:text-base">
                     USD
@@ -219,7 +223,7 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <Link href="/chat">
+              <Link href={`/chat?profit=${targetProfit}&investment=${investmentAmount}`}>
                 <Button className="w-full bg-[#8759ff] hover:bg-[#7C3AED] text-white font-semibold py-3 sm:py-4 rounded-2xl text-base sm:text-lg mt-4 sm:mt-6">
                   Start Trading
                 </Button>
