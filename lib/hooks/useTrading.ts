@@ -107,7 +107,7 @@ export function useTrading() {
       };
 
       ws.onerror = (error) => {
-        console.error('[useTrading] WebSocket error:', error);
+        console.error('[useTrading] WebSocket error:', error.message || 'Unknown WebSocket error');
         console.error('[useTrading] WebSocket readyState:', ws.readyState);
         console.error('[useTrading] WebSocket url:', ws.url);
         clearTimeout(connectionTimeout);
@@ -234,9 +234,15 @@ export function useTrading() {
     }
   }, []);
 
-  // Connect on mount
+  // Connect on mount with a small delay to ensure server is ready
   useEffect(() => {
-    connectWebSocket();
+    const connectWithDelay = () => {
+      setTimeout(() => {
+        connectWebSocket();
+      }, 1000); // 1 second delay
+    };
+    
+    connectWithDelay();
 
     return () => {
       disconnectWebSocket();

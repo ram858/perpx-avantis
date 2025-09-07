@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useTrading } from "@/lib/hooks/useTrading"
+import { useWallet } from "@/lib/wallet/WalletContext"
 import { useSearchParams } from "next/navigation"
 
 export default function ChatPage() {
@@ -38,6 +39,12 @@ export default function ChatPage() {
     stopTrading,
   } = useTrading()
 
+  // Wallet integration
+  const {
+    isConnected,
+    totalPortfolioValue,
+  } = useWallet()
+
   // Update trading phase based on session status
   useEffect(() => {
     if (tradingSession?.status === 'running') {
@@ -53,57 +60,95 @@ export default function ChatPage() {
   useEffect(() => {
     const profit = searchParams.get('profit')
     const investment = searchParams.get('investment')
+    const mode = searchParams.get('mode') // 'real' or 'simulation'
     
     if (profit && investment && !tradingSession) {
       const profitNum = parseInt(profit)
       const investmentNum = parseInt(investment)
       
-      if (profitNum > 0 && investmentNum > 0) {
-        // Add initial message
+      // Determine trading mode
+      const isRealTradingMode = mode === 'real' && isConnected && totalPortfolioValue > 0
+      const isSimulationMode = mode === 'simulation' || !isConnected || totalPortfolioValue === 0
+      
+      if (isRealTradingMode) {
+        // Real trading mode - check wallet requirements
+        if (!isConnected) {
+          setMessages([{
+            type: "bot",
+            content: "❌ Please connect your wallet first to start real trading.",
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          }])
+          return
+        }
+        
+        if (totalPortfolioValue === 0) {
+          setMessages([{
+            type: "bot",
+            content: "❌ Your wallet balance is $0. Please add funds to your wallet before starting real trading.",
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          }])
+          return
+        }
+        
+        // Start real trading
         setMessages([{
-          type: "user",
-          content: `I want to make $${profitNum} profit by investing $${investmentNum}`,
+          type: "bot",
+          content: `💰 Starting REAL TRADING with $${investmentNum} investment targeting $${profitNum} profit. This will use actual money on Hyperliquid!`,
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         }])
         
-        // Start trading session
         startTrading({
-          maxBudget: investmentNum,
           profitGoal: profitNum,
+          maxBudget: investmentNum,
           maxPerSession: 5
-        }).then(sessionId => {
-          if (sessionId) {
-            setTradingPhase("active")
-            setMessages(prev => [...prev, {
-              type: "bot",
-              content: `🚀 Starting trading session to make $${profitNum} profit with $${investmentNum} investment. Monitoring markets and executing trades...`,
-              timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-            }])
-          } else {
-            setMessages(prev => [...prev, {
-              type: "bot",
-              content: "❌ Failed to start trading session. Please check your configuration and try again.",
-              timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-            }])
-          }
-        }).catch(err => {
-          console.error('Error starting trading:', err)
+        }).catch(error => {
           setMessages(prev => [...prev, {
             type: "bot",
-            content: "❌ Error starting trading session. Please try again.",
+            content: `❌ Failed to start real trading: ${error.message}`,
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           }])
         })
+        
+      } else if (isSimulationMode) {
+        // Simulation mode
+        setMessages([{
+          type: "bot",
+          content: `🎮 Starting SIMULATION with $${investmentNum} virtual investment targeting $${profitNum} profit. No real money involved!`,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        }])
+        
+        startTrading({
+          profitGoal: profitNum,
+          maxBudget: investmentNum,
+          maxPerSession: 5
+        }).catch(error => {
+          setMessages(prev => [...prev, {
+            type: "bot",
+            content: `❌ Failed to start simulation: ${error.message}`,
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          }])
+        })
+      } else {
+        // Ambiguous mode - ask user to choose
+        setMessages([{
+          type: "bot",
+          content: `🤔 I see you want to trade with $${investmentNum} targeting $${profitNum} profit. Would you like to:\n\n💰 **Real Trading** (uses actual money)\n🎮 **Simulation** (no real money)\n\nPlease visit the trading page to choose your mode.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        }])
       }
-    } else if (!profit && !investment && messages.length === 0) {
-      // Add welcome message if no parameters and no messages
+    }
+  }, [searchParams, tradingSession, isConnected, totalPortfolioValue, startTrading])
+
+  // Default conversation if no parameters
+  useEffect(() => {
+    if (!searchParams.get('profit') && !searchParams.get('investment') && messages.length === 0) {
       setMessages([{
         type: "bot",
-        content: "👋 Welcome to PrepX AI Trading Bot! I'm here to help you with automated trading. You can start a trade by saying 'I want to make $X profit by investing $Y' or go to the home page to set your trading parameters.",
+        content: "🎮 Starting simulation mode - no real money involved!",
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       }])
     }
-  }, [searchParams, tradingSession, startTrading, messages.length])
+  }, [searchParams, messages.length])
 
   const handleSendMessage = async () => {
     if (inputValue.trim()) {
@@ -1148,6 +1193,18 @@ export default function ChatPage() {
                   }
                   
                   try {
+                    // Check if we're in simulation mode
+                    const isSimulationMode = !isConnected || totalPortfolioValue === 0
+                    
+                    if (isSimulationMode) {
+                      // Add simulation message
+                      setMessages(prev => [...prev, {
+                        type: "bot",
+                        content: "🎮 Starting simulation mode - no real money involved!",
+                        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                      }])
+                    }
+                    
                     // Start trading with the specified parameters
                     await startTrading({
                       profitGoal: profit,
