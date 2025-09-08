@@ -40,7 +40,7 @@ class RealTradingBot {
     };
 
     this.sessions.set(sessionId, session);
-    
+
     try {
       // Start the real Hyperliquid trading bot
       await this.startRealTradingBot(sessionId, config);
@@ -82,7 +82,7 @@ class RealTradingBot {
       botProcess.stdout.on('data', (data) => {
         const output = data.toString();
         console.log(`[HYPERLIQUID_BOT] ${output.trim()}`);
-        
+
         // Parse trading updates from bot output
         this.parseBotOutput(sessionId, output);
       });
@@ -95,7 +95,7 @@ class RealTradingBot {
       botProcess.on('close', (code) => {
         console.log(`[REAL_TRADING] Bot process for session ${sessionId} exited with code ${code}`);
         this.activeProcesses.delete(sessionId);
-        
+
         const session = this.sessions.get(sessionId);
         if (session) {
           if (code === 0) {
@@ -110,13 +110,13 @@ class RealTradingBot {
       botProcess.on('error', (error) => {
         console.error(`[REAL_TRADING] Bot process error for session ${sessionId}:`, error);
         this.activeProcesses.delete(sessionId);
-        
+
         const session = this.sessions.get(sessionId);
         if (session) {
           session.status = 'error';
           session.error = error.message;
         }
-        
+
         if (!hasResolved) {
           hasResolved = true;
           reject(error);
@@ -196,7 +196,7 @@ const tradingBot = new RealTradingBot();
 app.post('/api/start-trading', async (req, res) => {
   try {
     const { maxBudget, profitGoal, maxPerSession } = req.body;
-    
+
     if (!maxBudget || !profitGoal || !maxPerSession) {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
@@ -217,7 +217,7 @@ app.post('/api/start-trading', async (req, res) => {
 
 app.post('/api/stop-trading/:sessionId', (req, res) => {
   const { sessionId } = req.params;
-  
+
   try {
     tradingBot.stopSession(sessionId);
     console.log(`[API] Stopped trading session ${sessionId}`);
@@ -231,11 +231,11 @@ app.post('/api/stop-trading/:sessionId', (req, res) => {
 app.get('/api/session/:sessionId', (req, res) => {
   const { sessionId } = req.params;
   const session = tradingBot.getSessionStatus(sessionId);
-  
+
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
-  
+
   res.json(session);
 });
 
@@ -246,8 +246,8 @@ app.get('/api/sessions', (req, res) => {
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
+  res.json({
+    status: 'healthy',
     activeSessions: tradingBot.getAllSessions().length,
     timestamp: new Date().toISOString()
   });
@@ -263,12 +263,12 @@ const wss = new WebSocket.Server({ port: 3002 });
 
 wss.on('connection', (ws) => {
   console.log('[WEBSOCKET] Client connected');
-  
+
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
       console.log('[WEBSOCKET] Received:', data);
-      
+
       if (data.type === 'subscribe' && data.sessionId) {
         ws.sessionId = data.sessionId;
         console.log(`[WEBSOCKET] Client subscribed to session ${data.sessionId}`);
@@ -286,7 +286,7 @@ wss.on('connection', (ws) => {
 // Broadcast real-time updates to subscribed clients
 setInterval(() => {
   const sessions = tradingBot.getAllSessions();
-  
+
   wss.clients.forEach((ws) => {
     if (ws.readyState === WebSocket.OPEN && ws.sessionId) {
       const session = tradingBot.getSessionStatus(ws.sessionId);
@@ -306,13 +306,13 @@ console.log(`[WEBSOCKET] Server running on ws://localhost:3002`);
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n[SHUTDOWN] Gracefully shutting down...');
-  
+
   // Stop all active trading sessions
   tradingBot.getAllSessions().forEach(session => {
     if (session.status === 'running') {
       tradingBot.stopSession(session.sessionId);
     }
   });
-  
+
   process.exit(0);
 });

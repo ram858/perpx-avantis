@@ -35,14 +35,42 @@ export function useTrading() {
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
 
+  const checkAndSubscribeToActiveSessions = useCallback(async () => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${apiUrl}/api/status`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        if (data.sessions && Array.isArray(data.sessions)) {
+          const runningSessions = data.sessions.filter((session: any) => session.status === 'running');
+          
+          if (runningSessions.length > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
+            // Subscribe to the most recent running session
+            const latestSession = runningSessions[runningSessions.length - 1];
+            
+            wsRef.current.send(JSON.stringify({
+              type: 'subscribe',
+              sessionId: latestSession.sessionId
+            }));
+            
+            // Set the trading session state
+            setTradingSession(latestSession);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[useTrading] Failed to check active sessions:', error);
+    }
+  }, []);
+
   const connectWebSocket = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
     }
 
     const wsUrl = 'ws://localhost:3002';
-    console.log('[useTrading] Connecting to WebSocket:', wsUrl);
-    console.log('[useTrading] Environment NEXT_PUBLIC_WEBSOCKET_URL:', process.env.NEXT_PUBLIC_WEBSOCKET_URL);
 
     try {
       const ws = new WebSocket(wsUrl);
@@ -58,7 +86,6 @@ export function useTrading() {
       }, 10000); // 10 second timeout
 
       ws.onopen = () => {
-        console.log('[useTrading] WebSocket connected successfully');
         clearTimeout(connectionTimeout);
         setIsConnected(true);
         setError(null);
@@ -66,12 +93,14 @@ export function useTrading() {
         
         // Send a test message to verify connection
         ws.send(JSON.stringify({ type: 'ping', data: { timestamp: Date.now() } }));
+        
+        // Check for active sessions and subscribe to them
+        checkAndSubscribeToActiveSessions();
       };
 
       ws.onmessage = (event) => {
         try {
           const data: TradingUpdate = JSON.parse(event.data);
-          console.log('[useTrading] Received message:', data);
 
           if (data.type === 'session_update' && data.data && 'sessionId' in data.data) {
             setTradingSession(data.data as SessionStatus);
@@ -89,7 +118,6 @@ export function useTrading() {
       };
 
       ws.onclose = (event) => {
-        console.log('[useTrading] WebSocket disconnected:', event.code, event.reason);
         clearTimeout(connectionTimeout);
         setIsConnected(false);
         wsRef.current = null;
@@ -97,7 +125,6 @@ export function useTrading() {
         // Attempt to reconnect if not a clean close
         if (event.code !== 1000 && reconnectAttempts.current < maxReconnectAttempts) {
           const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
-          console.log(`[useTrading] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current + 1})`);
           
           reconnectTimeoutRef.current = setTimeout(() => {
             reconnectAttempts.current++;
@@ -132,7 +159,7 @@ export function useTrading() {
     setIsConnected(false);
   }, []);
 
-  const startTrading = useCallback(async (config: TradingConfig): Promise<string | null> => {
+  const startTrading = useCallback(async (config: TradingConfig, hyperliquidApiWallet?: string): Promise<string | null> => {
     setIsLoading(true);
     setError(null);
 
@@ -143,7 +170,10 @@ export function useTrading() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(config),
+        body: JSON.stringify({
+          ...config,
+          hyperliquidApiWallet
+        }),
       });
 
       if (!response.ok) {
@@ -152,7 +182,6 @@ export function useTrading() {
       }
 
       const result = await response.json();
-      console.log('[useTrading] Trading session started:', result);
 
       // Subscribe to updates
       if (wsRef.current?.readyState === WebSocket.OPEN && result.sessionId) {
@@ -189,7 +218,6 @@ export function useTrading() {
         throw new Error(errorData.error || `HTTP ${response.status}`);
       }
 
-      console.log('[useTrading] Trading session stopped:', sessionId);
       return true;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to stop trading session';
@@ -263,8 +291,10 @@ export function useTrading() {
     getTradingConfig,
     connectWebSocket,
     disconnectWebSocket,
+    refreshSessionStatus: checkAndSubscribeToActiveSessions,
     
     // Utilities
     clearError: () => setError(null),
+    clearSession: () => setTradingSession(null),
   };
 }

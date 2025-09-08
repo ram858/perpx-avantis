@@ -43,6 +43,21 @@ function createInterface() {
 }
 
 async function getUserInputs(): Promise<{ maxBudget: number; profitGoal: number; maxPerSession: number }> {
+  // Use environment variables if available (from API server), otherwise use interactive input
+  if (process.env.MAX_BUDGET && process.env.PROFIT_GOAL && process.env.MAX_PER_SESSION) {
+    const maxBudget = parseFloat(process.env.MAX_BUDGET) || 1000;
+    const profitGoal = parseFloat(process.env.PROFIT_GOAL) || 5;
+    const maxPerSession = parseInt(process.env.MAX_PER_SESSION) || 5;
+    
+    console.log('\n🚀 Hyperliquid Trading Bot Configuration\n');
+    console.log(`📊 Budget: $${maxBudget}`);
+    console.log(`🎯 Profit Goal: $${profitGoal}`);
+    console.log(`📈 Max Positions: ${maxPerSession}\n`);
+    
+    return { maxBudget, profitGoal, maxPerSession };
+  }
+  
+  // Fallback to interactive input for manual runs
   const rl = createInterface();
   
   console.log('\n🚀 Hyperliquid Trading Bot Configuration\n');
@@ -229,8 +244,8 @@ async function runSession() {
       }
     }
 
-    // Check if all positions are liquidated (no open positions and no slots left)
-    if (openCount === 0 && slotsLeft === maxPerSession) {
+    // Check if all positions are liquidated (no open positions and no slots left, but only if we've actually traded)
+    if (openCount === 0 && slotsLeft === maxPerSession && cycle > 1) {
       log('LIQUIDATION', `💀 All positions liquidated! Restarting session...`);
       
       // Try to record any remaining liquidated trades

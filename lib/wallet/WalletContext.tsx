@@ -3,6 +3,8 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { ethers } from 'ethers';
 import { walletBalanceUpdater, TradingResult } from './balanceUpdater';
+import { getHyperliquidBalanceUSD } from './hyperliquidBalance';
+import { useTrading } from '../hooks/useTrading';
 
 // Types
 export interface Token {
@@ -30,6 +32,10 @@ export interface WalletState {
   ethBalanceFormatted: string;
   holdings: TokenBalance[];
   totalPortfolioValue: number;
+  dailyChange: number;
+  dailyChangePercentage: number;
+  lastDayValue: number;
+  hyperliquidBalance: number;
   isLoading: boolean;
   error: string | null;
 }
@@ -39,6 +45,7 @@ export interface WalletContextType extends WalletState {
   disconnectWallet: () => void;
   refreshBalances: () => Promise<void>;
   switchNetwork: (chainId: number) => Promise<void>;
+  setHyperliquidWalletAddress: (address: string) => void;
 }
 
 // Supported tokens
@@ -90,11 +97,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     ethBalanceFormatted: '0.00',
     holdings: [],
     totalPortfolioValue: 0,
+    dailyChange: 0,
+    dailyChangePercentage: 0,
+    lastDayValue: 0,
+    hyperliquidBalance: 0,
     isLoading: false,
     error: null
   });
 
+  const [hyperliquidWalletAddress, setHyperliquidWalletAddress] = useState<string>('');
   const isLoadingRef = useRef(false);
+
+  // Note: Balance refresh is triggered manually from the UI when Hyperliquid address changes
 
   // Check if MetaMask is installed
   const isMetaMaskInstalled = useCallback(() => {
@@ -120,7 +134,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const balance = await contract.balanceOf(address);
       const balanceFormatted = ethers.formatUnits(balance, token.decimals);
       const valueUSD = parseFloat(balanceFormatted) * (token.price || 0);
-      
+
       return {
         token,
         balance: balance.toString(),
@@ -154,19 +168,46 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // Get ETH balance
       const { balance: ethBalance, balanceFormatted: ethBalanceFormatted } = await getEthBalance(provider, address);
       console.log('[WalletContext] ETH balance:', ethBalanceFormatted);
-      
+
       // Get token balances
       const tokenBalances = await Promise.all(
         SUPPORTED_TOKENS.map(token => getTokenBalance(provider, token, address))
       );
       console.log('[WalletContext] Token balances fetched:', tokenBalances.length);
 
-      // Calculate total portfolio value
+      // Get Hyperliquid balance (use Hyperliquid wallet address if provided, otherwise use MetaMask address)
+      const hyperliquidAddress = hyperliquidWalletAddress || address;
+      const hyperliquidBalance = await getHyperliquidBalanceUSD(hyperliquidAddress);
+      console.log('[WalletContext] Hyperliquid balance for address', hyperliquidAddress, ':', hyperliquidBalance);
+
+      // Calculate total portfolio value (including Hyperliquid balance)
       const ethValueUSD = parseFloat(ethBalanceFormatted) * 2000; // Mock ETH price
       const totalTokenValue = tokenBalances.reduce((sum, tokenBalance) => sum + tokenBalance.valueUSD, 0);
-      const totalPortfolioValue = ethValueUSD + totalTokenValue;
+      const totalPortfolioValue = ethValueUSD + totalTokenValue + hyperliquidBalance;
+
+      // Update daily change when total portfolio value changes
+      const lastDayValue = localStorage.getItem('lastDayPortfolioValue');
+      const lastDayDate = localStorage.getItem('lastDayDate');
+      const today = new Date().toDateString();
+
+      let dailyChange = 0;
+      let dailyChangePercentage = 0;
+      let lastDayPortfolioValue = totalPortfolioValue;
+
+      if (!lastDayValue || !lastDayDate || lastDayDate !== today) {
+        // First connection of the day, set initial values
+        localStorage.setItem('lastDayPortfolioValue', totalPortfolioValue.toString());
+        localStorage.setItem('lastDayDate', today);
+      } else {
+        // Calculate changes only if we have a previous value
+        lastDayPortfolioValue = parseFloat(lastDayValue);
+        dailyChange = totalPortfolioValue - lastDayPortfolioValue;
+        dailyChangePercentage = lastDayPortfolioValue !== 0 ? (dailyChange / lastDayPortfolioValue) * 100 : 0;
+      }
 
       console.log('[WalletContext] Total portfolio value:', totalPortfolioValue);
+      console.log('[WalletContext] Daily change:', dailyChange);
+      console.log('[WalletContext] Daily change percentage:', dailyChangePercentage);
 
       setState(prev => ({
         ...prev,
@@ -174,6 +215,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         ethBalanceFormatted,
         holdings: tokenBalances,
         totalPortfolioValue,
+        dailyChange,
+        dailyChangePercentage,
+        lastDayValue: lastDayPortfolioValue,
+        hyperliquidBalance,
         isLoading: false
       }));
     } catch (error) {
@@ -186,7 +231,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     } finally {
       isLoadingRef.current = false;
     }
-  }, [getEthBalance, getTokenBalance]);
+  }, [getEthBalance, getTokenBalance, hyperliquidWalletAddress]);
 
   // Refresh balances
   const refreshBalances = useCallback(async () => {
@@ -207,6 +252,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       ethBalanceFormatted: '0.00',
       holdings: [],
       totalPortfolioValue: 0,
+      dailyChange: 0,
+      dailyChangePercentage: 0,
+      lastDayValue: 0,
+      hyperliquidBalance: 0,
       isLoading: false,
       error: null
     });
@@ -302,13 +351,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let isMounted = true;
     let hasAttemptedAutoConnect = false;
-    
+
     const autoConnect = async () => {
       if (!isMounted || hasAttemptedAutoConnect) return;
       hasAttemptedAutoConnect = true;
-      
+
       console.log('[WalletContext] Starting auto-connect process...');
-      
+
       if (!isMetaMaskInstalled() || !window.ethereum) {
         console.log('[WalletContext] MetaMask not installed, skipping auto-connect');
         if (isMounted) {
@@ -326,7 +375,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         const accounts = await provider.send("eth_accounts", []);
 
         if (!isMounted) return;
-        
+
         console.log('[WalletContext] Found accounts:', accounts.length);
 
         if (accounts.length > 0) {
@@ -354,7 +403,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             window.ethereum.on('accountsChanged', handleAccountsChanged);
             window.ethereum.on('chainChanged', handleChainChanged);
             window.ethereum.on('disconnect', handleDisconnect);
-            
+
             console.log('[WalletContext] Auto-connect successful');
           }
         } else {
@@ -379,7 +428,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
     // Add a small delay to ensure the component is fully mounted
     const timer = setTimeout(autoConnect, 100);
-    
+
     return () => {
       isMounted = false;
       clearTimeout(timer);
@@ -390,7 +439,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsubscribe = walletBalanceUpdater.onTradingResult((result: TradingResult) => {
       console.log('[WalletContext] Trading result received:', result);
-      
+
       // Update the portfolio value based on trading results
       setState(prev => ({
         ...prev,
@@ -420,7 +469,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     connectWallet,
     disconnectWallet,
     refreshBalances,
-    switchNetwork
+    switchNetwork,
+    setHyperliquidWalletAddress
   };
 
   return (

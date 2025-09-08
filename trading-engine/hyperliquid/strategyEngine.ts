@@ -141,8 +141,8 @@ export async function evaluateSignalOnly(
       mosReason = `🧠 MOS=${mos.toFixed(4)} → Strong Short Bias`;
     }
 
-    // Skip in neutral regime with low ADX
-    if (marketRegime === 'neutral' && adx < 15) {
+    // Skip in neutral regime with very low ADX (loosened from 15 → 10)
+    if (marketRegime === 'neutral' && adx < 10) {
       return {
         ...res30m,
         shouldOpen: false,
@@ -158,32 +158,32 @@ export async function evaluateSignalOnly(
     const sniperConditions = {
       long: {
         signalScore: { value: signalScore, pass: signalScore > 0.4, expected: '> 0.4' }, // Loosened
-        rsi: { value: rsi, pass: rsi >= (mos > mosThresholdExtreme ? 25 : 30) && rsi <= (mos > mosThresholdExtreme ? 60 : 55), expected: '25–60 if extreme MOS long, else 30–55' },
+        rsi: { value: rsi, pass: rsi >= 20 && rsi <= 65, expected: '20–65' },
         rsiSlope: { value: rsiSlope30m, pass: rsiSlope30m > 0, expected: '> 0' },
-        atr: { value: atrPct, pass: atrPct > 0.2, expected: '> 0.2%' }, // Loosened
-        adx: { value: adx, pass: adx > (Math.abs(mos) > mosThresholdExtreme ? 25 : 15), expected: '> 25 if extreme, else >15' }, // Loosened base, stricter in extreme
-        priceSlope: { value: priceSlopePct, pass: priceSlopePct > -0.002, expected: '> -0.2%' }, // Loosened
-        trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h > (mos > mosThresholdExtreme ? 0.001 : -0.002), expected: '> 0.1% if extreme long' },
+        atr: { value: atrPct, pass: atrPct > 0.15, expected: '> 0.15%' },
+        adx: { value: adx, pass: adx > 12, expected: '> 12' },
+        priceSlope: { value: priceSlopePct, pass: priceSlopePct > -0.004, expected: '> -0.4%' },
+        trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h > -0.005, expected: '> -0.5%' },
         volumePct: { value: volumePct, pass: volumePct > (mos > mosThresholdExtreme ? 0.01 : 0.002), expected: '> 0.01 if extreme long' }, // Loosened base, higher in extreme
         candlePos5m: {
           value: candlePos5m,
-          pass: ['bottom', 'anticipation_bottom', 'doji_bottom'].includes(candlePos5m) && candleColor5m === 'red',
-          expected: 'bottom/anticipation_bottom/doji_bottom of red candle',
+          pass: ['bottom', 'anticipation_bottom', 'doji_bottom', 'middle'].includes(candlePos5m),
+          expected: 'bottom/anticipation_bottom/doji_bottom/middle',
         },
       },
       short: {
         signalScore: { value: signalScore, pass: signalScore > 0.4, expected: '> 0.4' }, // Loosened
-        rsi: { value: rsi, pass: rsi >= (mos < -mosThresholdExtreme ? 40 : 35) && rsi <= (mos < -mosThresholdExtreme ? 75 : 70), expected: '35–75 if extreme MOS short, else 40–70' },
+        rsi: { value: rsi, pass: rsi >= 35 && rsi <= 75, expected: '35–75' },
         rsiSlope: { value: rsiSlope30m, pass: rsiSlope30m < 0, expected: '< 0' },
-        atr: { value: atrPct, pass: atrPct > 0.2, expected: '> 0.2%' }, // Loosened
-        adx: { value: adx, pass: adx > (Math.abs(mos) > mosThresholdExtreme ? 25 : 15), expected: '> 25 if extreme, else >15' }, // Loosened base, stricter in extreme
-        priceSlope: { value: priceSlopePct, pass: priceSlopePct < 0.002, expected: '< 0.2%' }, // Loosened
-        trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h < (mos < -mosThresholdExtreme ? -0.001 : 0.002), expected: '< -0.1% if extreme short' },
+        atr: { value: atrPct, pass: atrPct > 0.15, expected: '> 0.15%' },
+        adx: { value: adx, pass: adx > 12, expected: '> 12' },
+        priceSlope: { value: priceSlopePct, pass: priceSlopePct < 0.004, expected: '< 0.4%' },
+        trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h < 0.005, expected: '< 0.5%' },
         volumePct: { value: volumePct, pass: volumePct > (mos < -mosThresholdExtreme ? 0.01 : 0.002), expected: '> 0.01 if extreme short' }, // Loosened base, higher in extreme
         candlePos5m: {
           value: candlePos5m,
-          pass: ['top', 'anticipation_top', 'doji_top'].includes(candlePos5m) && candleColor5m === 'green',
-          expected: 'top/anticipation_top/doji_top of green candle',
+          pass: ['top', 'anticipation_top', 'doji_top', 'middle'].includes(candlePos5m),
+          expected: 'top/anticipation_top/doji_top/middle',
         },
       },
       longReversal: { // Short position from overbought

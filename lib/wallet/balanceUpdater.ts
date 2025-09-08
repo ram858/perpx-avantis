@@ -23,7 +23,7 @@ export class WalletBalanceUpdater {
   // Subscribe to trading result updates
   onTradingResult(callback: (result: TradingResult) => void): () => void {
     this.updateCallbacks.push(callback);
-    
+
     // Return unsubscribe function
     return () => {
       const index = this.updateCallbacks.indexOf(callback);
@@ -46,10 +46,10 @@ export class WalletBalanceUpdater {
 
       // For now, we'll simulate the balance update
       const balanceChange = result.pnl;
-      
+
       if (balanceChange !== 0) {
         console.log(`[BALANCE_UPDATER] Balance change: $${balanceChange.toFixed(2)}`);
-        
+
         // Notify all subscribers
         this.updateCallbacks.forEach(callback => {
           try {
@@ -64,7 +64,7 @@ export class WalletBalanceUpdater {
         // - Record the transaction in a database
         // - Update the user's portfolio value
         // - Send notifications to the user
-        
+
         console.log(`[BALANCE_UPDATER] Wallet balance updated successfully`);
       }
     } catch (error) {

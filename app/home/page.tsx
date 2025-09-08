@@ -4,119 +4,67 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useWallet } from "@/lib/wallet/WalletContext"
+import { useTrading } from "@/lib/hooks/useTrading"
+import { useTradingProfits } from "@/lib/hooks/useTradingProfits"
 import Image from "next/image"
 import Link from "next/link"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 
 export default function HomePage() {
-  const [isHoldingsExpanded, setIsHoldingsExpanded] = useState(false)
   const [isBalanceVisible, setIsBalanceVisible] = useState(true)
   const [targetProfit, setTargetProfit] = useState("10")
   const [investmentAmount, setInvestmentAmount] = useState("50")
+  const [hyperliquidApiWallet, setHyperliquidApiWallet] = useState("")
+  const [localHyperliquidWalletAddress, setLocalHyperliquidWalletAddress] = useState("")
+  const [hyperliquidConnected, setHyperliquidConnected] = useState(false)
+  const [isSetupComplete, setIsSetupComplete] = useState(false)
 
     const {
     isConnected,
     totalPortfolioValue,
     ethBalanceFormatted,
     holdings,
+    dailyChange,
+    dailyChangePercentage,
     isLoading,
     error,
-    connectWallet
+    connectWallet,
+    setHyperliquidWalletAddress,
+    refreshBalances
   } = useWallet()
 
-  // Mock holdings data (will be replaced with real wallet data when connected)
-  const mockHoldings = [
-    {
-      name: "Bitcoin",
-      symbol: "BTC",
-      amount: "0.5432",
-      value: "$27,156.90",
-      change: "+5.2%",
-      color: "#f7931a",
-      link: "/detail/bitcoin",
-    },
-    {
-      name: "Ethereum",
-      symbol: "ETH",
-      amount: "3.2145",
-      value: "$6,429.00",
-      change: "+2.8%",
-      color: "#627eea",
-      link: "/detail/ethereum",
-    },
-    {
-      name: "DAI",
-      symbol: "DAI",
-      amount: "0.5432",
-      value: "$7,156.90",
-      change: "+0.2%",
-      color: "#f4b731",
-      link: "/detail/dai",
-    },
-    {
-      name: "Chainlink",
-      symbol: "LINK",
-      amount: "125.45",
-      value: "$2,890.50",
-      change: "+1.8%",
-      color: "#375bd2",
-      link: "/detail/chainlink",
-    },
-    {
-      name: "Polygon",
-      symbol: "MATIC",
-      amount: "1,250.00",
-      value: "$1,125.00",
-      change: "-0.5%",
-      color: "#8247e5",
-      link: "/detail/polygon",
-    },
-    {
-      name: "Solana",
-      symbol: "SOL",
-      amount: "15.75",
-      value: "$3,465.75",
-      change: "+3.1%",
-      color: "#00d4aa",
-      link: "/detail/solana",
-    },
-    {
-      name: "Cardano",
-      symbol: "ADA",
-      amount: "2,500.00",
-      value: "$1,200.00",
-      change: "+0.8%",
-      color: "#0033ad",
-      link: "/detail/cardano",
-    },
-    {
-      name: "Polkadot",
-      symbol: "DOT",
-      amount: "85.25",
-      value: "$892.13",
-      change: "-1.2%",
-      color: "#e6007a",
-      link: "/detail/polkadot",
-    },
-    {
-      name: "Avalanche",
-      symbol: "AVAX",
-      amount: "45.80",
-      value: "$1,647.60",
-      change: "+2.5%",
-      color: "#e84142",
-      link: "/detail/avalanche",
-    },
-    {
-      name: "Uniswap",
-      symbol: "UNI",
-      amount: "180.50",
-      value: "$1,264.50",
-      change: "+1.1%",
-      color: "#ff007a",
-      link: "/detail/uniswap",
-    },
-  ]
+  // Load saved data from localStorage on component mount
+  useEffect(() => {
+    const savedWalletAddress = localStorage.getItem('hyperliquidWalletAddress');
+    const savedApiWallet = localStorage.getItem('hyperliquidApiWallet');
+    
+    
+    if (savedWalletAddress && savedApiWallet) {
+      setLocalHyperliquidWalletAddress(savedWalletAddress);
+      setHyperliquidApiWallet(savedApiWallet);
+      setHyperliquidWalletAddress(savedWalletAddress);
+      setHyperliquidConnected(true);
+      setIsSetupComplete(true);
+      
+      
+      // Refresh balances with saved address
+      setTimeout(() => {
+        refreshBalances();
+      }, 100);
+    } else {
+    }
+  }, [setHyperliquidWalletAddress, refreshBalances])
+
+  // Trading system integration
+  const {
+    tradingSession,
+    isConnected: isTradingConnected,
+    error: tradingError
+  } = useTrading()
+
+  // Trading profits integration
+  const { totalProfits } = useTradingProfits()
+
 
   // Get real wallet holdings only when connected
   const realHoldings = isConnected ? [
@@ -206,7 +154,7 @@ export default function HomePage() {
               <h2 className="text-[#b4b4b4] text-sm font-medium">Total Portfolio Balance</h2>
               <div className="flex items-center space-x-3">
                 <span className="text-3xl sm:text-4xl font-bold text-white">
-                  {isBalanceVisible ? formatValue(totalPortfolioValue) : "••••••"}
+                  {isBalanceVisible ? formatValue(totalPortfolioValue + totalProfits) : "••••••"}
                 </span>
                 <button
                   onClick={() => setIsBalanceVisible(!isBalanceVisible)}
@@ -246,20 +194,56 @@ export default function HomePage() {
                 </button>
               </div>
               <div className="flex items-center space-x-4">
-                <span className="text-[#27c47d] text-sm sm:text-base font-medium">
-                  {isBalanceVisible ? "+$1,234.56 today" : "+••••••• today"}
+                <span className={`text-sm sm:text-base font-medium ${dailyChange >= 0 ? 'text-[#27c47d]' : 'text-[#ef4444]'}`}>
+                  {isBalanceVisible ? `${dailyChange >= 0 ? '+' : ''}${formatValue(dailyChange)} today` : `${dailyChange >= 0 ? '+' : ''}••••••• today`}
                 </span>
                 <div className="flex items-center space-x-1">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="text-[#27c47d]">
-                    <path d="M6 2L10 8.5L17 8L10 9.5L12 15L8.5 9.5L3 8L8.5 8.5L12 2Z" fill="currentColor" />
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className={dailyChange >= 0 ? 'text-[#27c47d]' : 'text-[#ef4444]'}>
+                    <path d={dailyChange >= 0 ? "M6 2L10 8.5L17 8L10 9.5L12 15L8.5 9.5L3 8L8.5 8.5L12 2Z" : "M6 10L2 3.5L-5 4L2 2.5L0 -3L3.5 2.5L9 4L3.5 3.5L0 10Z"} fill="currentColor" />
                   </svg>
-                  <span className="text-[#27c47d] text-sm sm:text-base font-medium">
-                    {isBalanceVisible ? "3.28%" : "•••%"}
+                  <span className={`text-sm sm:text-base font-medium ${dailyChange >= 0 ? 'text-[#27c47d]' : 'text-[#ef4444]'}`}>
+                    {isBalanceVisible ? `${dailyChangePercentage >= 0 ? '+' : ''}${dailyChangePercentage.toFixed(2)}%` : `${dailyChangePercentage >= 0 ? '+' : ''}•••%`}
                   </span>
                 </div>
               </div>
               <div className="text-xs text-[#9ca3af] mt-2">
-                Connected to wallet • Real-time data
+                {isConnected ? 'Connected to wallet' : 'Wallet not connected'} • {isTradingConnected ? 'Trading system connected' : 'Trading system offline'}
+                {tradingSession && (
+                  <span className="ml-2 text-[#27c47d]">
+                    • Active session: {tradingSession.status}
+                  </span>
+                )}
+              </div>
+              
+              {/* Trading Profits Breakdown */}
+              {totalProfits > 0 && (
+                <div className="mt-3 p-3 bg-[#1f2937] border border-[#374151] rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[#9ca3af] text-sm">Trading Profits:</span>
+                    <span className="text-[#27c47d] font-medium text-sm">+${totalProfits.toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
+
+        {/* Setup Form - Only show if not completed */}
+        {!isSetupComplete && (
+        <Card className="bg-[#1a1a1a] border-[#262626] p-4 sm:p-6 rounded-2xl">
+          <div className="space-y-4 sm:space-y-6">
+            <div className="flex items-center space-x-2">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="text-[#8759ff]">
+                <path d="M10 1L11.5 6.5L17 8L11.5 9.5L10 15L8.5 9.5L3 8L8.5 6.5L10 1Z" fill="currentColor" />
+                <path d="M15 3L15.5 4.5L17 5L15.5 5.5L15 7L14.5 5.5L13 5L14.5 4.5L15 3Z" fill="currentColor" />
+              </svg>
+              <h3 className="text-lg sm:text-xl font-bold text-white">Setup Trading Account</h3>
+            </div>
+            
+            <div className="bg-[#1f2937] border border-[#374151] rounded-lg p-4">
+              <p className="text-[#9ca3af] text-sm">
+                <strong>One-time setup:</strong> Enter your Hyperliquid wallet details below. This information will be saved locally and won't need to be entered again.
+              </p>
               </div>
             </div>
           </Card>
@@ -311,47 +295,167 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {!isConnected ? (
-                <div className="space-y-3">
-                  <Link href={`/chat?profit=${targetProfit}&investment=${investmentAmount}&mode=simulation`}>
-                    <Button className="w-full bg-[#8759ff] hover:bg-[#7C3AED] text-white font-semibold py-3 sm:py-4 rounded-2xl text-base sm:text-lg">
-                      🎮 Start Simulation
-                    </Button>
-                  </Link>
-                  <Link href="/simulation">
-                    <Button className="w-full bg-[#374151] hover:bg-[#4b5563] text-white font-semibold py-3 sm:py-4 rounded-2xl text-base sm:text-lg">
-                      🧪 Test Trading Engine
-                    </Button>
-                  </Link>
+              <div className="space-y-2">
+                <label className="text-white font-medium text-sm sm:text-base">Hyperliquid Wallet Address</label>
+                <div className="relative">
+                  <Input
+                    type="text"
+                    className="bg-[#262626] border-[#404040] text-white pl-3 sm:pl-4 pr-3 sm:pr-4 py-3 sm:py-4 rounded-2xl text-base sm:text-lg"
+                    placeholder="0x06D923c26f0beA4389CAdBf873dA63eF52E97395"
+                    value={localHyperliquidWalletAddress}
+                    onChange={(e) => {
+                      setLocalHyperliquidWalletAddress(e.target.value); // Update local state
+                      setHyperliquidWalletAddress(e.target.value); // Update wallet context
+                      
+                      // Check if both wallet address and API key are complete
+                      if (e.target.value.trim() && hyperliquidApiWallet.trim()) {
+                        setIsSetupComplete(true);
+                      }
+                    }}
+                  />
                 </div>
-              ) : totalPortfolioValue === 0 ? (
+                <div className="bg-[#1f2937] border border-[#374151] rounded-lg p-3">
+                  <p className="text-[#9ca3af] text-xs mb-2">
+                    <strong>Your Hyperliquid wallet address:</strong>
+                  </p>
+                  <p className="text-[#9ca3af] text-xs">
+                    This is the wallet address where you have your Hyperliquid balance. 
+                    You can find this in your Hyperliquid account settings or by connecting your wallet to Hyperliquid.
+                  </p>
+                  <p className="text-[#27c47d] text-xs mt-2">
+                    💡 If you're not sure, you can use your MetaMask wallet address (same as above).
+                  </p>
+                </div>
+                
+                {/* Connect to Hyperliquid Button - Only show if both wallet address and API key are entered */}
+                {localHyperliquidWalletAddress.trim() && hyperliquidApiWallet.trim() && !hyperliquidConnected && (
+                  <Button
+                    onClick={async () => {
+                      if (localHyperliquidWalletAddress.trim()) {
+                        // Set the Hyperliquid wallet address
+                        setHyperliquidWalletAddress(localHyperliquidWalletAddress);
+                        setHyperliquidConnected(true);
+                        
+                        // Save to localStorage
+                        localStorage.setItem('hyperliquidWalletAddress', localHyperliquidWalletAddress);
+                        
+                        // Manually trigger balance refresh to ensure it works
+                        setTimeout(async () => {
+                          await refreshBalances();
+                        }, 100);
+                        
+                        // Check if both wallet address and API key are complete
+                        if (hyperliquidApiWallet.trim()) {
+                          setIsSetupComplete(true);
+                        }
+                      }
+                    }}
+                    disabled={!localHyperliquidWalletAddress.trim() || localHyperliquidWalletAddress.length < 42 || hyperliquidConnected}
+                    className={`w-full ${hyperliquidConnected ? 'bg-[#27c47d] hover:bg-[#22a85a]' : 'bg-[#4A2C7C] hover:bg-[#5A3C8C]'} disabled:bg-[#4b5563] disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2`}
+                  >
+                    {hyperliquidConnected ? (
+                      <>
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                        <span>Connected to Hyperliquid</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        <span>Connect to Hyperliquid</span>
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-white font-medium text-sm sm:text-base">Hyperliquid API Wallet Private Key</label>
+                <div className="relative">
+                  <Input
+                    type="password"
+                    className="bg-[#262626] border-[#404040] text-white pl-3 sm:pl-4 pr-3 sm:pr-4 py-3 sm:py-4 rounded-2xl text-base sm:text-lg"
+                    placeholder="Enter your API wallet private key (64 characters)"
+                    value={hyperliquidApiWallet}
+                    onChange={(e) => {
+                      setHyperliquidApiWallet(e.target.value);
+                      // Save to localStorage as user types
+                      if (e.target.value.trim()) {
+                        localStorage.setItem('hyperliquidApiWallet', e.target.value);
+                        
+                        // Check if both wallet address and API key are complete
+                        if (localHyperliquidWalletAddress.trim() && e.target.value.trim()) {
+                          setIsSetupComplete(true);
+                        }
+                      }
+                    }}
+                  />
+                </div>
+                <div className="bg-[#1f2937] border border-[#374151] rounded-lg p-3">
+                  <p className="text-[#9ca3af] text-xs mb-2">
+                    <strong>How to get your API wallet private key:</strong>
+                  </p>
+                  <ol className="text-[#9ca3af] text-xs space-y-1 list-decimal list-inside">
+                    <li>Go to <a href="https://app.hyperliquid-testnet.xyz/trade" target="_blank" className="text-[#8759ff] hover:underline">Hyperliquid Testnet</a></li>
+                    <li>Connect your wallet (same as MetaMask)</li>
+                    <li>Go to <strong>API</strong> section in the menu</li>
+                    <li>Click <strong>"Generate"</strong> to create a new API wallet</li>
+                    <li>Click <strong>"Authorize API Wallet"</strong> to activate it</li>
+                    <li>Click <strong>"Export Private Key"</strong> on your API wallet</li>
+                    <li>Copy the 64-character private key (starts with 0x...)</li>
+                  </ol>
+                  <p className="text-[#27c47d] text-xs mt-2">
+                    ✅ API wallets are secure - they can trade but cannot withdraw funds!
+                  </p>
+                  <p className="text-[#ef4444] text-xs mt-1">
+                    ⚠️ This is the API wallet's private key, not your main wallet's private key!
+                  </p>
+                </div>
+              </div>
+
+              {tradingSession && tradingSession.status === 'running' ? (
                 <div className="space-y-3">
-                  <Link href={`/chat?profit=${targetProfit}&investment=${investmentAmount}&mode=simulation`}>
-                    <Button className="w-full bg-[#8759ff] hover:bg-[#7C3AED] text-white font-semibold py-3 sm:py-4 rounded-2xl text-base sm:text-lg">
-                      🎮 Start Simulation
-                    </Button>
-                  </Link>
-                  <Link href="/simulation">
+                  <div className="bg-[#1f2937] border border-[#374151] rounded-2xl p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-white font-semibold">Active Trading Session</span>
+                      <span className="text-[#27c47d] text-sm">Running</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-[#9ca3af]">PnL:</span>
+                        <span className={`ml-1 font-semibold ${tradingSession.pnl >= 0 ? 'text-[#27c47d]' : 'text-[#ef4444]'}`}>
+                          ${tradingSession.pnl.toFixed(2)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[#9ca3af]">Positions:</span>
+                        <span className="ml-1 font-semibold text-white">{tradingSession.openPositions}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <Link href="/chat">
                     <Button className="w-full bg-[#374151] hover:bg-[#4b5563] text-white font-semibold py-3 sm:py-4 rounded-2xl text-base sm:text-lg">
-                      🧪 Test Trading Engine
+                      📊 View Trading Dashboard
                     </Button>
                   </Link>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  <Link href={`/chat?profit=${targetProfit}&investment=${investmentAmount}&mode=real`}>
-                    <Button className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 sm:py-4 rounded-2xl text-base sm:text-lg">
-                      💰 Start Real Trading
-                    </Button>
-                  </Link>
-                  <Link href={`/chat?profit=${targetProfit}&investment=${investmentAmount}&mode=simulation`}>
+                <div className="text-center">
+                  <p className="text-[#9ca3af] text-sm">
+                    Complete the setup above to start trading
+                  </p>
+                </div>
+              )}
+
+              {/* Single Start button inside goals card when setup complete */}
+              {isSetupComplete && (
+                <div className="mt-4">
+                  <Link href={`/chat?profit=${targetProfit}&investment=${investmentAmount}&mode=real&hyperliquidApiWallet=${encodeURIComponent(hyperliquidApiWallet)}`}>
                     <Button className="w-full bg-[#8759ff] hover:bg-[#7C3AED] text-white font-semibold py-3 sm:py-4 rounded-2xl text-base sm:text-lg">
-                      🎮 Start Simulation
-                    </Button>
-                  </Link>
-                  <Link href="/trading">
-                    <Button className="w-full bg-[#374151] hover:bg-[#4b5563] text-white font-semibold py-3 sm:py-4 rounded-2xl text-base sm:text-lg">
-                      ⚙️ Trading Settings
+                      🚀 Start Trading
                     </Button>
                   </Link>
                 </div>
@@ -360,23 +464,17 @@ export default function HomePage() {
           </div>
         </Card>
 
-        {/* Your Holdings - Only show when connected */}
+        
+
+        {/* Your Holdings - Only show when connected and has holdings */}
         {isConnected && realHoldings.length > 0 && (
           <div className="space-y-4 sm:space-y-6 mt-6 sm:mt-8">
             <div className="flex items-center justify-between px-1 sm:px-2">
               <h3 className="text-lg sm:text-xl font-bold text-white">Your Holdings</h3>
-              {realHoldings.length > 3 && (
-                <button
-                  onClick={() => setIsHoldingsExpanded(true)}
-                  className="text-[#27c47d] font-medium hover:text-[#22c55e] transition-colors"
-                >
-                  See All
-                </button>
-              )}
             </div>
 
             <div className="space-y-5 sm:space-y-6 pb-6 sm:pb-8 px-0 sm:px-1">
-              {realHoldings.slice(0, 3).map((holding, index) => (
+              {realHoldings.map((holding, index) => (
                 <Link key={index} href={holding.link}>
                   <div className="flex items-center justify-between p-4 sm:p-5 bg-[#1a1a1a] rounded-2xl hover:bg-[#202020] transition-colors cursor-pointer mb-4">
                     <div className="flex items-center space-x-3 sm:space-x-4">
@@ -407,91 +505,8 @@ export default function HomePage() {
             </div>
           </div>
         )}
-
-        {/* Empty state when connected but no holdings */}
-        {isConnected && realHoldings.length === 0 && (
-          <div className="space-y-4 sm:space-y-6 mt-6 sm:mt-8">
-            <div className="flex items-center justify-between px-1 sm:px-2">
-              <h3 className="text-lg sm:text-xl font-bold text-white">Your Holdings</h3>
-            </div>
-            <Card className="bg-[#1a1a1a] border-[#262626] p-8 rounded-2xl text-center">
-              <div className="w-16 h-16 bg-[#374151] rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" className="text-[#9ca3af]">
-                  <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  <path d="M2 17L12 22L22 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  <path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </div>
-              <h4 className="text-white font-semibold text-lg mb-2">No Holdings Found</h4>
-              <p className="text-[#9ca3af] text-sm">
-                Your wallet doesn't have any supported tokens yet. Add some ETH or supported tokens to see them here.
-              </p>
-            </Card>
-          </div>
-        )}
       </div>
 
-      {/* Expandable Holdings Overlay */}
-      {isHoldingsExpanded && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end">
-          <div className="w-full max-w-md mx-auto bg-[#0d0d0d] rounded-t-3xl animate-in slide-in-from-bottom duration-300 max-h-[85vh] flex flex-col">
-            {/* Fixed Header */}
-            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-[#262626] bg-[#0d0d0d] rounded-t-3xl">
-              <h2 className="text-xl sm:text-2xl font-bold text-white">All Holdings</h2>
-              <button
-                onClick={() => setIsHoldingsExpanded(false)}
-                className="text-white hover:text-gray-300 transition-colors p-2"
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path
-                    d="M18 6L6 18M6 6L18 18"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
-            </div>
-
-            {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto momentum-scroll p-4 sm:p-6">
-              <div className="space-y-5 sm:space-y-6">
-                {realHoldings.map((holding, index) => (
-                  <Link key={index} href={holding.link}>
-                    <div className="flex items-center justify-between p-4 sm:p-5 bg-[#1a1a1a] rounded-2xl hover:bg-[#202020] transition-colors cursor-pointer mb-4">
-                      <div className="flex items-center space-x-3 sm:space-x-4">
-                        <div
-                          className="w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center"
-                          style={{ backgroundColor: holding.color }}
-                        >
-                          <span className="text-white font-bold text-sm sm:text-base">
-                            {holding.symbol.slice(0, 2)}
-                          </span>
-                        </div>
-                        <div>
-                          <h4 className="text-white font-semibold text-base sm:text-lg">{holding.name}</h4>
-                          <p className="text-[#b4b4b4] text-sm sm:text-base">
-                            {holding.amount} {holding.symbol}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-white font-semibold text-base sm:text-lg">{holding.value}</p>
-                        <p
-                          className={`text-sm sm:text-base ${holding.change.startsWith("+") ? "text-[#27c47d]" : "text-[#ef4444]"}`}
-                        >
-                          {holding.change}
-                        </p>
-                      </div>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

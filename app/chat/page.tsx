@@ -37,6 +37,8 @@ export default function ChatPage() {
     tradingSession,
     startTrading,
     stopTrading,
+    refreshSessionStatus,
+    clearSession,
   } = useTrading()
 
   // Wallet integration
@@ -53,14 +55,29 @@ export default function ChatPage() {
       setTradingPhase('completed')
     } else if (tradingSession?.status === 'stopped') {
       setTradingPhase('completed')
+      // Hide the live card when session is stopped
+      setShowLiveCard(false)
+      // Clear the trading session after a delay to show final results
+      setTimeout(() => {
+        clearSession()
+      }, 5000) // Clear after 5 seconds to show final PnL
     }
   }, [tradingSession])
+
+  // Clear stale data when component mounts
+  useEffect(() => {
+    // Clear any existing trading session data to prevent stale UI
+    clearSession()
+    setShowLiveCard(false)
+    setTradingPhase('initial')
+  }, [])
 
   // Auto-start trading if parameters are provided
   useEffect(() => {
     const profit = searchParams.get('profit')
     const investment = searchParams.get('investment')
     const mode = searchParams.get('mode') // 'real' or 'simulation'
+    const hyperliquidApiWallet = searchParams.get('hyperliquidApiWallet') || undefined
     
     if (profit && investment && !tradingSession) {
       const profitNum = parseInt(profit)
@@ -101,7 +118,7 @@ export default function ChatPage() {
           profitGoal: profitNum,
           maxBudget: investmentNum,
           maxPerSession: 5
-        }).catch(error => {
+        }, hyperliquidApiWallet).catch(error => {
           setMessages(prev => [...prev, {
             type: "bot",
             content: `❌ Failed to start real trading: ${error.message}`,
@@ -121,7 +138,7 @@ export default function ChatPage() {
           profitGoal: profitNum,
           maxBudget: investmentNum,
           maxPerSession: 5
-        }).catch(error => {
+        }, hyperliquidApiWallet).catch(error => {
           setMessages(prev => [...prev, {
             type: "bot",
             content: `❌ Failed to start simulation: ${error.message}`,
@@ -184,7 +201,7 @@ export default function ChatPage() {
               maxBudget: investmentAmount,
               profitGoal: profitGoal,
               maxPerSession: 5
-            })
+            }, searchParams.get('hyperliquidApiWallet') || undefined)
             
             if (sessionId) {
               setTradingPhase("active")
@@ -924,7 +941,7 @@ export default function ChatPage() {
       </div>
 
       {/* Small Terminal Widget */}
-      {!isTerminalExpanded && showLiveCard && (
+      {!isTerminalExpanded && showLiveCard && tradingSession?.status === 'running' && (
         <div
           className={`terminal-widget fixed z-50 transition-all duration-75 ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
           style={{
@@ -1033,6 +1050,41 @@ export default function ChatPage() {
                       Status: {tradingSession?.status || 'No active session'}
                     </span>
                   </div>
+                </div>
+                
+                {/* Session Control Buttons */}
+                <div className="mt-4 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      onClick={refreshSessionStatus}
+                      className="bg-[#4A2C7C] hover:bg-[#5A3C8C] text-white rounded-lg py-2"
+                    >
+                      🔄 Refresh
+                    </Button>
+                    
+                    <Button
+                      onClick={() => {
+                        clearSession();
+                        setShowLiveCard(false);
+                        setTradingPhase('initial');
+                      }}
+                      className="bg-[#dc2626] hover:bg-[#b91c1c] text-white rounded-lg py-2"
+                    >
+                      🗑️ Clear
+                    </Button>
+                  </div>
+                  
+                  {tradingSession?.status === 'stopped' && (
+                    <Button
+                      onClick={() => {
+                        clearSession();
+                        setShowLiveCard(false);
+                      }}
+                      className="w-full bg-[#6b7280] hover:bg-[#4b5563] text-white rounded-lg py-2"
+                    >
+                      🗑️ Clear Session
+                    </Button>
+                  )}
                 </div>
               </Card>
 
@@ -1210,7 +1262,7 @@ export default function ChatPage() {
                       profitGoal: profit,
                       maxBudget: investment,
                       maxPerSession: 5
-                    });
+                    }, searchParams.get('hyperliquidApiWallet') || undefined);
                     
                     // Close the modal
                     setShowTradingGoals(false);

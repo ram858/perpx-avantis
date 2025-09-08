@@ -22,11 +22,12 @@ class RealTradingBot {
     this.activeProcesses = new Map();
   }
 
-  async startSession(config) {
+  async startSession(config, userHyperliquidApiWallet = null) {
     const sessionId = `session_${Date.now()}`;
     const session = {
       sessionId,
       config,
+      userHyperliquidApiWallet,
       status: 'starting',
       pnl: 0,
       openPositions: 0,
@@ -39,8 +40,8 @@ class RealTradingBot {
     this.sessions.set(sessionId, session);
     
     try {
-      // Start the real Hyperliquid trading bot
-      await this.startHyperliquidBot(sessionId, config);
+      // Start the real Hyperliquid trading bot with user's key
+      await this.startHyperliquidBot(sessionId, config, userHyperliquidApiWallet);
       session.status = 'running';
     return sessionId;
     } catch (error) {
@@ -51,19 +52,29 @@ class RealTradingBot {
     }
   }
 
-  async startHyperliquidBot(sessionId, config) {
+  async startHyperliquidBot(sessionId, config, userHyperliquidApiWallet = null) {
     return new Promise((resolve, reject) => {
       const botPath = path.join(__dirname, 'trading-engine', 'hyperliquid');
       
-      // Check if we're in test mode (using example private key)
-      const isTestMode = process.env.HYPERLIQUID_PK === '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef' ||
-                        process.env.HYPERLIQUID_PK === '0x_your_private_key_here' ||
-                        !process.env.HYPERLIQUID_PK;
+      // Use user's API wallet private key if provided, otherwise fall back to simulation
+      const hyperliquidApiWalletKey = userHyperliquidApiWallet || process.env.HYPERLIQUID_API_WALLET_KEY;
+      
+      console.log(`[REAL_TRADING] User provided API wallet key: ${userHyperliquidApiWallet ? 'Yes' : 'No'}`);
+      console.log(`[REAL_TRADING] API wallet key length: ${hyperliquidApiWalletKey ? hyperliquidApiWalletKey.length : 'null'}`);
+      console.log(`[REAL_TRADING] API wallet key starts with 0x: ${hyperliquidApiWalletKey ? hyperliquidApiWalletKey.startsWith('0x') : 'null'}`);
+      
+      // Check if we have a valid API wallet private key for real trading
+      // Clean the key by removing any whitespace and extra characters
+      const cleanKey = hyperliquidApiWalletKey ? hyperliquidApiWalletKey.trim().replace(/\s+/g, '') : '';
+      console.log(`[REAL_TRADING] Cleaned API wallet key length: ${cleanKey ? cleanKey.length : 'null'}`);
+      console.log(`[REAL_TRADING] Cleaned API wallet key starts with 0x: ${cleanKey ? cleanKey.startsWith('0x') : 'null'}`);
+      
+      const isTestMode = !cleanKey || 
+                        !cleanKey.startsWith('0x') ||
+                        cleanKey.length !== 66;
       
       if (isTestMode) {
         console.log(`[REAL_TRADING] ⚠️  TEST MODE: Using simulation instead of real trading`);
-        console.log(`[REAL_TRADING] To enable real trading, set a real HYPERLIQUID_PK in .env.local`);
-        console.log(`[REAL_TRADING] Current HYPERLIQUID_PK: ${process.env.HYPERLIQUID_PK ? 'Set but invalid' : 'Not set'}`);
         
         // Fall back to simulation mode
         this.startSimulationMode(sessionId, config);
@@ -73,6 +84,7 @@ class RealTradingBot {
 
       const env = {
         ...process.env,
+        HYPERLIQUID_PK: cleanKey, // Use cleaned API wallet private key
         MAX_BUDGET: config.maxBudget.toString(),
         PROFIT_GOAL: config.profitGoal.toString(),
         MAX_PER_SESSION: config.maxPerSession.toString(),
@@ -177,6 +189,16 @@ class RealTradingBot {
       session.cycle = parseInt(cycleMatch[1]);
     }
 
+    // Try to capture realized PnL lines from trade close logs and accumulate
+    const closePnLMatch = output.match(/PnL[:=]\s*([+\-]?[0-9]*\.?[0-9]+)/i);
+    if (closePnLMatch) {
+      const realized = parseFloat(closePnLMatch[1]);
+      if (Number.isFinite(realized)) {
+        session.pnl = (session.pnl || 0) + realized;
+        session.lastUpdate = new Date();
+      }
+    }
+
     // Check for completion
     if (output.includes('Session completed') || output.includes('Profit goal reached')) {
       session.status = 'completed';
@@ -191,18 +213,75 @@ class RealTradingBot {
   stopSession(sessionId) {
     const session = this.sessions.get(sessionId);
     if (session) {
-      session.status = 'stopped';
-      console.log(`[REAL_TRADING] Session ${sessionId} stopped`);
+      session.status = 'stopping';
+      console.log(`[REAL_TRADING] Session ${sessionId} stopping`);
     }
 
-    const process = this.activeProcesses.get(sessionId);
-    if (process) {
-      console.log(`[REAL_TRADING] Stopping bot process for session ${sessionId}`);
-      process.kill('SIGTERM');
-      this.activeProcesses.delete(sessionId);
+    const proc = this.activeProcesses.get(sessionId);
+    const sessionRef = this.sessions.get(sessionId);
+
+    // If we have a running bot, attempt graceful flatten first
+    if (proc && sessionRef) {
+      try {
+        const botPath = path.join(__dirname, 'trading-engine', 'hyperliquid');
+        // Reuse the same cleaned key logic used during start
+        const rawKey = sessionRef.userHyperliquidApiWallet || process.env.HYPERLIQUID_API_WALLET_KEY || process.env.HYPERLIQUID_PK;
+        const cleanKey = rawKey ? rawKey.trim().replace(/\s+/g, '') : '';
+        const env = { ...process.env, HYPERLIQUID_PK: cleanKey };
+
+        console.log(`[REAL_TRADING] Attempting close-all before stopping for session ${sessionId}`);
+        const closeProc = spawn('npx', ['ts-node', 'closeAll.ts'], {
+          cwd: botPath,
+          env,
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        closeProc.stdout.on('data', (d) => console.log(`[HYPERLIQUID_CLOSE] ${d.toString().trim()}`));
+        closeProc.stderr.on('data', (d) => console.warn(`[HYPERLIQUID_CLOSE_ERR] ${d.toString().trim()}`));
+
+        // After close-all finishes (or times out), terminate main bot
+        const timeout = setTimeout(() => {
+          console.warn(`[REAL_TRADING] close-all timeout, proceeding to stop bot for ${sessionId}`);
+          try { proc.kill('SIGTERM'); } catch (_) {}
+          this.activeProcesses.delete(sessionId);
+          const s = this.sessions.get(sessionId);
+          if (s) {
+            s.status = 'stopped';
+            s.lastUpdate = new Date();
+          }
+        }, 15000);
+
+        closeProc.on('close', () => {
+          clearTimeout(timeout);
+          try { proc.kill('SIGTERM'); } catch (_) {}
+          this.activeProcesses.delete(sessionId);
+          const s = this.sessions.get(sessionId);
+          if (s) {
+            s.status = 'stopped';
+            s.lastUpdate = new Date();
+          }
+        });
+      } catch (e) {
+        console.warn(`[REAL_TRADING] close-all failed, stopping bot anyway for ${sessionId}:`, e?.message || e);
+        try { proc.kill('SIGTERM'); } catch (_) {}
+        this.activeProcesses.delete(sessionId);
+        const s = this.sessions.get(sessionId);
+        if (s) {
+          s.status = 'stopped';
+          s.lastUpdate = new Date();
+        }
+      }
+      return true;
     }
-    
-    return true;
+
+    // No running process: just mark stopped
+    const s = this.sessions.get(sessionId);
+    if (s) {
+      s.status = 'stopped';
+      s.lastUpdate = new Date();
+      return true;
+    }
+    return false;
   }
 
   getSessionStatus(sessionId) {
@@ -290,7 +369,7 @@ app.get('/api/status', (req, res) => {
 
 app.post('/api/start-trading', async (req, res) => {
   try {
-    const { maxBudget, profitGoal, maxPerSession } = req.body;
+    const { maxBudget, profitGoal, maxPerSession, hyperliquidApiWallet } = req.body;
     
     if (!maxBudget || !profitGoal || !maxPerSession) {
       return res.status(400).json({ error: 'Missing required parameters' });
@@ -300,7 +379,7 @@ app.post('/api/start-trading', async (req, res) => {
       maxBudget,
       profitGoal,
       maxPerSession
-    });
+    }, hyperliquidApiWallet);
 
     console.log(`[API] Started real trading session ${sessionId}`);
     res.json({ sessionId, status: 'started' });
