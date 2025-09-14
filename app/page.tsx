@@ -1,8 +1,21 @@
+"use client"
+
 import Link from "next/link"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
+import { useRouter } from "next/navigation"
+import { useEffect } from "react"
 
 export default function WelcomePage() {
+  const router = useRouter()
+
+  useEffect(() => {
+    // Check if user has been here before and skip to home
+    const hasVisited = localStorage.getItem('prepx_visited')
+    if (hasVisited) {
+      router.push('/home')
+    }
+  }, [router])
   return (
     <div className="min-h-screen bg-[#0d0d0d] flex flex-col items-center justify-center px-6 relative overflow-hidden">
       {/* Background gradient circles */}
@@ -47,8 +60,13 @@ export default function WelcomePage() {
 
         {/* Get Started button */}
         <div className="w-full max-w-sm pt-8">
-          <Link href="/loading">
-            <Button className="w-full bg-[#8759ff] hover:bg-[#7C3AED] text-white font-semibold py-4 rounded-2xl text-lg">
+          <Link href="/home">
+            <Button 
+              className="w-full bg-[#8759ff] hover:bg-[#7C3AED] text-white font-semibold py-4 rounded-2xl text-lg"
+              onClick={() => {
+                localStorage.setItem('prepx_visited', 'true')
+              }}
+            >
               Get Started →
             </Button>
           </Link>

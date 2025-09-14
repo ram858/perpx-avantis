@@ -47,10 +47,10 @@ export default function HomePage() {
       setIsSetupComplete(true);
       
       
-      // Refresh balances with saved address
+      // Delay balance refresh to improve initial loading
       setTimeout(() => {
         refreshBalances();
-      }, 100);
+      }, 1000); // Increased delay
     } else {
     }
   }, [setHyperliquidWalletAddress, refreshBalances])

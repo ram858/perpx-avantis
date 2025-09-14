@@ -170,23 +170,38 @@ class RealTradingBot {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    // Parse PnL updates
+    // Debug: Log the output being parsed
+    if (output.includes('Total PnL:') || output.includes('Open Positions:') || output.includes('Cycle')) {
+      console.log(`[PARSE_DEBUG] Session ${sessionId}: "${output.trim()}"`);
+    }
+
+    // Parse PnL updates - handle multiple formats
     const pnlMatch = output.match(/Total PnL: \$([\d.-]+)/);
     if (pnlMatch) {
       session.pnl = parseFloat(pnlMatch[1]);
       session.lastUpdate = new Date();
+      console.log(`[PARSE_DEBUG] Updated PnL to: ${session.pnl}`);
     }
 
-    // Parse position updates
-    const positionMatch = output.match(/Open positions: (\d+)/);
+    // Parse position updates - handle both "positions" and "Positions"
+    const positionMatch = output.match(/Open [Pp]ositions?: (\d+)/);
     if (positionMatch) {
       session.openPositions = parseInt(positionMatch[1]);
+      console.log(`[PARSE_DEBUG] Updated openPositions to: ${session.openPositions}`);
     }
 
     // Parse cycle updates
     const cycleMatch = output.match(/Cycle (\d+)/);
     if (cycleMatch) {
       session.cycle = parseInt(cycleMatch[1]);
+      console.log(`[PARSE_DEBUG] Updated cycle to: ${session.cycle}`);
+    }
+
+    // Parse from debug output format
+    const debugMatch = output.match(/Open Positions: (\d+)/);
+    if (debugMatch) {
+      session.openPositions = parseInt(debugMatch[1]);
+      console.log(`[PARSE_DEBUG] Updated openPositions (debug) to: ${session.openPositions}`);
     }
 
     // Try to capture realized PnL lines from trade close logs and accumulate
@@ -208,6 +223,8 @@ class RealTradingBot {
     if (output.includes('FATAL') || output.includes('Error:')) {
       session.status = 'error';
     }
+
+    // Session data will be broadcast via the existing interval
   }
 
   stopSession(sessionId) {
@@ -466,6 +483,9 @@ setInterval(() => {
     if (ws.readyState === WebSocket.OPEN && ws.sessionId) {
       const session = tradingBot.getSessionStatus(ws.sessionId);
       if (session) {
+        // Debug: Log what we're sending
+        console.log(`[BROADCAST_DEBUG] Sending to ${ws.sessionId}: PnL=${session.pnl}, Positions=${session.openPositions}, Cycle=${session.cycle}`);
+        
         ws.send(JSON.stringify({
           type: 'session_update',
           sessionId: ws.sessionId,

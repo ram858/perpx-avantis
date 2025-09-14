@@ -103,8 +103,10 @@ export function useTrading() {
           const data: TradingUpdate = JSON.parse(event.data);
 
           if (data.type === 'session_update' && data.data && 'sessionId' in data.data) {
+            console.log('[FRONTEND_DEBUG] Received session_update:', data.data);
             setTradingSession(data.data as SessionStatus);
           } else if (data.type === 'trading_update' && data.data && 'sessionId' in data.data) {
+            console.log('[FRONTEND_DEBUG] Received trading_update:', data.data);
             setTradingSession(data.data as SessionStatus);
           } else if (data.type === 'error') {
             setError(data.data?.error || 'Unknown error');
@@ -262,8 +264,9 @@ export function useTrading() {
     }
   }, []);
 
-  // Connect on mount with a small delay to ensure server is ready
+  // Connect WebSocket when component mounts
   useEffect(() => {
+    // Connect with a small delay to ensure server is ready
     const connectWithDelay = () => {
       setTimeout(() => {
         connectWebSocket();

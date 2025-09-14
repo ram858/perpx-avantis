@@ -6,50 +6,34 @@ import Image from "next/image"
 
 export default function LoadingPage() {
   const [progress, setProgress] = useState(0)
-  const [loadingText, setLoadingText] = useState("Initializing PrepX...")
+  const [loadingText, setLoadingText] = useState("Loading PrepX...")
   const router = useRouter()
 
   useEffect(() => {
-    const loadingSteps = [
-      { text: "Initializing PrepX...", duration: 800 },
-      { text: "Connecting to AI Trading Engine...", duration: 1200 },
-      { text: "Loading Market Data...", duration: 1000 },
-      { text: "Setting up Portfolio...", duration: 800 },
-      { text: "Ready to Trade!", duration: 500 },
-    ]
-
-    let currentStep = 0
-    let currentProgress = 0
-
+    // Ultra-fast loading - just show progress animation
+    const startTime = Date.now()
+    const duration = 800 // Total loading time: 800ms
+    
     const updateProgress = () => {
-      if (currentStep < loadingSteps.length) {
-        const step = loadingSteps[currentStep]
-        setLoadingText(step.text)
-
-        const targetProgress = ((currentStep + 1) / loadingSteps.length) * 100
-        const progressIncrement = (targetProgress - currentProgress) / (step.duration / 50)
-
-        const progressInterval = setInterval(() => {
-          currentProgress += progressIncrement
-          setProgress(Math.min(currentProgress, targetProgress))
-
-          if (currentProgress >= targetProgress) {
-            clearInterval(progressInterval)
-            currentStep++
-
-            if (currentStep < loadingSteps.length) {
-              setTimeout(updateProgress, 200)
-            } else {
-              // Navigate to home after loading completes
-              setTimeout(() => {
-                router.push("/home")
-              }, 800)
-            }
-          }
-        }, 50)
+      const elapsed = Date.now() - startTime
+      const progressPercent = Math.min((elapsed / duration) * 100, 100)
+      
+      setProgress(progressPercent)
+      
+      if (progressPercent < 50) {
+        setLoadingText("Loading PrepX...")
+      } else if (progressPercent < 100) {
+        setLoadingText("Ready to Trade!")
+      }
+      
+      if (progressPercent < 100) {
+        requestAnimationFrame(updateProgress)
+      } else {
+        // Navigate immediately when complete
+        router.push("/home")
       }
     }
-
+    
     updateProgress()
   }, [router])
 

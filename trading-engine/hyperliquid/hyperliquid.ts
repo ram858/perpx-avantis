@@ -80,11 +80,14 @@ async function recordTradeInWinRateTracker(symbol: string, exitPrice: number, si
 dotenv.config();
 
 // 🔐 Load private key and init account
+// Priority: Environment variable (from API server) > .env file
 const rawKey = process.env.HYPERLIQUID_PK;
+console.log(`[HYPERLIQUID_BOT] 🔑 Using private key: ${rawKey ? rawKey.substring(0, 10) + '...' + rawKey.substring(rawKey.length - 4) : 'null'}`);
+console.log(`[HYPERLIQUID_BOT] 🔑 Key source: ${process.env.HYPERLIQUID_PK ? 'Environment variable' : 'Not found'}`);
+
 if (!rawKey) {
   console.error('❌ Missing required environment variable: HYPERLIQUID_PK');
-  console.error('💡 Please create a .env file with your Hyperliquid private key:');
-  console.error('   HYPERLIQUID_PK=0x1234567890abcdef...');
+  console.error('💡 The bot requires a Hyperliquid private key to be provided by the API server');
   console.error('   (Your private key must start with 0x)');
   process.exit(1);
 }
@@ -901,9 +904,10 @@ export async function runSignalCheckAndOpen({
     
     // Use aggressive limit order to simulate market order
     // Apply the same tick size rounding to aggressive price
+    // More aggressive pricing for testnet (5% instead of 1%)
     let aggressivePrice;
     if (isLong) {
-      const rawAggressivePrice = roundedPrice * 1.01; // 1% above for buy
+      const rawAggressivePrice = roundedPrice * 1.05; // 5% above for buy (testnet)
       if (roundedPrice >= 1000) {
         aggressivePrice = Math.round(rawAggressivePrice * 10) / 10;
       } else if (roundedPrice >= 100) {
@@ -916,7 +920,7 @@ export async function runSignalCheckAndOpen({
         aggressivePrice = Math.round(rawAggressivePrice * 100000) / 100000;
       }
     } else {
-      const rawAggressivePrice = roundedPrice * 0.99; // 1% below for sell
+      const rawAggressivePrice = roundedPrice * 0.95; // 5% below for sell (testnet)
       if (roundedPrice >= 1000) {
         aggressivePrice = Math.round(rawAggressivePrice * 10) / 10;
       } else if (roundedPrice >= 100) {
@@ -931,6 +935,8 @@ export async function runSignalCheckAndOpen({
     }
     
     const aggressivePriceStr = aggressivePrice.toString();
+    
+    console.log(`🔧 [TESTNET] ${symbol} ${direction.toUpperCase()} - Market Price: $${roundedPrice}, Aggressive Price: $${aggressivePriceStr} (${isLong ? '+5%' : '-5%'})`);
     
     const marketRes = await getWalletClient().order({
       orders: [{

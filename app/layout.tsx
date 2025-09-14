@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono"
 import { Analytics } from "@vercel/analytics/next"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { WalletProvider } from "@/lib/wallet/WalletContext"
+import { PerformanceMonitor } from "@/components/PerformanceMonitor"
 import { Suspense } from "react"
 import "./globals.css"
 
@@ -80,6 +81,7 @@ export default function RootLayout({
           </Suspense>
         </WalletProvider>
         <Analytics />
+        <PerformanceMonitor />
       </body>
     </html>
   )

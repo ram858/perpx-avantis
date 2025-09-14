@@ -43,12 +43,18 @@ export function useTradingProfits() {
   };
 
   useEffect(() => {
-    fetchTradingProfits();
+    // Delay initial fetch to improve loading performance
+    const timer = setTimeout(() => {
+      fetchTradingProfits();
+    }, 2000); // 2 second delay
     
     // Refresh every 30 seconds
     const interval = setInterval(fetchTradingProfits, 30000);
     
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
   }, []);
 
   return {

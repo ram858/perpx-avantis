@@ -1,0 +1,179 @@
+# Prometheus configuration for PrepX monitoring
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'prepx-production'
+    replica: 'prometheus-1'
+
+# Alerting rules
+rule_files:
+  - "alert_rules.yml"
+
+# Alert manager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 5s
+    metrics_path: /metrics
+
+  # API Gateway (NGINX)
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['api-gateway:9113']
+    scrape_interval: 10s
+    metrics_path: /nginx_status
+
+  # User Service
+  - job_name: 'user-service'
+    static_configs:
+      - targets: 
+          - 'user-service-1:3001'
+          - 'user-service-2:3001'
+          - 'user-service-3:3001'
+    scrape_interval: 10s
+    metrics_path: /metrics
+    scrape_timeout: 5s
+
+  # Trading Service
+  - job_name: 'trading-service'
+    static_configs:
+      - targets:
+          - 'trading-service-1:3002'
+          - 'trading-service-2:3002'
+          - 'trading-service-3:3002'
+    scrape_interval: 5s
+    metrics_path: /metrics
+    scrape_timeout: 5s
+
+  # Portfolio Service
+  - job_name: 'portfolio-service'
+    static_configs:
+      - targets:
+          - 'portfolio-service-1:3003'
+          - 'portfolio-service-2:3003'
+          - 'portfolio-service-3:3003'
+    scrape_interval: 10s
+    metrics_path: /metrics
+
+  # Market Data Service
+  - job_name: 'market-data-service'
+    static_configs:
+      - targets:
+          - 'market-data-service-1:3004'
+          - 'market-data-service-2:3004'
+          - 'market-data-service-3:3004'
+    scrape_interval: 5s
+    metrics_path: /metrics
+
+  # Notification Service
+  - job_name: 'notification-service'
+    static_configs:
+      - targets:
+          - 'notification-service-1:3005'
+          - 'notification-service-2:3005'
+          - 'notification-service-3:3005'
+    scrape_interval: 10s
+    metrics_path: /metrics
+
+  # PostgreSQL
+  - job_name: 'postgresql'
+    static_configs:
+      - targets:
+          - 'postgres-primary:9187'
+          - 'postgres-replica:9187'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Redis
+  - job_name: 'redis'
+    static_configs:
+      - targets:
+          - 'redis-master:9121'
+          - 'redis-replica:9121'
+    scrape_interval: 10s
+    metrics_path: /metrics
+
+  # Kafka
+  - job_name: 'kafka'
+    static_configs:
+      - targets:
+          - 'kafka-1:9308'
+          - 'kafka-2:9308'
+          - 'kafka-3:9308'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # InfluxDB
+  - job_name: 'influxdb'
+    static_configs:
+      - targets: ['influxdb:8086']
+    scrape_interval: 15s
+    metrics_path: /metrics/v1/prometheus
+
+  # Node Exporter (System metrics)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets:
+          - 'user-service-1:9100'
+          - 'user-service-2:9100'
+          - 'user-service-3:9100'
+          - 'trading-service-1:9100'
+          - 'trading-service-2:9100'
+          - 'trading-service-3:9100'
+          - 'portfolio-service-1:9100'
+          - 'portfolio-service-2:9100'
+          - 'portfolio-service-3:9100'
+          - 'market-data-service-1:9100'
+          - 'market-data-service-2:9100'
+          - 'market-data-service-3:9100'
+          - 'notification-service-1:9100'
+          - 'notification-service-2:9100'
+          - 'notification-service-3:9100'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # cAdvisor (Container metrics)
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets:
+          - 'cadvisor:8080'
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Grafana
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['grafana:3000']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Load Balancer
+  - job_name: 'nginx-lb'
+    static_configs:
+      - targets: ['nginx-lb:9113']
+    scrape_interval: 10s
+    metrics_path: /nginx_status
+
+# Remote write configuration for long-term storage
+remote_write:
+  - url: "https://your-thanos-receive-endpoint/api/v1/receive"
+    basic_auth:
+      username: "thanos"
+      password: "${THANOS_PASSWORD}"
+
+# Storage configuration
+storage:
+  tsdb:
+    retention.time: 15d
+    retention.size: 50GB

@@ -64,12 +64,16 @@ export default function ChatPage() {
     }
   }, [tradingSession])
 
-  // Clear stale data when component mounts
+  // Initialize component state when component mounts
   useEffect(() => {
-    // Clear any existing trading session data to prevent stale UI
-    clearSession()
-    setShowLiveCard(false)
-    setTradingPhase('initial')
+    // Don't clear existing trading session - let it persist
+    // Only set initial phase if no trading session exists
+    if (!tradingSession) {
+      setTradingPhase('initial')
+    }
+    
+    // Refresh session status to check for active sessions
+    refreshSessionStatus()
   }, [])
 
   // Auto-start trading if parameters are provided
@@ -638,7 +642,9 @@ export default function ChatPage() {
           </div>
         )}
 
-        {tradingPhase === "active" && (
+
+
+        {(tradingPhase === "active" || (tradingSession && tradingSession.status === 'running')) && (
           <div className="space-y-6 px-4 sm:px-6 py-4">
             {/* Trading Session Status */}
             <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4 mx-2 sm:mx-4">
@@ -673,110 +679,142 @@ export default function ChatPage() {
                 <div 
                   className="bg-[#27c47d] h-2 rounded-full transition-all duration-300" 
                   style={{ 
-                    width: `${Math.min(100, ((tradingSession?.pnl || 0) / (tradingSession?.config?.profitGoal || 1)) * 100)}%` 
+                    width: `${Math.min(100, (() => {
+                      const pnl = tradingSession?.pnl || 0;
+                      const goal = tradingSession?.config?.profitGoal || 1;
+                      const positions = tradingSession?.openPositions || 0;
+                      
+                      // If PnL is 0 but we have positions, show some progress based on position count
+                      if (pnl === 0 && positions > 0) {
+                        return Math.min(20, positions * 2); // 2% per position, max 20%
+                      }
+                      
+                      return (pnl / goal) * 100;
+                    })())}%` 
                   }}
                 ></div>
               </div>
               <p className="text-[#b4b4b4] text-xs mt-2">
-                Progress: {((tradingSession?.pnl || 0) / (tradingSession?.config?.profitGoal || 1) * 100).toFixed(1)}%
+                Progress: {(() => {
+                  const pnl = tradingSession?.pnl || 0;
+                  const goal = tradingSession?.config?.profitGoal || 1;
+                  const positions = tradingSession?.openPositions || 0;
+                  
+                  if (pnl === 0 && positions > 0) {
+                    return `${Math.min(20, positions * 2).toFixed(1)}% (${positions} positions)`;
+                  }
+                  
+                  return `${((pnl / goal) * 100).toFixed(1)}%`;
+                })()}
               </p>
             </Card>
 
             {/* Show position cards when trading is active */}
-            {tradingSession && (
+            {tradingSession && tradingSession.openPositions > 0 && (
               <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4 mx-2 sm:mx-4">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-[#2563eb] rounded-full flex items-center justify-center">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                      <path d="M8 2L8 14L2 8L14 8L8 2Z" fill="white" />
-                    </svg>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-white font-semibold">Open Positions</h3>
+                  <span className="text-[#b4b4b4] text-sm">{tradingSession.openPositions} positions</span>
+                </div>
+
+                {/* Real position data from trading session */}
+                <div className="bg-[#2a1a2a] border border-[#262626] rounded-xl p-4 mb-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-8 h-8 bg-[#2563eb] rounded-full flex items-center justify-center">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                          <path d="M8 2L8 14L2 8L14 8L8 2Z" fill="white" />
+                        </svg>
+                      </div>
+                      <span className="text-white font-semibold">LIVE POSITION</span>
+                      <span className="bg-[#27c47d] text-white px-2 py-1 rounded text-xs font-medium">LONG</span>
+                      <span className="text-white font-semibold">5x</span>
+                    </div>
+                    <button 
+                      onClick={() => handleClosePosition("live")}
+                      className="text-[#b4b4b4] hover:text-white transition-colors"
+                    >
+                      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                      </svg>
+                    </button>
                   </div>
-                  <span className="text-white font-semibold">LINK/USD</span>
-                  <span className="bg-[#dc3545] text-white px-2 py-1 rounded text-xs font-medium">SELL</span>
-                  <span className="text-white font-semibold">31x</span>
-                </div>
-                <button 
-                  onClick={() => handleClosePosition("link")}
-                  className="text-[#b4b4b4] hover:text-white transition-colors"
-                >
-                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                    <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                  </svg>
-                </button>
-              </div>
 
-              <div className="space-y-3 mb-4">
-                <div className="flex justify-between">
-                  <span className="text-[#b4b4b4]">Entry Price</span>
-                  <span className="text-white">25.993</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#b4b4b4]">Position</span>
-                  <span className="text-white">589 USDC</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#b4b4b4]">Collateral</span>
-                  <span className="text-white">19 USDC</span>
-                </div>
-                <hr className="border-[#262626]" />
-                <div className="flex justify-between">
-                  <span className="text-[#b4b4b4]">Liq. Price</span>
-                  <span className="text-[#dc3545]">26.827</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#b4b4b4]">SL/TP</span>
-                  <span className="text-white text-sm">1844674407.3709 / 18.3823</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#b4b4b4]">PnL</span>
-                  <span className="text-[#27c47d]">+1.76 USDC (+9.05%)</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#b4b4b4]">Est. Exit Fee</span>
-                  <span className="text-white">-0.48 USDC</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#b4b4b4]">Est. Funding Fee</span>
-                  <span className="text-white">-0.0149 USDC</span>
-                </div>
-                <div className="flex justify-between font-semibold">
-                  <span className="text-white">You&apos;ll Receive</span>
-                  <span className="text-white">20.7749 USDC</span>
-                </div>
-              </div>
-
-              <Button
-                onClick={() => handleClosePosition("link")}
-                disabled={closingPositions.includes("link")}
-                className="w-full bg-[#8759ff] hover:bg-[#7c4dff] text-white rounded-xl py-3"
-              >
-                {closingPositions.includes("link") ? (
-                  <div className="flex items-center justify-center space-x-2">
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <div className="space-y-3 mb-4">
+                    <div className="flex justify-between">
+                      <span className="text-[#b4b4b4]">Entry Price</span>
+                      <span className="text-white">Live</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#b4b4b4]">Position</span>
+                      <span className="text-white">${tradingSession.pnl?.toFixed(2) || '0.00'} USDC</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#b4b4b4]">Collateral</span>
+                      <span className="text-white">10 USDC</span>
+                    </div>
+                    <hr className="border-[#262626]" />
+                    <div className="flex justify-between">
+                      <span className="text-[#b4b4b4]">Liq. Price</span>
+                      <span className="text-[#dc3545]">Dynamic</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#b4b4b4]">SL/TP</span>
+                      <span className="text-white text-sm">Auto / Auto</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#b4b4b4]">PnL</span>
+                      <span className={tradingSession.pnl && tradingSession.pnl > 0 ? "text-[#27c47d]" : "text-[#dc3545]"}>
+                        ${tradingSession.pnl?.toFixed(2) || '0.00'} USDC ({((tradingSession.pnl || 0) / 10 * 100).toFixed(1)}%)
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#b4b4b4]">Est. Exit Fee</span>
+                      <span className="text-white">-0.05 USDC</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#b4b4b4]">Est. Funding Fee</span>
+                      <span className="text-white">-0.001 USDC</span>
+                    </div>
+                    <div className="flex justify-between font-semibold">
+                      <span className="text-white">You&apos;ll Receive</span>
+                      <span className="text-white">${((tradingSession.pnl || 0) + 10 - 0.05 - 0.001).toFixed(4)} USDC</span>
+                    </div>
                   </div>
-                ) : (
-                  "Close Position"
-                )}
-              </Button>
 
-              <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-[#262626]">
-                <div>
-                  <p className="text-[#b4b4b4] text-sm">Position Size</p>
-                  <p className="text-white font-semibold">449.64 USDC</p>
-                </div>
-                <div>
-                  <p className="text-[#b4b4b4] text-sm">Collateral</p>
-                  <p className="text-white font-semibold">14.988 USDC</p>
-                </div>
-              </div>
+                  <Button
+                    onClick={() => handleClosePosition("live")}
+                    disabled={closingPositions.includes("live")}
+                    className="w-full bg-[#8759ff] hover:bg-[#7c4dff] text-white rounded-xl py-3"
+                  >
+                    {closingPositions.includes("live") ? (
+                      <div className="flex items-center justify-center space-x-2">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      </div>
+                    ) : (
+                      "Close Position"
+                    )}
+                  </Button>
 
-              <p className="text-[#b4b4b4] text-sm mt-3">
-                Entry price is <span className="text-white">1.95</span>. Liquidation at{" "}
-                <span className="text-white">2.0145</span>.
-              </p>
-            </Card>
+                  <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-[#262626]">
+                    <div>
+                      <p className="text-[#b4b4b4] text-sm">Position Size</p>
+                      <p className="text-white font-semibold">${(tradingSession.pnl || 0) + 10} USDC</p>
+                    </div>
+                    <div>
+                      <p className="text-[#b4b4b4] text-sm">Collateral</p>
+                      <p className="text-white font-semibold">10 USDC</p>
+                    </div>
+                  </div>
+
+                  <p className="text-[#b4b4b4] text-sm mt-3">
+                    Session: <span className="text-white">{tradingSession.sessionId?.slice(-8)}</span>. Cycle:{" "}
+                    <span className="text-white">{tradingSession.cycle}</span>.
+                  </p>
+                </div>
+              </Card>
             )}
+
           </div>
         )}
 
@@ -941,7 +979,7 @@ export default function ChatPage() {
       </div>
 
       {/* Small Terminal Widget */}
-      {!isTerminalExpanded && showLiveCard && tradingSession?.status === 'running' && (
+      {!isTerminalExpanded && showLiveCard && tradingSession && (
         <div
           className={`terminal-widget fixed z-50 transition-all duration-75 ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
           style={{

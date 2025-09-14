@@ -347,87 +347,33 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Auto-connect on page load (only run once)
+  // Lazy auto-connect - only when user interacts with wallet
   useEffect(() => {
     let isMounted = true;
-    let hasAttemptedAutoConnect = false;
 
-    const autoConnect = async () => {
-      if (!isMounted || hasAttemptedAutoConnect) return;
-      hasAttemptedAutoConnect = true;
-
-      console.log('[WalletContext] Starting auto-connect process...');
+    const checkMetaMask = () => {
+      if (!isMounted) return;
 
       if (!isMetaMaskInstalled() || !window.ethereum) {
-        console.log('[WalletContext] MetaMask not installed, skipping auto-connect');
+        console.log('[WalletContext] MetaMask not installed');
         if (isMounted) {
           setState(prev => ({
             ...prev,
-            error: 'MetaMask not installed. Please install MetaMask to connect your wallet.'
+            error: null // Don't show error until user tries to connect
           }));
         }
         return;
       }
 
-      try {
-        console.log('[WalletContext] Attempting auto-connect...');
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const accounts = await provider.send("eth_accounts", []);
-
-        if (!isMounted) return;
-
-        console.log('[WalletContext] Found accounts:', accounts.length);
-
-        if (accounts.length > 0) {
-          const signer = await provider.getSigner();
-          const network = await provider.getNetwork();
-          const address = accounts[0];
-
-          console.log('[WalletContext] Auto-connecting to:', address);
-          console.log('[WalletContext] Network:', network.name, 'Chain ID:', network.chainId);
-
-          if (isMounted) {
-            setState(prev => ({
-              ...prev,
-              isConnected: true,
-              account: address,
-              chainId: Number(network.chainId),
-              provider,
-              signer,
-              error: null
-            }));
-
-            await fetchBalances(provider, address);
-
-            // Set up event listeners
-            window.ethereum.on('accountsChanged', handleAccountsChanged);
-            window.ethereum.on('chainChanged', handleChainChanged);
-            window.ethereum.on('disconnect', handleDisconnect);
-
-            console.log('[WalletContext] Auto-connect successful');
-          }
-        } else {
-          console.log('[WalletContext] No accounts found, skipping auto-connect');
-          if (isMounted) {
-            setState(prev => ({
-              ...prev,
-              error: 'No accounts found. Please connect your wallet manually.'
-            }));
-          }
-        }
-      } catch (error) {
-        console.error('[WalletContext] Auto-connect failed:', error);
-        if (isMounted) {
-          setState(prev => ({
-            ...prev,
-            error: `Auto-connect failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-          }));
-        }
-      }
+      // Only set up basic error handling, don't auto-connect
+      setState(prev => ({
+        ...prev,
+        error: null
+      }));
     };
 
-    // Add a small delay to ensure the component is fully mounted
-    const timer = setTimeout(autoConnect, 100);
+    // Minimal initialization - no auto-connect
+    const timer = setTimeout(checkMetaMask, 50);
 
     return () => {
       isMounted = false;
