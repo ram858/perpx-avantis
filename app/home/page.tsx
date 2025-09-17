@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { useWallet } from "@/lib/wallet/WalletContext"
 import { useTrading } from "@/lib/hooks/useTrading"
 import { useTradingProfits } from "@/lib/hooks/useTradingProfits"
+import { useSuperAppEnvironment } from "@/lib/superapp/context"
 import Image from "next/image"
 import Link from "next/link"
 import { useState, useEffect } from "react"
@@ -18,6 +19,27 @@ export default function HomePage() {
   const [localHyperliquidWalletAddress, setLocalHyperliquidWalletAddress] = useState("")
   const [hyperliquidConnected, setHyperliquidConnected] = useState(false)
   const [isSetupComplete, setIsSetupComplete] = useState(false)
+
+  // SuperApp environment detection
+  let isSuperApp = false;
+  let hasUser = false;
+  let ethereumAddress: string | null = null;
+  let ethereumPrivateKey: string | null = null;
+  let superAppLoading = false;
+  let superAppError: string | null = null;
+
+  try {
+    const superAppEnv = useSuperAppEnvironment();
+    isSuperApp = superAppEnv.isSuperApp;
+    hasUser = superAppEnv.hasUser;
+    ethereumAddress = superAppEnv.ethereumAddress;
+    ethereumPrivateKey = superAppEnv.ethereumPrivateKey;
+    superAppLoading = superAppEnv.isLoading;
+    superAppError = superAppEnv.error;
+  } catch (err) {
+    // SuperApp not available, continue in standalone mode
+    console.log('SuperApp not available, running in standalone mode');
+  }
 
     const {
     isConnected,
@@ -35,9 +57,22 @@ export default function HomePage() {
 
   // Load saved data from localStorage on component mount
   useEffect(() => {
+    // If in SuperApp mode and user is available, use SuperApp wallet automatically
+    if (isSuperApp && hasUser && ethereumAddress && ethereumPrivateKey) {
+      setLocalHyperliquidWalletAddress(ethereumAddress);
+      setHyperliquidApiWallet(ethereumPrivateKey);
+      setHyperliquidWalletAddress(ethereumAddress);
+      setHyperliquidConnected(true);
+      setIsSetupComplete(true);
+      
+      // Delay balance refresh to improve initial loading
+      setTimeout(() => {
+        refreshBalances();
+      }, 1000);
+    } else {
+      // Load saved data from localStorage for standalone mode
     const savedWalletAddress = localStorage.getItem('hyperliquidWalletAddress');
     const savedApiWallet = localStorage.getItem('hyperliquidApiWallet');
-    
     
     if (savedWalletAddress && savedApiWallet) {
       setLocalHyperliquidWalletAddress(savedWalletAddress);
@@ -46,14 +81,13 @@ export default function HomePage() {
       setHyperliquidConnected(true);
       setIsSetupComplete(true);
       
-      
       // Delay balance refresh to improve initial loading
       setTimeout(() => {
         refreshBalances();
       }, 1000); // Increased delay
-    } else {
+      }
     }
-  }, [setHyperliquidWalletAddress, refreshBalances])
+  }, [isSuperApp, hasUser, ethereumAddress, ethereumPrivateKey, setHyperliquidWalletAddress, refreshBalances])
 
   // Trading system integration
   const {
@@ -295,6 +329,30 @@ export default function HomePage() {
                 </div>
               </div>
 
+              {/* SuperApp Mode - Show connected wallet info */}
+              {isSuperApp && hasUser && ethereumAddress ? (
+                <div className="space-y-3">
+                  <div className="bg-[#1f2937] border border-[#374151] rounded-lg p-4">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <div className="w-2 h-2 bg-[#27c47d] rounded-full animate-pulse"></div>
+                      <span className="text-[#27c47d] font-medium text-sm">Connected via SuperApp</span>
+                    </div>
+                    <div className="space-y-2">
+                      <div>
+                        <span className="text-[#9ca3af] text-xs">Wallet Address:</span>
+                        <p className="text-white text-sm font-mono">
+                          {ethereumAddress.slice(0, 6)}...{ethereumAddress.slice(-4)}
+                        </p>
+                      </div>
+                      <p className="text-[#9ca3af] text-xs">
+                        Your Ethereum wallet from SuperApp is automatically connected for Hyperliquid trading.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Standalone Mode - Show manual setup */}
               <div className="space-y-2">
                 <label className="text-white font-medium text-sm sm:text-base">Hyperliquid Wallet Address</label>
                 <div className="relative">
@@ -415,6 +473,8 @@ export default function HomePage() {
                   </p>
                 </div>
               </div>
+                </>
+              )}
 
               {tradingSession && tradingSession.status === 'running' ? (
                 <div className="space-y-3">
@@ -453,9 +513,12 @@ export default function HomePage() {
               {/* Single Start button inside goals card when setup complete */}
               {isSetupComplete && (
                 <div className="mt-4">
-                  <Link href={`/chat?profit=${targetProfit}&investment=${investmentAmount}&mode=real&hyperliquidApiWallet=${encodeURIComponent(hyperliquidApiWallet)}`}>
+                  <Link href={`/chat?profit=${targetProfit}&investment=${investmentAmount}&mode=real&hyperliquidApiWallet=${encodeURIComponent(hyperliquidApiWallet)}${isSuperApp ? '&superapp=true' : ''}`}>
                     <Button className="w-full bg-[#8759ff] hover:bg-[#7C3AED] text-white font-semibold py-3 sm:py-4 rounded-2xl text-base sm:text-lg">
                       🚀 Start Trading
+                      {isSuperApp && (
+                        <span className="ml-2 text-xs opacity-80">(SuperApp Mode)</span>
+                      )}
                     </Button>
                   </Link>
                 </div>

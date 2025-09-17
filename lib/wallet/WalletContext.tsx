@@ -5,6 +5,7 @@ import { ethers } from 'ethers';
 import { walletBalanceUpdater, TradingResult } from './balanceUpdater';
 import { getHyperliquidBalanceUSD } from './hyperliquidBalance';
 import { useTrading } from '../hooks/useTrading';
+import { useSuperAppEnvironment } from '../superapp/context';
 
 // Types
 export interface Token {
@@ -46,6 +47,8 @@ export interface WalletContextType extends WalletState {
   refreshBalances: () => Promise<void>;
   switchNetwork: (chainId: number) => Promise<void>;
   setHyperliquidWalletAddress: (address: string) => void;
+  isSuperAppMode: boolean;
+  superAppUser: any;
 }
 
 // Supported tokens
@@ -107,6 +110,23 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const [hyperliquidWalletAddress, setHyperliquidWalletAddress] = useState<string>('');
   const isLoadingRef = useRef(false);
+
+  // SuperApp integration (optional)
+  let isSuperApp = false;
+  let hasUser = false;
+  let ethereumAddress: string | null = null;
+  let ethereumPrivateKey: string | null = null;
+
+  try {
+    const superAppEnv = useSuperAppEnvironment();
+    isSuperApp = superAppEnv.isSuperApp;
+    hasUser = superAppEnv.hasUser;
+    ethereumAddress = superAppEnv.ethereumAddress;
+    ethereumPrivateKey = superAppEnv.ethereumPrivateKey;
+  } catch (error) {
+    // SuperApp not available, continue in standalone mode
+    console.log('SuperApp not available, running in standalone mode');
+  }
 
   // Note: Balance refresh is triggered manually from the UI when Hyperliquid address changes
 
@@ -289,6 +309,54 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   // Connect wallet
   const connectWallet = useCallback(async () => {
+    // If we're in SuperApp mode, use SuperApp wallet
+    if (isSuperApp && hasUser && ethereumAddress) {
+      try {
+        setState(prev => ({ ...prev, isLoading: true, error: null }));
+
+        // Create a mock provider for SuperApp mode
+        const mockProvider = {
+          getBalance: async (address: string) => {
+            // Return a mock balance for SuperApp mode
+            return ethers.parseEther('1.234');
+          },
+          getNetwork: async () => ({
+            chainId: BigInt(1), // Ethereum mainnet
+            name: 'homestead',
+          }),
+        } as any;
+
+        setState(prev => ({
+          ...prev,
+          isConnected: true,
+          account: ethereumAddress,
+          chainId: 1, // Ethereum mainnet
+          provider: mockProvider,
+          signer: null, // SuperApp handles signing
+          isLoading: false
+        }));
+
+        // Set Hyperliquid wallet address to the same as Ethereum address
+        setHyperliquidWalletAddress(ethereumAddress);
+
+        // Fetch balances using SuperApp data
+        await fetchBalances(mockProvider, ethereumAddress);
+
+        console.log('Connected to SuperApp wallet:', ethereumAddress);
+        return;
+      } catch (error: unknown) {
+        console.error('Error connecting SuperApp wallet:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to connect SuperApp wallet';
+        setState(prev => ({
+          ...prev,
+          isLoading: false,
+          error: errorMessage
+        }));
+        return;
+      }
+    }
+
+    // Fallback to MetaMask for non-SuperApp mode
     if (!isMetaMaskInstalled() || !window.ethereum) {
       setState(prev => ({ ...prev, error: 'MetaMask is not installed' }));
       return;
@@ -330,7 +398,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         error: errorMessage
       }));
     }
-  }, [isMetaMaskInstalled, fetchBalances, handleAccountsChanged, handleChainChanged, handleDisconnect]);
+  }, [isSuperApp, hasUser, ethereumAddress, isMetaMaskInstalled, fetchBalances, handleAccountsChanged, handleChainChanged, handleDisconnect]);
 
   // Switch network
   const switchNetwork = useCallback(async (chainId: number) => {
@@ -416,7 +484,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     disconnectWallet,
     refreshBalances,
     switchNetwork,
-    setHyperliquidWalletAddress
+    setHyperliquidWalletAddress,
+    isSuperAppMode: isSuperApp,
+    superAppUser: isSuperApp ? { ethereumAddress, ethereumPrivateKey } : null
   };
 
   return (
