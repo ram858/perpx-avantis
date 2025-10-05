@@ -227,11 +227,11 @@ class RealTradingBot {
     // Session data will be broadcast via the existing interval
   }
 
-  stopSession(sessionId) {
+  stopSession(sessionId, force = false) {
     const session = this.sessions.get(sessionId);
     if (session) {
-      session.status = 'stopping';
-      console.log(`[REAL_TRADING] Session ${sessionId} stopping`);
+      session.status = force ? 'stopped' : 'stopping';
+      console.log(`[REAL_TRADING] Session ${sessionId} ${force ? 'force stopping' : 'stopping'}`);
     }
 
     const proc = this.activeProcesses.get(sessionId);
@@ -239,6 +239,19 @@ class RealTradingBot {
 
     // If we have a running bot, attempt graceful flatten first
     if (proc && sessionRef) {
+      if (force) {
+        // Force stop: immediately terminate the bot process
+        console.log(`[REAL_TRADING] Force stopping bot for ${sessionId}`);
+        try { proc.kill('SIGTERM'); } catch (_) {}
+        this.activeProcesses.delete(sessionId);
+        const s = this.sessions.get(sessionId);
+        if (s) {
+          s.status = 'stopped';
+          s.lastUpdate = new Date();
+        }
+        return true;
+      }
+
       try {
         const botPath = path.join(__dirname, 'trading-engine', 'hyperliquid');
         // Reuse the same cleaned key logic used during start
@@ -266,9 +279,22 @@ class RealTradingBot {
             s.status = 'stopped';
             s.lastUpdate = new Date();
           }
-        }, 15000);
+        }, 10000); // Reduced timeout for faster response
 
-        closeProc.on('close', () => {
+        closeProc.on('close', (code) => {
+          console.log(`[REAL_TRADING] close-all completed with code ${code} for ${sessionId}`);
+          clearTimeout(timeout);
+          try { proc.kill('SIGTERM'); } catch (_) {}
+          this.activeProcesses.delete(sessionId);
+          const s = this.sessions.get(sessionId);
+          if (s) {
+            s.status = 'stopped';
+            s.lastUpdate = new Date();
+          }
+        });
+
+        closeProc.on('error', (error) => {
+          console.warn(`[REAL_TRADING] close-all error for ${sessionId}:`, error.message);
           clearTimeout(timeout);
           try { proc.kill('SIGTERM'); } catch (_) {}
           this.activeProcesses.delete(sessionId);
@@ -308,6 +334,30 @@ class RealTradingBot {
 
   getAllSessions() {
     return Array.from(this.sessions.values());
+  }
+
+  // Get real-time positions from Hyperliquid
+  async getHyperliquidPositions(privateKey) {
+    try {
+      const botPath = path.join(__dirname, 'trading-engine', 'hyperliquid');
+      const { fetchPositions } = require(path.join(botPath, 'fetch-positions.js'));
+      
+      return await fetchPositions(privateKey);
+    } catch (error) {
+      throw new Error(`Error fetching positions: ${error.message}`);
+    }
+  }
+
+  // Close individual position
+  async closeIndividualPosition(symbol, privateKey) {
+    try {
+      const botPath = path.join(__dirname, 'trading-engine', 'hyperliquid');
+      const { closePosition } = require(path.join(botPath, 'close-position.js'));
+      
+      return await closePosition(symbol, privateKey);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
   }
 
   startSimulationMode(sessionId, config) {
@@ -408,17 +458,17 @@ app.post('/api/start-trading', async (req, res) => {
 
 app.post('/api/stop-trading', (req, res) => {
   try {
-    const { sessionId } = req.body;
+    const { sessionId, force = false } = req.body;
     
     if (!sessionId) {
       return res.status(400).json({ error: 'Session ID required' });
     }
 
-    const stopped = tradingBot.stopSession(sessionId);
+    const stopped = tradingBot.stopSession(sessionId, force);
     
     if (stopped) {
-      console.log(`[API] Stopped trading session ${sessionId}`);
-      res.json({ sessionId, status: 'stopped' });
+      console.log(`[API] Stopped trading session ${sessionId} (force: ${force})`);
+      res.json({ sessionId, status: 'stopped', force });
     } else {
       res.status(404).json({ error: 'Session not found' });
     }
@@ -441,6 +491,55 @@ app.get('/api/session/:sessionId', (req, res) => {
   } catch (error) {
     console.error('[API] Error getting session status:', error);
     res.status(500).json({ error: 'Failed to get session status' });
+  }
+});
+
+// New endpoint to fetch real-time positions from Hyperliquid
+app.get('/api/positions', async (req, res) => {
+  try {
+    // Get the most recent trading session to use its API key
+    const sessions = tradingBot.getAllSessions();
+    const activeSession = sessions.find(s => s.status === 'running') || sessions[sessions.length - 1];
+    
+    if (!activeSession || !activeSession.userHyperliquidApiWallet) {
+      return res.status(400).json({ error: 'No active trading session found with API key' });
+    }
+    
+    const positions = await tradingBot.getHyperliquidPositions(activeSession.userHyperliquidApiWallet);
+    res.json(positions);
+  } catch (error) {
+    console.error('[API] Error fetching positions:', error);
+    res.status(500).json({ error: 'Failed to fetch positions' });
+  }
+});
+
+// New endpoint to close individual position
+app.post('/api/close-position', async (req, res) => {
+  try {
+    const { symbol } = req.body;
+    
+    if (!symbol) {
+      return res.status(400).json({ error: 'Symbol required' });
+    }
+
+    // Get the most recent trading session to use its API key
+    const sessions = tradingBot.getAllSessions();
+    const activeSession = sessions.find(s => s.status === 'running') || sessions[sessions.length - 1];
+    
+    if (!activeSession || !activeSession.userHyperliquidApiWallet) {
+      return res.status(400).json({ error: 'No active trading session found with API key' });
+    }
+
+    const result = await tradingBot.closeIndividualPosition(symbol, activeSession.userHyperliquidApiWallet);
+    
+    if (result.success) {
+      res.json({ success: true, message: `Position ${symbol} closed successfully` });
+    } else {
+      res.status(500).json({ error: result.error || 'Failed to close position' });
+    }
+  } catch (error) {
+    console.error('[API] Error closing position:', error);
+    res.status(500).json({ error: 'Failed to close position' });
   }
 });
 

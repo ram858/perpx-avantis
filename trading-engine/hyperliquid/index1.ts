@@ -413,7 +413,7 @@ async function runSession() {
       }
     }
 
-    await delay(10000); // 10s between cycles
+    await delay(5000); // 5s between cycles for faster trading
   }
   
   // If we reach here, the session completed normally without profit goal or liquidation
@@ -452,7 +452,7 @@ async function runBotWithRestart() {
         logToTelegram('RESTART', `🔄 Session ended with reason: ${result.reason} | PnL: $${result.pnl.toFixed(2)} | Restarting in 30 seconds...`);
         
         // Wait 30 seconds before restarting
-        await delay(30000);
+        await delay(10000); // Reduced restart delay for faster recovery
         
         // Clear any cached data or reset state if needed
         console.log('\n🔄 Preparing for restart...\n');
@@ -478,7 +478,7 @@ async function runBotWithRestart() {
       
       // Wait 60 seconds before restarting after a fatal error
       log('RESTART', `Restarting after fatal error in 60 seconds...`);
-      await delay(60000);
+      await delay(20000); // Reduced error recovery delay
       
       totalRestartCount++;
       continue;

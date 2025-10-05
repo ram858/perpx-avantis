@@ -3,22 +3,21 @@
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { useWallet } from "@/lib/wallet/WalletContext"
+import { useIntegratedWallet } from "@/lib/wallet/IntegratedWalletContext"
+import { useAuth } from "@/lib/auth/AuthContext"
 import { useTrading } from "@/lib/hooks/useTrading"
 import { useTradingProfits } from "@/lib/hooks/useTradingProfits"
 import { useSuperAppEnvironment } from "@/lib/superapp/context"
+import { ProtectedRoute } from "@/components/ProtectedRoute"
 import Image from "next/image"
 import Link from "next/link"
 import { useState, useEffect } from "react"
 
 export default function HomePage() {
+  const { user, logout } = useAuth()
   const [isBalanceVisible, setIsBalanceVisible] = useState(true)
   const [targetProfit, setTargetProfit] = useState("10")
   const [investmentAmount, setInvestmentAmount] = useState("50")
-  const [hyperliquidApiWallet, setHyperliquidApiWallet] = useState("")
-  const [localHyperliquidWalletAddress, setLocalHyperliquidWalletAddress] = useState("")
-  const [hyperliquidConnected, setHyperliquidConnected] = useState(false)
-  const [isSetupComplete, setIsSetupComplete] = useState(false)
 
   // SuperApp environment detection
   let isSuperApp = false;
@@ -32,8 +31,8 @@ export default function HomePage() {
     const superAppEnv = useSuperAppEnvironment();
     isSuperApp = superAppEnv.isSuperApp;
     hasUser = superAppEnv.hasUser;
-    ethereumAddress = superAppEnv.ethereumAddress;
-    ethereumPrivateKey = superAppEnv.ethereumPrivateKey;
+    ethereumAddress = superAppEnv.ethereumAddress || null;
+    ethereumPrivateKey = superAppEnv.ethereumPrivateKey || null;
     superAppLoading = superAppEnv.isLoading;
     superAppError = superAppEnv.error;
   } catch (err) {
@@ -41,8 +40,10 @@ export default function HomePage() {
     console.log('SuperApp not available, running in standalone mode');
   }
 
-    const {
+  const {
     isConnected,
+    primaryWallet,
+    allWallets,
     totalPortfolioValue,
     ethBalanceFormatted,
     holdings,
@@ -50,75 +51,52 @@ export default function HomePage() {
     dailyChangePercentage,
     isLoading,
     error,
-    connectWallet,
-    setHyperliquidWalletAddress,
+    refreshWallets,
+    createWallet,
     refreshBalances
-  } = useWallet()
+  } = useIntegratedWallet()
 
-  // Load saved data from localStorage on component mount
+  // Auto-create wallet if user doesn't have one
   useEffect(() => {
-    // If in SuperApp mode and user is available, use SuperApp wallet automatically
-    if (isSuperApp && hasUser && ethereumAddress && ethereumPrivateKey) {
-      setLocalHyperliquidWalletAddress(ethereumAddress);
-      setHyperliquidApiWallet(ethereumPrivateKey);
-      setHyperliquidWalletAddress(ethereumAddress);
-      setHyperliquidConnected(true);
-      setIsSetupComplete(true);
-      
-      // Delay balance refresh to improve initial loading
-      setTimeout(() => {
-        refreshBalances();
-      }, 1000);
-    } else {
-      // Load saved data from localStorage for standalone mode
-    const savedWalletAddress = localStorage.getItem('hyperliquidWalletAddress');
-    const savedApiWallet = localStorage.getItem('hyperliquidApiWallet');
-    
-    if (savedWalletAddress && savedApiWallet) {
-      setLocalHyperliquidWalletAddress(savedWalletAddress);
-      setHyperliquidApiWallet(savedApiWallet);
-      setHyperliquidWalletAddress(savedWalletAddress);
-      setHyperliquidConnected(true);
-      setIsSetupComplete(true);
-      
-      // Delay balance refresh to improve initial loading
-      setTimeout(() => {
-        refreshBalances();
-      }, 1000); // Increased delay
-      }
+    if (user?.phoneNumber && !isConnected && !isLoading) {
+      // User is logged in but doesn't have a wallet, create one automatically
+      createWallet('ethereum')
     }
-  }, [isSuperApp, hasUser, ethereumAddress, ethereumPrivateKey, setHyperliquidWalletAddress, refreshBalances])
+  }, [user?.phoneNumber, isConnected, isLoading, createWallet])
+
+  // Check if trading is ready (wallet connected)
+  const isTradingReady = isConnected && primaryWallet
 
   // Trading system integration
   const {
-    tradingSession,
-    isConnected: isTradingConnected,
+    isLoading: isTradingLoading,
     error: tradingError
   } = useTrading()
 
   // Trading profits integration
   const { totalProfits } = useTradingProfits()
 
-
   // Get real wallet holdings only when connected
   const realHoldings = isConnected ? [
     // Real ETH holding from wallet
     {
-      name: "Ethereum",
-      symbol: "ETH",
-      amount: parseFloat(ethBalanceFormatted).toFixed(4),
-      value: `$${(parseFloat(ethBalanceFormatted) * 2000).toFixed(2)}`,
-      change: "+2.8%",
-      color: "#627eea",
+      token: {
+        symbol: 'ETH',
+        name: 'Ethereum',
+        address: '0x0000000000000000000000000000000000000000',
+        decimals: 18,
+        price: 2500 // Mock price
+      },
+      balance: ethBalanceFormatted,
+      valueUSD: totalPortfolioValue,
+      color: '#627eea',
       link: "/detail/ethereum",
     },
-    // Real token holdings from wallet
+    // Add other holdings from the wallet
     ...holdings.map(holding => ({
-      name: holding.token.name,
-      symbol: holding.token.symbol,
-      amount: parseFloat(holding.balanceFormatted).toFixed(4),
-      value: `$${holding.valueUSD.toFixed(2)}`,
-      change: "+0.2%", // Mock change for now
+      token: holding.token,
+      balance: holding.balanceFormatted,
+      valueUSD: holding.valueUSD,
       color: holding.token.symbol === 'WBTC' ? '#f7931a' : '#f4b731',
       link: `/detail/${holding.token.symbol.toLowerCase()}`,
     }))
@@ -134,13 +112,72 @@ export default function HomePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0d0d0d] text-white relative">
-      {/* Header */}
-      <div className="flex items-center justify-center px-4 sm:px-6 py-4 max-w-md mx-auto">
-        <div className="w-16 h-16 bg-[#4A2C7C] rounded-2xl flex items-center justify-center shadow-lg">
-          <Image src="/trading-bot-icon.svg" alt="Trading Bot" width={48} height={48} className="w-12 h-12" />
+    <ProtectedRoute>
+      <div className="min-h-screen bg-[#0d0d0d] text-white relative">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 max-w-md mx-auto">
+          <div className="w-16 h-16 bg-[#4A2C7C] rounded-2xl flex items-center justify-center shadow-lg">
+            <Image src="/trading-bot-icon.svg" alt="Trading Bot" width={48} height={48} className="w-12 h-12" />
+          </div>
+          
+          {/* User info and logout */}
+          <div className="flex items-center space-x-3">
+            <div className="text-right">
+              <p className="text-sm text-[#b4b4b4]">{user?.phoneNumber}</p>
+              <p className="text-xs text-[#666]">Welcome back!</p>
+            </div>
+            <Button
+              onClick={logout}
+              variant="outline"
+              size="sm"
+              className="bg-transparent border-[#444] text-[#e5e5e5] hover:bg-[#333] hover:text-white"
+            >
+              Logout
+            </Button>
+          </div>
         </div>
-      </div>
+
+        {/* Navigation */}
+        <div className="px-4 sm:px-6 max-w-md mx-auto mb-6">
+          <div className="flex space-x-2">
+            <Link href="/home">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="bg-[#1a1a1a] border-[#262626] text-[#e5e5e5] hover:bg-[#333] hover:text-white"
+              >
+                🏠 Home
+              </Button>
+            </Link>
+            <Link href="/wallet">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="bg-[#1a1a1a] border-[#262626] text-[#e5e5e5] hover:bg-[#333] hover:text-white"
+              >
+                💼 Wallets
+              </Button>
+            </Link>
+            <Link href="/trading">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="bg-[#1a1a1a] border-[#262626] text-[#e5e5e5] hover:bg-[#333] hover:text-white"
+              >
+                📈 Trading
+              </Button>
+            </Link>
+            <Link href="/simulation">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="bg-[#1a1a1a] border-[#262626] text-[#e5e5e5] hover:bg-[#333] hover:text-white"
+              >
+                🎮 Simulation
+              </Button>
+            </Link>
+          </div>
+        </div>
 
       <div className="px-4 sm:px-6 space-y-6 max-w-md mx-auto">
         {/* Portfolio Balance Card */}
@@ -155,30 +192,24 @@ export default function HomePage() {
                 </svg>
               </div>
               <div>
-                <h2 className="text-white font-semibold text-lg mb-2">Connect Your Wallet</h2>
+                <h2 className="text-white font-semibold text-lg mb-2">Setting Up Your Wallet</h2>
                 <p className="text-[#9ca3af] text-sm mb-4">
-                  Connect your MetaMask wallet to view your real portfolio and start trading
+                  Creating your personal trading wallet...
                 </p>
               </div>
-              <button
-                onClick={connectWallet}
-                disabled={isLoading}
-                className="w-full bg-[#7c3aed] hover:bg-[#8b5cf6] disabled:bg-[#4b5563] disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2"
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-white">
-                  <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  <path d="M2 17L12 22L22 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  <path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                <span>{isLoading ? "Connecting..." : "Connect MetaMask"}</span>
-              </button>
+              {isLoading && (
+                <div className="flex items-center justify-center space-x-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-white">Creating wallet...</span>
+                </div>
+              )}
               {error && (
                 <div className="bg-red-900/20 border border-red-600/30 rounded-lg p-3 mt-3">
                   <p className="text-red-400 text-sm">{error}</p>
                 </div>
               )}
               <p className="text-[#6b7280] text-xs">
-                By connecting, you agree to our Terms of Service
+                Your wallet will be ready in a moment
               </p>
             </div>
           </Card>
@@ -241,10 +272,10 @@ export default function HomePage() {
                 </div>
               </div>
               <div className="text-xs text-[#9ca3af] mt-2">
-                {isConnected ? 'Connected to wallet' : 'Wallet not connected'} • {isTradingConnected ? 'Trading system connected' : 'Trading system offline'}
-                {tradingSession && (
-                  <span className="ml-2 text-[#27c47d]">
-                    • Active session: {tradingSession.status}
+                {isConnected ? 'Connected to wallet' : 'Wallet not connected'} • {isTradingLoading ? 'Trading system loading...' : 'Trading system ready'}
+                {tradingError && (
+                  <span className="ml-2 text-[#ef4444]">
+                    • Trading error: {tradingError}
                   </span>
                 )}
               </div>
@@ -262,26 +293,133 @@ export default function HomePage() {
           </Card>
         )}
 
-        {/* Setup Form - Only show if not completed */}
-        {!isSetupComplete && (
-        <Card className="bg-[#1a1a1a] border-[#262626] p-4 sm:p-6 rounded-2xl">
-          <div className="space-y-4 sm:space-y-6">
-            <div className="flex items-center space-x-2">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="text-[#8759ff]">
-                <path d="M10 1L11.5 6.5L17 8L11.5 9.5L10 15L8.5 9.5L3 8L8.5 6.5L10 1Z" fill="currentColor" />
-                <path d="M15 3L15.5 4.5L17 5L15.5 5.5L15 7L14.5 5.5L13 5L14.5 4.5L15 3Z" fill="currentColor" />
-              </svg>
-              <h3 className="text-lg sm:text-xl font-bold text-white">Setup Trading Account</h3>
-            </div>
-            
-            <div className="bg-[#1f2937] border border-[#374151] rounded-lg p-4">
+        {/* Start Trading Card - Show when wallet is connected */}
+        {isConnected && primaryWallet && (
+          <Card className="bg-[#1a1a1a] border-[#262626] p-4 sm:p-6 rounded-2xl">
+            <div className="space-y-4">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 bg-[#8759ff] rounded-lg flex items-center justify-center">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-white">
+                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+                <h3 className="text-white font-semibold text-lg">Start Trading</h3>
+              </div>
+              
               <p className="text-[#9ca3af] text-sm">
-                <strong>One-time setup:</strong> Enter your Hyperliquid wallet details below. This information will be saved locally and won't need to be entered again.
+                Your wallet is connected and ready for live trading on Hyperliquid. Configure your trading parameters and start your first session.
               </p>
+              
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[#9ca3af] text-xs font-medium mb-1">
+                      Target Profit (USD)
+                    </label>
+                    <Input
+                      type="number"
+                      value={targetProfit}
+                      onChange={(e) => setTargetProfit(e.target.value)}
+                      className="bg-[#2a2a2a] border-[#444] text-white text-sm"
+                      placeholder="20"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-[#9ca3af] text-xs font-medium mb-1">
+                      Investment Amount (USD)
+                    </label>
+                    <Input
+                      type="number"
+                      value={investmentAmount}
+                      onChange={(e) => setInvestmentAmount(e.target.value)}
+                      className="bg-[#2a2a2a] border-[#444] text-white text-sm"
+                      placeholder="50"
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex gap-3">
+                  <Link href="/trading" className="flex-1">
+                    <Button className="w-full bg-[#8759ff] hover:bg-[#7C3AED] text-white font-semibold py-3 rounded-xl">
+                      🚀 Open Trading Dashboard
+                    </Button>
+                  </Link>
+                  
+                  <Link href={`/chat?profit=${targetProfit}&investment=${investmentAmount}&mode=real&wallet=${primaryWallet?.address}${isSuperApp ? '&superapp=true' : ''}`}>
+                    <Button className="bg-[#10b981] hover:bg-[#059669] text-white font-semibold py-3 px-6 rounded-xl">
+                      💬 AI Chat
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+              
+              <div className="bg-[#1f2937] border border-[#374151] rounded-lg p-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-[#9ca3af]">Trading Status:</span>
+                  <span className="text-[#27c47d] font-medium">Ready to Trade</span>
+                </div>
+                <div className="flex items-center justify-between text-sm mt-1">
+                  <span className="text-[#9ca3af]">Platform:</span>
+                  <span className="text-white font-medium">Hyperliquid</span>
+                </div>
+                <div className="flex items-center justify-between text-sm mt-1">
+                  <span className="text-[#9ca3af]">Wallet:</span>
+                  <span className="text-white font-medium">{primaryWallet?.address.slice(0, 6)}...{primaryWallet?.address.slice(-4)}</span>
+                </div>
               </div>
             </div>
           </Card>
         )}
+
+        {/* Wallet Info Section - Show when connected */}
+        {isConnected && primaryWallet && (
+          <Card className="bg-[#1a1a1a] border-[#262626] p-4 sm:p-6 rounded-2xl">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-white font-semibold text-lg">Your Trading Wallet</h3>
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                  <span className="text-green-400 text-sm font-medium">Connected</span>
+                </div>
+              </div>
+              
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[#9ca3af] text-sm">Wallet Address:</span>
+                  <div className="flex items-center space-x-2">
+                    <code className="text-white text-sm font-mono bg-[#374151] px-2 py-1 rounded">
+                      {primaryWallet.address.slice(0, 6)}...{primaryWallet.address.slice(-4)}
+                    </code>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(primaryWallet.address)}
+                      className="text-[#7c3aed] hover:text-[#6d28d9] text-sm"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <span className="text-[#9ca3af] text-sm">Chain:</span>
+                  <span className="text-white text-sm capitalize">{primaryWallet.chain}</span>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <span className="text-[#9ca3af] text-sm">ETH Balance:</span>
+                  <span className="text-white text-sm font-medium">{ethBalanceFormatted}</span>
+                </div>
+              </div>
+              
+              <div className="pt-2 border-t border-[#374151]">
+                <p className="text-[#9ca3af] text-xs">
+                  Your wallet is automatically connected for trading. No manual setup required.
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
+
 
         {/* AI Trading Goals */}
         <Card className="bg-[#1a1a1a] border-[#262626] p-4 sm:p-6 rounded-2xl">
@@ -329,205 +467,9 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* SuperApp Mode - Show connected wallet info */}
-              {isSuperApp && hasUser && ethereumAddress ? (
-                <div className="space-y-3">
-                  <div className="bg-[#1f2937] border border-[#374151] rounded-lg p-4">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <div className="w-2 h-2 bg-[#27c47d] rounded-full animate-pulse"></div>
-                      <span className="text-[#27c47d] font-medium text-sm">Connected via SuperApp</span>
-                    </div>
-                    <div className="space-y-2">
-                      <div>
-                        <span className="text-[#9ca3af] text-xs">Wallet Address:</span>
-                        <p className="text-white text-sm font-mono">
-                          {ethereumAddress.slice(0, 6)}...{ethereumAddress.slice(-4)}
-                        </p>
-                      </div>
-                      <p className="text-[#9ca3af] text-xs">
-                        Your Ethereum wallet from SuperApp is automatically connected for Hyperliquid trading.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {/* Standalone Mode - Show manual setup */}
-              <div className="space-y-2">
-                <label className="text-white font-medium text-sm sm:text-base">Hyperliquid Wallet Address</label>
-                <div className="relative">
-                  <Input
-                    type="text"
-                    className="bg-[#262626] border-[#404040] text-white pl-3 sm:pl-4 pr-3 sm:pr-4 py-3 sm:py-4 rounded-2xl text-base sm:text-lg"
-                    placeholder="0x06D923c26f0beA4389CAdBf873dA63eF52E97395"
-                    value={localHyperliquidWalletAddress}
-                    onChange={(e) => {
-                      setLocalHyperliquidWalletAddress(e.target.value); // Update local state
-                      setHyperliquidWalletAddress(e.target.value); // Update wallet context
-                      
-                      // Check if both wallet address and API key are complete
-                      if (e.target.value.trim() && hyperliquidApiWallet.trim()) {
-                        setIsSetupComplete(true);
-                      }
-                    }}
-                  />
-                </div>
-                <div className="bg-[#1f2937] border border-[#374151] rounded-lg p-3">
-                  <p className="text-[#9ca3af] text-xs mb-2">
-                    <strong>Your Hyperliquid wallet address:</strong>
-                  </p>
-                  <p className="text-[#9ca3af] text-xs">
-                    This is the wallet address where you have your Hyperliquid balance. 
-                    You can find this in your Hyperliquid account settings or by connecting your wallet to Hyperliquid.
-                  </p>
-                  <p className="text-[#27c47d] text-xs mt-2">
-                    💡 If you're not sure, you can use your MetaMask wallet address (same as above).
-                  </p>
-                </div>
-                
-                {/* Connect to Hyperliquid Button - Only show if both wallet address and API key are entered */}
-                {localHyperliquidWalletAddress.trim() && hyperliquidApiWallet.trim() && !hyperliquidConnected && (
-                  <Button
-                    onClick={async () => {
-                      if (localHyperliquidWalletAddress.trim()) {
-                        // Set the Hyperliquid wallet address
-                        setHyperliquidWalletAddress(localHyperliquidWalletAddress);
-                        setHyperliquidConnected(true);
-                        
-                        // Save to localStorage
-                        localStorage.setItem('hyperliquidWalletAddress', localHyperliquidWalletAddress);
-                        
-                        // Manually trigger balance refresh to ensure it works
-                        setTimeout(async () => {
-                          await refreshBalances();
-                        }, 100);
-                        
-                        // Check if both wallet address and API key are complete
-                        if (hyperliquidApiWallet.trim()) {
-                          setIsSetupComplete(true);
-                        }
-                      }
-                    }}
-                    disabled={!localHyperliquidWalletAddress.trim() || localHyperliquidWalletAddress.length < 42 || hyperliquidConnected}
-                    className={`w-full ${hyperliquidConnected ? 'bg-[#27c47d] hover:bg-[#22a85a]' : 'bg-[#4A2C7C] hover:bg-[#5A3C8C]'} disabled:bg-[#4b5563] disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2`}
-                  >
-                    {hyperliquidConnected ? (
-                      <>
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                        <span>Connected to Hyperliquid</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
-                        <span>Connect to Hyperliquid</span>
-                      </>
-                    )}
-                  </Button>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-white font-medium text-sm sm:text-base">Hyperliquid API Wallet Private Key</label>
-                <div className="relative">
-                  <Input
-                    type="password"
-                    className="bg-[#262626] border-[#404040] text-white pl-3 sm:pl-4 pr-3 sm:pr-4 py-3 sm:py-4 rounded-2xl text-base sm:text-lg"
-                    placeholder="Enter your API wallet private key (64 characters)"
-                    value={hyperliquidApiWallet}
-                    onChange={(e) => {
-                      setHyperliquidApiWallet(e.target.value);
-                      // Save to localStorage as user types
-                      if (e.target.value.trim()) {
-                        localStorage.setItem('hyperliquidApiWallet', e.target.value);
-                        
-                        // Check if both wallet address and API key are complete
-                        if (localHyperliquidWalletAddress.trim() && e.target.value.trim()) {
-                          setIsSetupComplete(true);
-                        }
-                      }
-                    }}
-                  />
-                </div>
-                <div className="bg-[#1f2937] border border-[#374151] rounded-lg p-3">
-                  <p className="text-[#9ca3af] text-xs mb-2">
-                    <strong>How to get your API wallet private key:</strong>
-                  </p>
-                  <ol className="text-[#9ca3af] text-xs space-y-1 list-decimal list-inside">
-                    <li>Go to <a href="https://app.hyperliquid-testnet.xyz/trade" target="_blank" className="text-[#8759ff] hover:underline">Hyperliquid Testnet</a></li>
-                    <li>Connect your wallet (same as MetaMask)</li>
-                    <li>Go to <strong>API</strong> section in the menu</li>
-                    <li>Click <strong>"Generate"</strong> to create a new API wallet</li>
-                    <li>Click <strong>"Authorize API Wallet"</strong> to activate it</li>
-                    <li>Click <strong>"Export Private Key"</strong> on your API wallet</li>
-                    <li>Copy the 64-character private key (starts with 0x...)</li>
-                  </ol>
-                  <p className="text-[#27c47d] text-xs mt-2">
-                    ✅ API wallets are secure - they can trade but cannot withdraw funds!
-                  </p>
-                  <p className="text-[#ef4444] text-xs mt-1">
-                    ⚠️ This is the API wallet's private key, not your main wallet's private key!
-                  </p>
-                </div>
-              </div>
-                </>
-              )}
-
-              {tradingSession && tradingSession.status === 'running' ? (
-                <div className="space-y-3">
-                  <div className="bg-[#1f2937] border border-[#374151] rounded-2xl p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-white font-semibold">Active Trading Session</span>
-                      <span className="text-[#27c47d] text-sm">Running</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="text-[#9ca3af]">PnL:</span>
-                        <span className={`ml-1 font-semibold ${tradingSession.pnl >= 0 ? 'text-[#27c47d]' : 'text-[#ef4444]'}`}>
-                          ${tradingSession.pnl.toFixed(2)}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-[#9ca3af]">Positions:</span>
-                        <span className="ml-1 font-semibold text-white">{tradingSession.openPositions}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <Link href="/chat">
-                    <Button className="w-full bg-[#374151] hover:bg-[#4b5563] text-white font-semibold py-3 sm:py-4 rounded-2xl text-base sm:text-lg">
-                      📊 View Trading Dashboard
-                    </Button>
-                  </Link>
-                </div>
-              ) : (
-                <div className="text-center">
-                  <p className="text-[#9ca3af] text-sm">
-                    Complete the setup above to start trading
-                  </p>
-                </div>
-              )}
-
-              {/* Single Start button inside goals card when setup complete */}
-              {isSetupComplete && (
-                <div className="mt-4">
-                  <Link href={`/chat?profit=${targetProfit}&investment=${investmentAmount}&mode=real&hyperliquidApiWallet=${encodeURIComponent(hyperliquidApiWallet)}${isSuperApp ? '&superapp=true' : ''}`}>
-                    <Button className="w-full bg-[#8759ff] hover:bg-[#7C3AED] text-white font-semibold py-3 sm:py-4 rounded-2xl text-base sm:text-lg">
-                      🚀 Start Trading
-                      {isSuperApp && (
-                        <span className="ml-2 text-xs opacity-80">(SuperApp Mode)</span>
-                      )}
-                    </Button>
-                  </Link>
-                </div>
-              )}
             </div>
           </div>
         </Card>
-
-        
 
         {/* Your Holdings - Only show when connected and has holdings */}
         {isConnected && realHoldings.length > 0 && (
@@ -539,37 +481,33 @@ export default function HomePage() {
             <div className="space-y-5 sm:space-y-6 pb-6 sm:pb-8 px-0 sm:px-1">
               {realHoldings.map((holding, index) => (
                 <Link key={index} href={holding.link}>
-                  <div className="flex items-center justify-between p-4 sm:p-5 bg-[#1a1a1a] rounded-2xl hover:bg-[#202020] transition-colors cursor-pointer mb-4">
-                    <div className="flex items-center space-x-3 sm:space-x-4">
-                      <div
-                        className="w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center"
-                        style={{ backgroundColor: holding.color }}
-                      >
-                        <span className="text-white font-bold text-sm sm:text-base">{holding.symbol.slice(0, 2)}</span>
+                  <Card className="bg-[#1a1a1a] border-[#262626] p-4 sm:p-6 rounded-2xl hover:bg-[#1f1f1f] transition-colors cursor-pointer">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3 sm:space-x-4">
+                        <div 
+                          className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-base"
+                          style={{ backgroundColor: holding.color }}
+                        >
+                          {holding.token.symbol.charAt(0)}
+                        </div>
+                        <div>
+                          <h4 className="text-white font-semibold text-base sm:text-lg">{holding.token.symbol}</h4>
+                          <p className="text-[#9ca3af] text-sm">{holding.token.name}</p>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="text-white font-semibold text-base sm:text-lg">{holding.name}</h4>
-                        <p className="text-[#b4b4b4] text-sm sm:text-base">
-                          {holding.amount} {holding.symbol}
-                        </p>
+                      <div className="text-right">
+                        <p className="text-white font-semibold text-base sm:text-lg">{holding.balance}</p>
+                        <p className="text-[#9ca3af] text-sm">{formatValue(holding.valueUSD)}</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-white font-semibold text-base sm:text-lg">{holding.value}</p>
-                      <p
-                        className={`text-sm sm:text-base ${holding.change.startsWith("+") ? "text-[#27c47d]" : "text-[#ef4444]"}`}
-                      >
-                        {holding.change}
-                      </p>
-                    </div>
-                  </div>
+                  </Card>
                 </Link>
               ))}
             </div>
           </div>
         )}
       </div>
-
     </div>
+    </ProtectedRoute>
   )
 }

@@ -26,7 +26,7 @@ export class CacheManager {
   };
 
   // Cache configurations for different data types
-  private readonly cacheConfigs = {
+  private readonly cacheConfigs: Record<string, CacheConfig> = {
     user_session: { ttl: 86400, prefix: 'session:', serialize: true }, // 24 hours
     user_profile: { ttl: 3600, prefix: 'user:', serialize: true }, // 1 hour
     trading_session: { ttl: 86400, prefix: 'trading:', serialize: true }, // 24 hours
@@ -39,11 +39,9 @@ export class CacheManager {
 
   constructor() {
     this.redis = new Redis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-      password: process.env.REDIS_PASSWORD,
-      retryDelayOnFailover: 100,
-      maxRetriesPerRequest: 3,
+      host: process.env['REDIS_HOST'] || 'localhost',
+      port: parseInt(process.env['REDIS_PORT'] || '6379'),
+      password: process.env['REDIS_PASSWORD'] || '',
       lazyConnect: true,
       // Connection pool settings for high throughput
       family: 4,
@@ -52,8 +50,7 @@ export class CacheManager {
       commandTimeout: 5000,
       // Cluster settings if using Redis Cluster
       enableReadyCheck: false,
-      maxRetriesPerRequest: null,
-    });
+    } as any);
 
     // Handle connection events
     this.redis.on('connect', () => {
@@ -73,9 +70,13 @@ export class CacheManager {
   /**
    * Get value from cache
    */
-  async get<T>(key: string, configType: keyof typeof this.cacheConfigs): Promise<T | null> {
+  async get<T>(key: string, configType: string): Promise<T | null> {
     try {
       const config = this.cacheConfigs[configType];
+      if (!config) {
+        console.error(`Unknown cache config type: ${configType}`);
+        return null;
+      }
       const fullKey = this.buildKey(key, config);
       
       const value = await this.redis.get(fullKey);
@@ -100,11 +101,15 @@ export class CacheManager {
   async set<T>(
     key: string, 
     value: T, 
-    configType: keyof typeof this.cacheConfigs,
+    configType: string,
     customTtl?: number
   ): Promise<boolean> {
     try {
       const config = this.cacheConfigs[configType];
+      if (!config) {
+        console.error(`Unknown cache config type: ${configType}`);
+        return false;
+      }
       const fullKey = this.buildKey(key, config);
       const ttl = customTtl || config.ttl;
       
@@ -123,9 +128,13 @@ export class CacheManager {
   /**
    * Delete value from cache
    */
-  async delete(key: string, configType: keyof typeof this.cacheConfigs): Promise<boolean> {
+  async delete(key: string, configType: string): Promise<boolean> {
     try {
       const config = this.cacheConfigs[configType];
+      if (!config) {
+        console.error(`Unknown cache config type: ${configType}`);
+        return false;
+      }
       const fullKey = this.buildKey(key, config);
       
       const result = await this.redis.del(fullKey);
@@ -141,9 +150,13 @@ export class CacheManager {
   /**
    * Check if key exists in cache
    */
-  async exists(key: string, configType: keyof typeof this.cacheConfigs): Promise<boolean> {
+  async exists(key: string, configType: string): Promise<boolean> {
     try {
       const config = this.cacheConfigs[configType];
+      if (!config) {
+        console.error(`Unknown cache config type: ${configType}`);
+        return false;
+      }
       const fullKey = this.buildKey(key, config);
       
       const result = await this.redis.exists(fullKey);
@@ -159,7 +172,7 @@ export class CacheManager {
    * Set multiple values atomically
    */
   async mset<T>(
-    keyValuePairs: Array<{ key: string; value: T; configType: keyof typeof this.cacheConfigs }>,
+    keyValuePairs: Array<{ key: string; value: T; configType: string }>,
     customTtl?: number
   ): Promise<boolean> {
     try {
@@ -167,6 +180,7 @@ export class CacheManager {
       
       for (const { key, value, configType } of keyValuePairs) {
         const config = this.cacheConfigs[configType];
+        if (!config) continue;
         const fullKey = this.buildKey(key, config);
         const ttl = customTtl || config.ttl;
         const serializedValue = config.serialize ? JSON.stringify(value) : String(value);
@@ -188,13 +202,14 @@ export class CacheManager {
    * Get multiple values
    */
   async mget<T>(
-    keys: Array<{ key: string; configType: keyof typeof this.cacheConfigs }>
+    keys: Array<{ key: string; configType: string }>
   ): Promise<Array<T | null>> {
     try {
       const fullKeys = keys.map(({ key, configType }) => {
         const config = this.cacheConfigs[configType];
+        if (!config) return '';
         return this.buildKey(key, config);
-      });
+      }).filter(key => key !== '');
       
       const values = await this.redis.mget(...fullKeys);
       
@@ -205,7 +220,8 @@ export class CacheManager {
         }
         
         this.stats.hits++;
-        const config = this.cacheConfigs[keys[index].configType];
+        const config = this.cacheConfigs[keys[index]?.configType || ''];
+        if (!config) return null;
         return config.serialize ? JSON.parse(value) : value as T;
       });
     } catch (error) {
@@ -218,9 +234,13 @@ export class CacheManager {
   /**
    * Increment a numeric value
    */
-  async increment(key: string, configType: keyof typeof this.cacheConfigs, amount: number = 1): Promise<number> {
+  async increment(key: string, configType: string, amount: number = 1): Promise<number> {
     try {
       const config = this.cacheConfigs[configType];
+      if (!config) {
+        console.error(`Unknown cache config type: ${configType}`);
+        return 0;
+      }
       const fullKey = this.buildKey(key, config);
       
       const result = await this.redis.incrby(fullKey, amount);
@@ -235,9 +255,13 @@ export class CacheManager {
   /**
    * Set expiration time for a key
    */
-  async expire(key: string, configType: keyof typeof this.cacheConfigs, ttl: number): Promise<boolean> {
+  async expire(key: string, configType: string, ttl: number): Promise<boolean> {
     try {
       const config = this.cacheConfigs[configType];
+      if (!config) {
+        console.error(`Unknown cache config type: ${configType}`);
+        return false;
+      }
       const fullKey = this.buildKey(key, config);
       
       const result = await this.redis.expire(fullKey, ttl);

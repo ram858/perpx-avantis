@@ -1,0 +1,64 @@
+[WEBSOCKET] Simulation WebSocket server running on ws://localhost:3002
+[SIMULATION] 🎮 Simulation server running on http://localhost:3001
+[SIMULATION] 💡 This is a pure simulation - no real money involved!
+[SIMULATION] Starting simulation session sim_1758729791134
+[SIMULATION] Config: Budget=$1000, Goal=$100, MaxPos=5
+[API] Started simulation session sim_1758729791134
+[SIMULATION] Cycle 1: PnL=$-0.08, Positions=1
+[SIMULATION] Cycle 2: PnL=$-0.16, Positions=1
+[SIMULATION] Session sim_1758729791134 stopped
+[API] Stopped simulation session sim_1758729791134
+[WEBSOCKET] Client connected to simulation
+[WEBSOCKET] Received: { type: 'ping', data: { timestamp: 1758730038292 } }
+[WEBSOCKET] Client connected to simulation
+[WEBSOCKET] Received: { type: 'ping', data: { timestamp: 1758730038309 } }
+[WEBSOCKET] Client disconnected from simulation
+[WEBSOCKET] Client disconnected from simulation
+[WEBSOCKET] Client connected to simulation
+[WEBSOCKET] Client connected to simulation
+[WEBSOCKET] Received: { type: 'ping', data: { timestamp: 1758730700713 } }
+[WEBSOCKET] Received: { type: 'ping', data: { timestamp: 1758730700838 } }
+[WEBSOCKET] Client disconnected from simulation
+[WEBSOCKET] Client disconnected from simulation
+[WEBSOCKET] Client connected to simulation
+[WEBSOCKET] Received: { type: 'ping', data: { timestamp: 1758731326022 } }
+[WEBSOCKET] Client connected to simulation
+[WEBSOCKET] Received: { type: 'ping', data: { timestamp: 1758731326046 } }
+[WEBSOCKET] Client disconnected from simulation
+[WEBSOCKET] Client disconnected from simulation
+[WEBSOCKET] Client connected to simulation
+[WEBSOCKET] Received: { type: 'ping', data: { timestamp: 1758732110977 } }
+[WEBSOCKET] Client disconnected from simulation
+[WEBSOCKET] Client connected to simulation
+[WEBSOCKET] Received: { type: 'ping', data: { timestamp: 1758733349405 } }
+[WEBSOCKET] Client disconnected from simulation
+[WEBSOCKET] Client connected to simulation
+[WEBSOCKET] Received: { type: 'ping', data: { timestamp: 1758733420992 } }
+[WEBSOCKET] Client connected to simulation
+[WEBSOCKET] Received: { type: 'ping', data: { timestamp: 1758733421037 } }
+[WEBSOCKET] Client disconnected from simulation
+[WEBSOCKET] Client disconnected from simulation
+[WEBSOCKET] Client connected to simulation
+[WEBSOCKET] Received: { type: 'ping', data: { timestamp: 1758771539674 } }
+[WEBSOCKET] Client connected to simulation
+[WEBSOCKET] Received: { type: 'ping', data: { timestamp: 1758771539717 } }
+[WEBSOCKET] Client disconnected from simulation
+[WEBSOCKET] Client disconnected from simulation
+[WEBSOCKET] Client connected to simulation
+[WEBSOCKET] Received: { type: 'ping', data: { timestamp: 1758772059425 } }
+[WEBSOCKET] Client connected to simulation
+[WEBSOCKET] Received: { type: 'ping', data: { timestamp: 1758772059513 } }
+[WEBSOCKET] Client disconnected from simulation
+[WEBSOCKET] Client disconnected from simulation
+[WEBSOCKET] Client connected to simulation
+[WEBSOCKET] Received: { type: 'ping', data: { timestamp: 1758772504657 } }
+[WEBSOCKET] Client connected to simulation
+[WEBSOCKET] Received: { type: 'ping', data: { timestamp: 1758772504678 } }
+[WEBSOCKET] Client disconnected from simulation
+[WEBSOCKET] Client disconnected from simulation
+[WEBSOCKET] Client connected to simulation
+[WEBSOCKET] Received: { type: 'ping', data: { timestamp: 1758778250009 } }
+[WEBSOCKET] Client connected to simulation
+[WEBSOCKET] Received: { type: 'ping', data: { timestamp: 1758778250038 } }
+[WEBSOCKET] Client disconnected from simulation
+[WEBSOCKET] Client disconnected from simulation

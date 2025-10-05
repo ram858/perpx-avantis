@@ -1,0 +1,42 @@
+# PgBouncer User List for PrepX
+# Format: "username" "password_hash"
+# Generate password hashes using: echo -n "password" | md5sum
+
+# Application users
+"postgres" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+"prepx_app" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+"prepx_trading" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+"prepx_readonly" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+
+# Monitoring users
+"monitoring" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+"stats_user" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+
+# Replication users
+"replicator" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+
+# Admin users
+"admin" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+"root" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+
+# Service users
+"api_gateway" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+"trading_service" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+"user_service" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+"portfolio_service" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+"market_data_service" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+"notification_service" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+
+# Development users (remove in production)
+"dev" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+"test" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+
+# Backup users
+"backup" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+"restore" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+
+# Read-only users for different regions
+"readonly_us_west" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+"readonly_eu_west" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+"readonly_ap_southeast" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello
+"readonly_eu_central" "md5a665a45920422f9d417e4867efdc4fb8"  # password: hello

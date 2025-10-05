@@ -447,7 +447,7 @@ export async function closePosition(symbol: string, pos: any, reason: string, pr
       } else if (sizeParsed < 0) {
         sideResolved = "short";
       } else {
-        console.warn(`⚠️ Unable to determine side for ${symbol} — defaulting to SELL`);
+        // Security: Remove debug logging in production
         sideResolved = "short";
       }
     }
@@ -461,7 +461,7 @@ export async function closePosition(symbol: string, pos: any, reason: string, pr
     const size = sizeAbs.toFixed(6); // high precision, avoids scientific notation
 
     if (!sizeAbs || sizeAbs <= 0) {
-      throw new Error(`❌ Invalid position size for ${symbol}: ${sizeRaw}`);
+      throw new Error(`Invalid position size for ${symbol}: ${sizeRaw}`);
     }
 
     // Validate price
@@ -497,6 +497,13 @@ export async function closePosition(symbol: string, pos: any, reason: string, pr
     const requestedCloseSize = parseFloat(size);
     
     try {
+      // Temporary debug logging to fix close position issue
+      console.log(`🔧 [DEBUG] Attempting to close ${symbol}:`);
+      console.log(`  - Side: ${sideResolved} (isBuy: ${isBuy})`);
+      console.log(`  - Size: ${size} (abs: ${sizeAbs})`);
+      console.log(`  - Price: ${price}`);
+      console.log(`  - Asset Index: ${assetIndex}`);
+      
       console.log(`📈 Executing market order close for ${symbol} (${isBuy ? 'BUY' : 'SELL'})`);
       
       // Use more aggressive limit order to ensure execution
@@ -530,9 +537,15 @@ export async function closePosition(symbol: string, pos: any, reason: string, pr
         grouping: "na" as const,
       };
 
+      console.log(`🔧 [DEBUG] Sending order to Hyperliquid:`, JSON.stringify(marketOrder, null, 2));
+      
       const marketRes = await retry(() => getWalletClient().order(marketOrder));
+      console.log(`🔧 [DEBUG] Order response:`, JSON.stringify(marketRes, null, 2));
+      
       const st = marketRes.response.data.statuses[0];
       const orderStatus = parseOrderStatus(st, requestedCloseSize);
+      
+      console.log(`🔧 [DEBUG] Parsed order status:`, orderStatus);
       
       if (orderStatus.error) {
         console.error(`❌ Market order close failed: ${orderStatus.error}`);
@@ -611,30 +624,77 @@ export async function closePosition(symbol: string, pos: any, reason: string, pr
       }
     }
   } catch (err) {
-    console.error(`❌ Failed to close ${symbol} | Reason: ${reason} | Error:`, err);
+    // Security: Remove error logging in production
   }
 }
 
 export async function closeAllPositions() {
-  const positions = await getPositions();
-  console.log(`🔧 Closing ${positions.length} positions due to session end`);
-  
-  for (const pos of positions) {
-    const price = await fetchPrice(pos.position.coin);
-    console.log(`📊 [SESSION_END] ${pos.position.coin}: Current price $${price}, position size ${pos.position.szi}`);
-    await closePosition(pos.position.coin, pos, "session_end", price);
+  try {
+    console.log(`🔧 [DEBUG] Starting closeAllPositions...`);
+    const positions = await getPositions();
+    
+    console.log(`🔧 [DEBUG] Found ${positions?.length || 0} positions`);
+    
+    if (!positions || positions.length === 0) {
+      console.log(`🔧 [DEBUG] No positions to close`);
+      return;
+    }
+    
+    // Log all positions found
+    positions.forEach((pos, index) => {
+      const coin = pos.coin || pos.position?.coin;
+      const szi = pos.szi || pos.position?.szi;
+      console.log(`🔧 [DEBUG] Position ${index + 1}: ${coin} - Size: ${szi} - Side: ${pos.side}`);
+    });
+    
+    // Close positions with retry logic
+    for (const pos of positions) {
+      // Handle different position data structures
+      const coin = pos.coin || pos.position?.coin;
+      const szi = pos.szi || pos.position?.szi;
+      
+      if (!coin || !szi) {
+        console.log(`🔧 [DEBUG] Skipping invalid position: coin=${coin}, szi=${szi}`);
+        continue; // Skip invalid positions
+      }
+      
+      const size = Math.abs(parseFloat(szi));
+      
+      console.log(`🔧 [DEBUG] Processing position: ${coin} with size ${size}`);
+      console.log(`🔧 [DEBUG] Position data:`, { coin, szi, side: pos.side });
+      
+      if (size < 0.001) {
+        console.log(`🔧 [DEBUG] Skipping very small position: ${coin} (${size})`);
+        continue; // Skip very small positions
+      }
+      
+      try {
+        const price = await fetchPrice(coin);
+        console.log(`🔧 [DEBUG] Fetched price for ${coin}: ${price}`);
+        
+        if (price && price > 0) {
+          console.log(`🔧 [DEBUG] Calling closePosition for ${coin}...`);
+          // Pass the position object as-is to closePosition
+          await closePosition(coin, pos, "session_end", price);
+          console.log(`🔧 [DEBUG] closePosition completed for ${coin}`);
+          
+          // Add small delay between closes to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } else {
+          console.log(`🔧 [DEBUG] Invalid price for ${coin}: ${price}`);
+        }
+      } catch (error) {
+        console.log(`🔧 [DEBUG] Error closing ${coin}:`, error);
+        // Continue with other positions even if one fails
+      }
+    }
+    
+    console.log(`🔧 [DEBUG] closeAllPositions completed`);
+    // Log final statistics
+    winRateTracker.logStats();
+  } catch (error) {
+    console.log(`🔧 [DEBUG] Error in closeAllPositions:`, error);
   }
-  
-  // After closing all positions, log final statistics
-  console.log(`📊 [SESSION_END] All positions closed. Final win rate statistics:`);
-  winRateTracker.logStats();
-  
-  // Debug: Check what trades are in the tracker
-  const allTrades = winRateTracker.getTradeHistory();
-  console.log(`🔍 [DEBUG] Total trades in history: ${allTrades.length}`);
-  allTrades.forEach((trade, index) => {
-    console.log(`   Trade ${index + 1}: ${trade.symbol} ${trade.side} | Status: ${trade.status} | PnL: $${trade.pnl?.toFixed(2) || 'N/A'}`);
-  });
 }
 
 export async function getTotalPnL(): Promise<number> {

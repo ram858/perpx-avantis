@@ -1,303 +1,178 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useCallback } from 'react';
+import { useAuth } from '../auth/AuthContext';
 
 export interface TradingConfig {
-  maxBudget: number;
+  totalBudget: number;
   profitGoal: number;
-  maxPerSession: number;
+  maxPositions: number;
+  leverage?: number;
 }
 
-export interface SessionStatus {
-  sessionId: string;
-  status: 'running' | 'stopped' | 'completed' | 'error';
-  pnl: number;
-  openPositions: number;
-  cycle: number;
-  lastUpdate: Date;
+export interface TradingSession {
+  id: string;
+  status: 'running' | 'completed' | 'stopped' | 'error';
+  startTime: Date;
+  endTime?: Date;
+  totalPnL: number;
+  positions: number;
   config: TradingConfig;
   error?: string;
 }
 
-export interface TradingUpdate {
-  type: 'trading_update' | 'session_update' | 'error' | 'ping' | 'pong';
-  data?: SessionStatus | { error?: string; timestamp?: number };
-  sessionId?: string;
+export interface TradingPosition {
+  symbol: string;
+  side: 'LONG' | 'SHORT';
+  size: number;
+  entryPrice: number;
+  currentPrice: number;
+  pnl: number;
+  leverage: number;
+  timestamp: Date;
 }
 
 export function useTrading() {
-  const [isConnected, setIsConnected] = useState(false);
-  const [tradingSession, setTradingSession] = useState<SessionStatus | null>(null);
+  const { token } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectAttempts = useRef(0);
-  const maxReconnectAttempts = 5;
 
-  const checkAndSubscribeToActiveSessions = useCallback(async () => {
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${apiUrl}/api/status`);
-      
-      if (response.ok) {
-        const data = await response.json();
-        
-        if (data.sessions && Array.isArray(data.sessions)) {
-          const runningSessions = data.sessions.filter((session: any) => session.status === 'running');
-          
-          if (runningSessions.length > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
-            // Subscribe to the most recent running session
-            const latestSession = runningSessions[runningSessions.length - 1];
-            
-            wsRef.current.send(JSON.stringify({
-              type: 'subscribe',
-              sessionId: latestSession.sessionId
-            }));
-            
-            // Set the trading session state
-            setTradingSession(latestSession);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('[useTrading] Failed to check active sessions:', error);
-    }
-  }, []);
-
-  const connectWebSocket = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      return;
+  const makeRequest = useCallback(async (url: string, options: RequestInit = {}) => {
+    if (!token) {
+      throw new Error('Not authenticated');
     }
 
-    const wsUrl = 'ws://localhost:3002';
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        ...options.headers,
+      },
+    });
 
-    try {
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      // Set a connection timeout
-      const connectionTimeout = setTimeout(() => {
-        if (ws.readyState === WebSocket.CONNECTING) {
-          console.error('[useTrading] WebSocket connection timeout');
-          ws.close();
-          setError('WebSocket connection timeout');
-        }
-      }, 10000); // 10 second timeout
-
-      ws.onopen = () => {
-        clearTimeout(connectionTimeout);
-        setIsConnected(true);
-        setError(null);
-        reconnectAttempts.current = 0;
-        
-        // Send a test message to verify connection
-        ws.send(JSON.stringify({ type: 'ping', data: { timestamp: Date.now() } }));
-        
-        // Check for active sessions and subscribe to them
-        checkAndSubscribeToActiveSessions();
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data: TradingUpdate = JSON.parse(event.data);
-
-          if (data.type === 'session_update' && data.data && 'sessionId' in data.data) {
-            console.log('[FRONTEND_DEBUG] Received session_update:', data.data);
-            setTradingSession(data.data as SessionStatus);
-          } else if (data.type === 'trading_update' && data.data && 'sessionId' in data.data) {
-            console.log('[FRONTEND_DEBUG] Received trading_update:', data.data);
-            setTradingSession(data.data as SessionStatus);
-          } else if (data.type === 'error') {
-            setError(data.data?.error || 'Unknown error');
-          } else if (data.type === 'ping') {
-            // Respond to ping with pong
-            ws.send(JSON.stringify({ type: 'pong', data: { timestamp: Date.now() } }));
-          }
-        } catch (err) {
-          console.error('[useTrading] Failed to parse WebSocket message:', err);
-        }
-      };
-
-      ws.onclose = (event) => {
-        clearTimeout(connectionTimeout);
-        setIsConnected(false);
-        wsRef.current = null;
-
-        // Attempt to reconnect if not a clean close
-        if (event.code !== 1000 && reconnectAttempts.current < maxReconnectAttempts) {
-          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
-          
-          reconnectTimeoutRef.current = setTimeout(() => {
-            reconnectAttempts.current++;
-            connectWebSocket();
-          }, delay);
-        }
-      };
-
-      ws.onerror = (error) => {
-        console.error('[useTrading] WebSocket error:', error.message || 'Unknown WebSocket error');
-        console.error('[useTrading] WebSocket readyState:', ws.readyState);
-        console.error('[useTrading] WebSocket url:', ws.url);
-        clearTimeout(connectionTimeout);
-        setError('WebSocket connection error');
-      };
-    } catch (err) {
-      console.error('[useTrading] Failed to create WebSocket:', err);
-      setError('Failed to connect to trading server');
-    }
-  }, []);
-
-  const disconnectWebSocket = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Request failed');
     }
 
-    if (wsRef.current) {
-      wsRef.current.close(1000, 'User disconnected');
-      wsRef.current = null;
-    }
-    setIsConnected(false);
-  }, []);
+    return response.json();
+  }, [token]);
 
-  const startTrading = useCallback(async (config: TradingConfig, hyperliquidApiWallet?: string): Promise<string | null> => {
+  const startTrading = useCallback(async (config: TradingConfig): Promise<TradingSession> => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${apiUrl}/api/start-trading`, {
+      const result = await makeRequest('/api/trading/start', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...config,
-          hyperliquidApiWallet
-        }),
+        body: JSON.stringify(config),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP ${response.status}`);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to start trading');
       }
 
-      const result = await response.json();
-
-      // Subscribe to updates
-      if (wsRef.current?.readyState === WebSocket.OPEN && result.sessionId) {
-        wsRef.current.send(JSON.stringify({
-          type: 'subscribe',
-          sessionId: result.sessionId
-        }));
-      }
-
-      return result.sessionId;
+      // Return a basic session object
+      return {
+        id: result.sessionId,
+        status: 'running',
+        startTime: new Date(),
+        totalPnL: 0,
+        positions: 0,
+        config
+      };
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to start trading session';
-      console.error('[useTrading] Error starting trading:', errorMessage);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to start trading';
       setError(errorMessage);
-      return null;
+      throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [makeRequest]);
 
-  const stopTrading = useCallback(async (sessionId: string, force = false): Promise<boolean> => {
+  const stopTrading = useCallback(async (sessionId: string): Promise<void> => {
+    setIsLoading(true);
+    setError(null);
+
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${apiUrl}/api/stop-trading`, {
+      const result = await makeRequest('/api/trading/stop', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ sessionId, force }),
+        body: JSON.stringify({ sessionId }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP ${response.status}`);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to stop trading');
       }
-
-      return true;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to stop trading session';
-      console.error('[useTrading] Error stopping trading:', errorMessage);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to stop trading';
       setError(errorMessage);
-      return false;
+      throw new Error(errorMessage);
+    } finally {
+      setIsLoading(false);
     }
-  }, []);
+  }, [makeRequest]);
 
-  const getSessionStatus = useCallback(async (sessionId: string): Promise<SessionStatus | null> => {
+  const getTradingSessions = useCallback(async (): Promise<TradingSession[]> => {
+    setIsLoading(true);
+    setError(null);
+
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${apiUrl}/api/session/${sessionId}`);
+      const result = await makeRequest('/api/trading/sessions');
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          return null;
-        }
-        throw new Error(`HTTP ${response.status}`);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to fetch trading sessions');
       }
 
-      return await response.json();
+      return result.sessions.map((session: any) => ({
+        ...session,
+        startTime: new Date(session.startTime),
+        endTime: session.endTime ? new Date(session.endTime) : undefined,
+      }));
     } catch (err) {
-      console.error('[useTrading] Error getting session status:', err);
-      return null;
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch trading sessions';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    } finally {
+      setIsLoading(false);
     }
-  }, []);
+  }, [makeRequest]);
 
-  const getTradingConfig = useCallback(async () => {
+  const getTradingSession = useCallback(async (sessionId: string): Promise<TradingSession & { positions: TradingPosition[] }> => {
+    setIsLoading(true);
+    setError(null);
+
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${apiUrl}/api/status`);
+      const result = await makeRequest(`/api/trading/session/${sessionId}`);
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to fetch trading session');
       }
 
-      return await response.json();
+      return {
+        ...result.session,
+        startTime: new Date(result.session.startTime),
+        endTime: result.session.endTime ? new Date(result.session.endTime) : undefined,
+        positions: result.session.positions.map((pos: any) => ({
+          ...pos,
+          timestamp: new Date(pos.timestamp),
+        })),
+      };
     } catch (err) {
-      console.error('[useTrading] Error getting trading config:', err);
-      return null;
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch trading session';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    } finally {
+      setIsLoading(false);
     }
-  }, []);
-
-  // Connect WebSocket when component mounts
-  useEffect(() => {
-    // Connect with a small delay to ensure server is ready
-    const connectWithDelay = () => {
-      setTimeout(() => {
-        connectWebSocket();
-      }, 1000); // 1 second delay
-    };
-    
-    connectWithDelay();
-
-    return () => {
-      disconnectWebSocket();
-    };
-  }, [connectWebSocket, disconnectWebSocket]);
+  }, [makeRequest]);
 
   return {
-    // State
-    isConnected,
-    tradingSession,
     isLoading,
     error,
-    
-    // Actions
     startTrading,
     stopTrading,
-    getSessionStatus,
-    getTradingConfig,
-    connectWebSocket,
-    disconnectWebSocket,
-    refreshSessionStatus: checkAndSubscribeToActiveSessions,
-    
-    // Utilities
-    clearError: () => setError(null),
-    clearSession: () => setTradingSession(null),
+    getTradingSessions,
+    getTradingSession,
   };
 }

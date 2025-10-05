@@ -1,0 +1,269 @@
+# Automated Failover Configuration for PrepX
+# Implements high availability with automatic failover
+
+version: '3.8'
+
+services:
+  # Primary Database Cluster
+  postgres-primary:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+    volumes:
+      - postgres_primary_data:/var/lib/postgresql/data
+      - ./postgresql-master.conf:/etc/postgresql/postgresql.conf
+      - ./setup-replication.sql:/docker-entrypoint-initdb.d/01-setup-replication.sql
+    ports:
+      - "5432:5432"
+    command: >
+      postgres
+      -c config_file=/etc/postgresql/postgresql.conf
+      -c wal_level=replica
+      -c max_wal_senders=10
+      -c max_replication_slots=10
+      -c hot_standby=on
+      -c synchronous_commit=on
+      -c synchronous_standby_names='ANY 2 (replica-1,replica-2)'
+    networks:
+      - prepx-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d prepx"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # Standby Database 1
+  postgres-standby-1:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      PGUSER: postgres
+    volumes:
+      - postgres_standby_1_data:/var/lib/postgresql/data
+      - ./postgresql-replica.conf:/etc/postgresql/postgresql.conf
+      - ./setup-replica.sh:/docker-entrypoint-initdb.d/01-setup-replica.sh
+    depends_on:
+      - postgres-primary
+    command: >
+      bash -c "
+      echo 'Waiting for primary to be ready...'
+      until pg_basebackup -h postgres-primary -D /var/lib/postgresql/data -U replicator -v -P -W -R --slot=replication_slot_users
+      do
+        echo 'Waiting for primary to connect...'
+        sleep 5s
+      done
+      echo 'Standby 1 created'
+      postgres -c config_file=/etc/postgresql/postgresql.conf -c primary_conninfo='host=postgres-primary port=5432 user=replicator application_name=replica-1'
+      "
+    networks:
+      - prepx-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d prepx"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # Standby Database 2
+  postgres-standby-2:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      PGUSER: postgres
+    volumes:
+      - postgres_standby_2_data:/var/lib/postgresql/data
+      - ./postgresql-replica.conf:/etc/postgresql/postgresql.conf
+      - ./setup-replica.sh:/docker-entrypoint-initdb.d/01-setup-replica.sh
+    depends_on:
+      - postgres-primary
+    command: >
+      bash -c "
+      echo 'Waiting for primary to be ready...'
+      until pg_basebackup -h postgres-primary -D /var/lib/postgresql/data -U replicator -v -P -W -R --slot=replication_slot_users
+      do
+        echo 'Waiting for primary to connect...'
+        sleep 5s
+      done
+      echo 'Standby 2 created'
+      postgres -c config_file=/etc/postgresql/postgresql.conf -c primary_conninfo='host=postgres-primary port=5432 user=replicator application_name=replica-2'
+      "
+    networks:
+      - prepx-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d prepx"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # PgBouncer with Failover
+  pgbouncer:
+    image: pgbouncer/pgbouncer:latest
+    environment:
+      DATABASES_HOST: postgres-primary
+      DATABASES_PORT: 5432
+      DATABASES_USER: postgres
+      DATABASES_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASES_DBNAME: prepx
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 25
+      MIN_POOL_SIZE: 5
+      RESERVE_POOL_SIZE: 5
+      RESERVE_POOL_TIMEOUT: 5
+      MAX_DB_CONNECTIONS: 100
+      MAX_USER_CONNECTIONS: 100
+      SERVER_RESET_QUERY: DISCARD ALL
+      SERVER_CHECK_QUERY: SELECT 1
+      SERVER_CHECK_DELAY: 30
+      SERVER_LIFETIME: 3600
+      SERVER_IDLE_TIMEOUT: 600
+      QUERY_TIMEOUT: 300
+      QUERY_WAIT_TIMEOUT: 120
+      CLIENT_LOGIN_TIMEOUT: 60
+      CLIENT_IDLE_TIMEOUT: 0
+      AUTODB_IDLE_TIMEOUT: 3600
+      DNS_MAX_TTL: 15
+      DNS_NXDOMAIN_TTL: 15
+      DNS_CACHE_MAX_TTL: 900
+      CONSOLE_PASSWORD: ${PGBOUNCER_CONSOLE_PASSWORD}
+    volumes:
+      - ./pgbouncer-failover.ini:/etc/pgbouncer/pgbouncer.ini
+      - ./userlist.txt:/etc/pgbouncer/userlist.txt
+    ports:
+      - "6432:6432"
+      - "9127:9127"
+    depends_on:
+      - postgres-primary
+    networks:
+      - prepx-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "psql -h localhost -p 6432 -U postgres -d prepx -c 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # HAProxy Load Balancer
+  haproxy:
+    image: haproxy:2.8-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8404:8404"  # HAProxy stats
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./ssl:/etc/ssl:ro
+    depends_on:
+      - postgres-primary
+      - postgres-standby-1
+      - postgres-standby-2
+    networks:
+      - prepx-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8404/stats"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Keepalived for VIP (Virtual IP)
+  keepalived:
+    image: osixia/keepalived:2.0.20
+    cap_add:
+      - NET_ADMIN
+      - NET_BROADCAST
+      - NET_RAW
+    volumes:
+      - ./keepalived.conf:/container/service/keepalived/assets/keepalived.conf
+    networks:
+      - prepx-network
+    restart: unless-stopped
+    privileged: true
+
+  # Failover Manager Service
+  failover-manager:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PRIMARY_HOST: postgres-primary
+      STANDBY_1_HOST: postgres-standby-1
+      STANDBY_2_HOST: postgres-standby-2
+      MONITORING_INTERVAL: 30
+      FAILOVER_THRESHOLD: 3
+    volumes:
+      - ./failover-manager.sh:/usr/local/bin/failover-manager.sh
+      - ./failover-log:/var/log/failover
+    depends_on:
+      - postgres-primary
+      - postgres-standby-1
+      - postgres-standby-2
+    networks:
+      - prepx-network
+    restart: unless-stopped
+    command: ["/usr/local/bin/failover-manager.sh"]
+
+  # Monitoring Service
+  monitoring:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus-failover.yml:/etc/prometheus/prometheus.yml
+      - monitoring_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  # Alert Manager
+  alertmanager:
+    image: prom/alertmanager:latest
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+volumes:
+  postgres_primary_data:
+  postgres_standby_1_data:
+  postgres_standby_2_data:
+  monitoring_data:
+  alertmanager_data:
+
+networks:
+  prepx-network:
+    driver: bridge

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useTrading } from "@/lib/hooks/useTrading"
+import { usePositions } from "@/lib/hooks/usePositions"
 import { useWallet } from "@/lib/wallet/WalletContext"
 import { useSearchParams } from "next/navigation"
 
@@ -40,6 +41,15 @@ export default function ChatPage() {
     refreshSessionStatus,
     clearSession,
   } = useTrading()
+
+  // Real-time position data
+  const {
+    positionData,
+    isLoading: positionsLoading,
+    error: positionsError,
+    fetchPositions,
+    closePosition: closeIndividualPosition,
+  } = usePositions()
 
   // Wallet integration
   const {
@@ -262,43 +272,54 @@ export default function ChatPage() {
   }
 
   const handleClosePosition = async (positionId: string) => {
-    if (!tradingSession?.sessionId) {
-      console.error('No active trading session to close');
-      return;
-    }
-
     setClosingPositions((prev) => [...prev, positionId])
     
     try {
-      // Stop the trading session
-      const success = await stopTrading(tradingSession.sessionId, true);
+      let success = false;
       
-      if (success) {
-        // Add a message to chat indicating position was closed
-        const closeMessage = {
-          type: "bot" as const,
-          content: `✅ Position closed successfully! Trading session stopped. Final PnL: $${tradingSession.pnl?.toFixed(2) || '0.00'}`,
-          timestamp: new Date().toISOString()
-        };
-        setMessages(prev => [...prev, closeMessage]);
+      if (positionId === "live" && tradingSession?.sessionId) {
+        // Close all positions (legacy behavior)
+        success = await stopTrading(tradingSession.sessionId, true);
         
-        // Update trading phase
-        setTradingPhase("completed");
+        if (success) {
+          const closeMessage = {
+            type: "bot" as const,
+            content: `✅ All positions closed successfully! Trading session stopped. Final PnL: $${tradingSession.pnl?.toFixed(2) || '0.00'}`,
+            timestamp: new Date().toISOString()
+          };
+          setMessages(prev => [...prev, closeMessage]);
+          setTradingPhase("completed");
+        }
       } else {
-        // Add error message to chat
+        // Close individual position
+        success = await closeIndividualPosition(positionId);
+        
+        if (success) {
+          const closeMessage = {
+            type: "bot" as const,
+            content: `✅ Position ${positionId} closed successfully!`,
+            timestamp: new Date().toISOString()
+          };
+          setMessages(prev => [...prev, closeMessage]);
+          
+          // Refresh positions data
+          await fetchPositions();
+        }
+      }
+      
+      if (!success) {
         const errorMessage = {
           type: "bot" as const,
-          content: "❌ Failed to close position. Please try again.",
+          content: `❌ Failed to close position ${positionId}. Please try again.`,
           timestamp: new Date().toISOString()
         };
         setMessages(prev => [...prev, errorMessage]);
       }
     } catch (error) {
-      console.error('Error closing position:', error);
-      // Add error message to chat
+      // Security: Remove error logging in production
       const errorMessage = {
         type: "bot" as const,
-        content: "❌ Error closing position. Please try again.",
+        content: `❌ Error closing position ${positionId}. Please try again.`,
         timestamp: new Date().toISOString()
       };
       setMessages(prev => [...prev, errorMessage]);
@@ -659,7 +680,9 @@ export default function ChatPage() {
               <div className="grid grid-cols-2 gap-4 mb-3">
                 <div>
                   <p className="text-[#b4b4b4] text-sm">Current PnL</p>
-                  <p className="text-white font-semibold">${tradingSession?.pnl?.toFixed(2) || '0.00'}</p>
+                  <p className={`font-semibold ${(positionData?.totalPnL || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    ${positionData?.totalPnL?.toFixed(2) || '0.00'}
+                  </p>
                 </div>
                 <div>
                   <p className="text-[#b4b4b4] text-sm">Target Profit</p>
@@ -667,7 +690,7 @@ export default function ChatPage() {
                 </div>
                 <div>
                   <p className="text-[#b4b4b4] text-sm">Open Positions</p>
-                  <p className="text-white font-semibold">{tradingSession?.openPositions || 0}</p>
+                  <p className="text-white font-semibold">{positionData?.openPositions || 0}</p>
                 </div>
                 <div>
                   <p className="text-[#b4b4b4] text-sm">Cycle</p>
@@ -680,9 +703,9 @@ export default function ChatPage() {
                   className="bg-[#27c47d] h-2 rounded-full transition-all duration-300" 
                   style={{ 
                     width: `${Math.min(100, (() => {
-                      const pnl = tradingSession?.pnl || 0;
+                      const pnl = positionData?.totalPnL || 0;
                       const goal = tradingSession?.config?.profitGoal || 1;
-                      const positions = tradingSession?.openPositions || 0;
+                      const positions = positionData?.openPositions || 0;
                       
                       // If PnL is 0 but we have positions, show some progress based on position count
                       if (pnl === 0 && positions > 0) {
@@ -696,9 +719,9 @@ export default function ChatPage() {
               </div>
               <p className="text-[#b4b4b4] text-xs mt-2">
                 Progress: {(() => {
-                  const pnl = tradingSession?.pnl || 0;
+                  const pnl = positionData?.totalPnL || 0;
                   const goal = tradingSession?.config?.profitGoal || 1;
-                  const positions = tradingSession?.openPositions || 0;
+                  const positions = positionData?.openPositions || 0;
                   
                   if (pnl === 0 && positions > 0) {
                     return `${Math.min(20, positions * 2).toFixed(1)}% (${positions} positions)`;
@@ -710,11 +733,88 @@ export default function ChatPage() {
             </Card>
 
             {/* Show position cards when trading is active */}
-            {tradingSession && tradingSession.openPositions > 0 && (
+            {/* Open Positions - Show real positions from Hyperliquid */}
+            {positionData && positionData.openPositions > 0 && (
               <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4 mx-2 sm:mx-4">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-white font-semibold">Open Positions</h3>
-                  <span className="text-[#b4b4b4] text-sm">{tradingSession.openPositions} positions</span>
+                  <span className="text-[#b4b4b4] text-sm">{positionData.openPositions} positions</span>
+                </div>
+                
+                {/* Individual Position Cards */}
+                <div className="space-y-3">
+                  {positionData.positions.map((position, index) => (
+                    <Card key={`${position.coin}-${index}`} className="bg-[#2a2a2a] border-[#8759ff] border-2 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-8 h-8 bg-[#8759ff] rounded-full flex items-center justify-center">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-white">
+                              <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </div>
+                          <div>
+                            <span className="text-white font-semibold">{position.coin}</span>
+                            <div className="flex items-center space-x-2 mt-1">
+                              <span className={`px-2 py-1 rounded text-xs ${position.side === 'long' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>
+                                {position.side.toUpperCase()}
+                              </span>
+                              <span className="text-[#b4b4b4] text-xs">{position.leverage}x</span>
+                            </div>
+                          </div>
+                        </div>
+                        <Button
+                          onClick={() => handleClosePosition(position.coin)}
+                          disabled={closingPositions.includes(position.coin)}
+                          className="bg-red-500 hover:bg-red-600 text-white rounded-lg px-3 py-1 text-sm"
+                        >
+                          {closingPositions.includes(position.coin) ? (
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          ) : (
+                            "Close"
+                          )}
+                        </Button>
+                      </div>
+
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-[#b4b4b4]">Entry Price</span>
+                          <span className="text-white">${position.entryPrice.toFixed(6)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#b4b4b4]">Mark Price</span>
+                          <span className="text-white">${position.markPrice.toFixed(6)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#b4b4b4]">Size</span>
+                          <span className="text-white">{position.size}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#b4b4b4]">Position Value</span>
+                          <span className="text-white">${position.positionValue.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#b4b4b4]">PnL (ROE)</span>
+                          <span className={`font-semibold ${position.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            ${position.pnl.toFixed(2)} ({position.roe.toFixed(2)}%)
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#b4b4b4]">Margin</span>
+                          <span className="text-white">{position.margin}</span>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </Card>
+            )}
+
+            {/* Fallback for when no positions but trading session exists */}
+            {tradingSession && (!positionData || positionData.openPositions === 0) && (
+              <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4 mx-2 sm:mx-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-white font-semibold">Open Positions</h3>
+                  <span className="text-[#b4b4b4] text-sm">{tradingSession.openPositions || 0} positions</span>
                 </div>
 
                 {/* Real position data from trading session */}
@@ -798,12 +898,12 @@ export default function ChatPage() {
 
                   <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-[#262626]">
                     <div>
-                      <p className="text-[#b4b4b4] text-sm">Position Size</p>
-                      <p className="text-white font-semibold">${(tradingSession.pnl || 0) + 10} USDC</p>
+                      <p className="text-[#b4b4b4] text-sm">Current PnL</p>
+                      <p className="text-white font-semibold">${(positionData?.totalPnL || 0).toFixed(2)} USDC</p>
                     </div>
                     <div>
-                      <p className="text-[#b4b4b4] text-sm">Collateral</p>
-                      <p className="text-white font-semibold">10 USDC</p>
+                      <p className="text-[#b4b4b4] text-sm">Open Positions</p>
+                      <p className="text-white font-semibold">{positionData?.openPositions || 0}</p>
                     </div>
                   </div>
 
@@ -1026,7 +1126,7 @@ export default function ChatPage() {
                 </span>
               </div>
               <div className="text-[#facc15]">
-                PnL: ${tradingSession?.pnl?.toFixed(2) || '0.00'} / ${tradingSession?.config?.profitGoal || '0'}
+                PnL: ${positionData?.totalPnL?.toFixed(2) || '0.00'} / ${tradingSession?.config?.profitGoal || '0'}
               </div>
             </div>
           </div>

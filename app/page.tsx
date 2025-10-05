@@ -5,17 +5,26 @@ import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
+import { useAuth } from "@/lib/auth/AuthContext"
 
 export default function WelcomePage() {
   const router = useRouter()
+  const { isAuthenticated, isLoading } = useAuth()
 
   useEffect(() => {
-    // Check if user has been here before and skip to home
-    const hasVisited = localStorage.getItem('prepx_visited')
-    if (hasVisited) {
-      router.push('/home')
+    if (!isLoading) {
+      if (isAuthenticated) {
+        // User is authenticated, go to home
+        router.push('/home')
+      } else {
+        // User is not authenticated, check if they've visited before
+        const hasVisited = localStorage.getItem('prepx_visited')
+        if (hasVisited) {
+          router.push('/login')
+        }
+      }
     }
-  }, [router])
+  }, [isAuthenticated, isLoading, router])
   return (
     <div className="min-h-screen bg-[#0d0d0d] flex flex-col items-center justify-center px-6 relative overflow-hidden">
       {/* Background gradient circles */}
@@ -60,7 +69,7 @@ export default function WelcomePage() {
 
         {/* Get Started button */}
         <div className="w-full max-w-sm pt-8">
-          <Link href="/home">
+          <Link href="/login">
             <Button 
               className="w-full bg-[#8759ff] hover:bg-[#7C3AED] text-white font-semibold py-4 rounded-2xl text-lg"
               onClick={() => {

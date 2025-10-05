@@ -1,0 +1,229 @@
+"use client";
+
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { UserWallet } from '../services/UserWalletService';
+import { ClientWalletService } from '../services/ClientWalletService';
+import { RealBalanceService, RealBalanceData } from '../services/RealBalanceService';
+import { useAuth } from '../auth/AuthContext';
+
+// Types
+export interface Token {
+  address: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  price?: number;
+}
+
+export interface TokenBalance {
+  token: Token;
+  balance: string;
+  balanceFormatted: string;
+  valueUSD: number;
+}
+
+export interface IntegratedWalletState {
+  isConnected: boolean;
+  primaryWallet: UserWallet | null;
+  allWallets: UserWallet[];
+  ethBalance: string;
+  ethBalanceFormatted: string;
+  holdings: TokenBalance[];
+  totalPortfolioValue: number;
+  dailyChange: number;
+  dailyChangePercentage: number;
+  lastDayValue: number;
+  hyperliquidBalance: number;
+  isLoading: boolean;
+  error: string | null;
+}
+
+export interface IntegratedWalletContextType extends IntegratedWalletState {
+  refreshWallets: () => Promise<void>;
+  createWallet: (chain: string, mnemonic?: string) => Promise<UserWallet | null>;
+  switchToWallet: (walletId: string) => Promise<void>;
+  refreshBalances: () => Promise<void>;
+  getWalletForChain: (chain: string) => UserWallet | null;
+}
+
+const IntegratedWalletContext = createContext<IntegratedWalletContextType | undefined>(undefined);
+
+// Real balance service instance
+const realBalanceService = new RealBalanceService();
+
+export function IntegratedWalletProvider({ children }: { children: React.ReactNode }) {
+  const { user, token } = useAuth();
+  const clientWalletService = new ClientWalletService(() => token || '');
+  
+  const [state, setState] = useState<IntegratedWalletState>({
+    isConnected: false,
+    primaryWallet: null,
+    allWallets: [],
+    ethBalance: '0',
+    ethBalanceFormatted: '0.00 ETH',
+    holdings: [],
+    totalPortfolioValue: 0,
+    dailyChange: 0,
+    dailyChangePercentage: 0,
+    lastDayValue: 0,
+    hyperliquidBalance: 0,
+    isLoading: false,
+    error: null
+  });
+
+  const refreshWallets = useCallback(async () => {
+    if (!user?.phoneNumber || !token) return;
+
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+
+    try {
+      // Get primary trading wallet (Ethereum)
+      const primaryWallet = await clientWalletService.getPrimaryTradingWallet();
+      
+      // Get all user wallets
+      const allWallets = await clientWalletService.getAllUserWallets();
+
+      setState(prev => ({
+        ...prev,
+        isConnected: !!primaryWallet,
+        primaryWallet,
+        allWallets,
+        isLoading: false
+      }));
+
+      // Refresh balances if we have a primary wallet
+      if (primaryWallet) {
+        await refreshBalances();
+      }
+    } catch (error) {
+      console.error('Error refreshing wallets:', error);
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Failed to load wallets'
+      }));
+    }
+  }, [user?.phoneNumber, token]);
+
+  // Load user wallets on mount
+  useEffect(() => {
+    if (user?.phoneNumber && token) {
+      refreshWallets();
+    }
+  }, [user?.phoneNumber, token, refreshWallets]);
+
+  const createWallet = useCallback(async (chain: string, mnemonic?: string): Promise<UserWallet | null> => {
+    if (!user?.phoneNumber || !token) return null;
+
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+
+    try {
+      const result = await clientWalletService.createWallet({ chain, mnemonic });
+      
+      if (result.success && result.wallet) {
+        // Refresh wallets list
+        await refreshWallets();
+        return result.wallet;
+      } else {
+        throw new Error(result.error || 'Failed to create wallet');
+      }
+    } catch (error) {
+      console.error('Error creating wallet:', error);
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Failed to create wallet'
+      }));
+      return null;
+    }
+  }, [user?.phoneNumber, token, refreshWallets]);
+
+  const switchToWallet = useCallback(async (walletId: string) => {
+    const wallet = state.allWallets.find(w => w.id === walletId);
+    if (wallet) {
+      setState(prev => ({
+        ...prev,
+        primaryWallet: wallet,
+        isConnected: true
+      }));
+      await refreshBalances();
+    }
+  }, [state.allWallets]);
+
+  const refreshBalances = useCallback(async () => {
+    if (!state.primaryWallet?.address) {
+      console.log('[IntegratedWallet] No primary wallet address, skipping balance refresh');
+      return;
+    }
+
+    try {
+      console.log(`[IntegratedWallet] Fetching real balances for: ${state.primaryWallet.address}`);
+      
+      // Fetch real blockchain balances
+      const balanceData: RealBalanceData = await realBalanceService.getAllBalances(state.primaryWallet.address);
+      
+      // Convert real balance data to the expected format
+      const holdings: TokenBalance[] = balanceData.holdings.map(realToken => ({
+        token: {
+          address: realToken.token.address,
+          symbol: realToken.token.symbol,
+          name: realToken.token.name,
+          decimals: realToken.token.decimals,
+          price: realToken.priceUSD
+        },
+        balance: realToken.balance,
+        balanceFormatted: realToken.balanceFormatted,
+        valueUSD: realToken.valueUSD
+      }));
+
+      console.log(`[IntegratedWallet] Real balance fetched: $${balanceData.totalPortfolioValue.toFixed(2)}`);
+
+      setState(prev => ({
+        ...prev,
+        ethBalance: balanceData.ethBalance,
+        ethBalanceFormatted: `${balanceData.ethBalanceFormatted} ETH`,
+        holdings,
+        totalPortfolioValue: balanceData.totalPortfolioValue,
+        dailyChange: balanceData.dailyChange,
+        dailyChangePercentage: balanceData.dailyChangePercentage,
+        lastDayValue: balanceData.lastDayValue,
+        hyperliquidBalance: 0, // TODO: Implement real Hyperliquid balance fetching
+        error: null
+      }));
+    } catch (error) {
+      console.error('[IntegratedWallet] Error refreshing real balances:', error);
+      setState(prev => ({
+        ...prev,
+        error: 'Failed to refresh balances'
+      }));
+    }
+  }, [state.primaryWallet]);
+
+  const getWalletForChain = useCallback((chain: string): UserWallet | null => {
+    return state.allWallets.find(wallet => wallet.chain === chain) || null;
+  }, [state.allWallets]);
+
+  const value: IntegratedWalletContextType = {
+    ...state,
+    refreshWallets,
+    createWallet,
+    switchToWallet,
+    refreshBalances,
+    getWalletForChain
+  };
+
+  return (
+    <IntegratedWalletContext.Provider value={value}>
+      {children}
+    </IntegratedWalletContext.Provider>
+  );
+}
+
+export function useIntegratedWallet(): IntegratedWalletContextType {
+  const context = useContext(IntegratedWalletContext);
+  if (context === undefined) {
+    throw new Error('useIntegratedWallet must be used within an IntegratedWalletProvider');
+  }
+  return context;
+}
+

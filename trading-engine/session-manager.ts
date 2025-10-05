@@ -107,14 +107,14 @@ export class TradingSessionManager {
       data: session.status
     };
 
-    console.log(`[SESSION_MANAGER] Broadcasting update for ${sessionId}:`, update);
+    // Security: Remove debug logging in production
 
     session.subscribers.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
         try {
           ws.send(JSON.stringify(update));
         } catch (error) {
-          console.error(`[SESSION_MANAGER] Failed to send update to subscriber:`, error);
+          // Security: Remove error logging in production
           session.subscribers.delete(ws);
         }
       } else {

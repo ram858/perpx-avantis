@@ -1,0 +1,833 @@
+version: '3.8'
+
+services:
+  # Enhanced API Gateway with Load Balancing
+  api-gateway-1:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./microservices/api-gateway/nginx-enhanced.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/ssl
+    depends_on:
+      - user-service-1
+      - user-service-2
+      - user-service-3
+      - user-service-4
+      - trading-service-1
+      - trading-service-2
+      - trading-service-3
+      - trading-service-4
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  api-gateway-2:
+    image: nginx:alpine
+    ports:
+      - "8081:80"
+      - "8443:443"
+    volumes:
+      - ./microservices/api-gateway/nginx-enhanced.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/ssl
+    depends_on:
+      - user-service-1
+      - user-service-2
+      - user-service-3
+      - user-service-4
+      - trading-service-1
+      - trading-service-2
+      - trading-service-3
+      - trading-service-4
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  api-gateway-3:
+    image: nginx:alpine
+    ports:
+      - "8082:80"
+      - "8444:443"
+    volumes:
+      - ./microservices/api-gateway/nginx-enhanced.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/ssl
+    depends_on:
+      - user-service-1
+      - user-service-2
+      - user-service-3
+      - user-service-4
+      - trading-service-1
+      - trading-service-2
+      - trading-service-3
+      - trading-service-4
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  api-gateway-4:
+    image: nginx:alpine
+    ports:
+      - "8083:80"
+      - "8445:443"
+    volumes:
+      - ./microservices/api-gateway/nginx-enhanced.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/ssl
+    depends_on:
+      - user-service-1
+      - user-service-2
+      - user-service-3
+      - user-service-4
+      - trading-service-1
+      - trading-service-2
+      - trading-service-3
+      - trading-service-4
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  # Load Balancer
+  nginx-lb:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./load-balancer/nginx-lb.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - api-gateway-1
+      - api-gateway-2
+      - api-gateway-3
+      - api-gateway-4
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  # Rate Limiting Service
+  rate-limiting-service:
+    build:
+      context: ./microservices/rate-limiting-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3007
+      REDIS_HOST: redis-master-1
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      - redis-master-1
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  # Circuit Breaker Service
+  circuit-breaker-service:
+    build:
+      context: ./microservices/circuit-breaker-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3008
+      REDIS_HOST: redis-master-1
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      - redis-master-1
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  # API Analytics Service
+  api-analytics-service:
+    build:
+      context: ./microservices/api-analytics-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3009
+      REDIS_HOST: redis-master-1
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      - redis-master-1
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  # Health Check Service
+  health-check-service:
+    build:
+      context: ./microservices/health-check-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3010
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  # Enhanced User Services
+  user-service-1:
+    build:
+      context: ./microservices/user-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3001
+      POSTGRES_HOST: postgres-primary
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis-master-1
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      - postgres-primary
+      - redis-master-1
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  user-service-2:
+    build:
+      context: ./microservices/user-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3001
+      POSTGRES_HOST: postgres-primary
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis-master-2
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      - postgres-primary
+      - redis-master-2
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  user-service-3:
+    build:
+      context: ./microservices/user-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3001
+      POSTGRES_HOST: postgres-primary
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis-master-3
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      - postgres-primary
+      - redis-master-3
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  user-service-4:
+    build:
+      context: ./microservices/user-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3001
+      POSTGRES_HOST: postgres-primary
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis-master-1
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      - postgres-primary
+      - redis-master-1
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  # Enhanced Trading Services
+  trading-service-1:
+    build:
+      context: ./microservices/trading-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3002
+      POSTGRES_HOST: postgres-primary
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis-master-1
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      KAFKA_BROKERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
+    depends_on:
+      - postgres-primary
+      - redis-master-1
+      - kafka-1
+      - kafka-2
+      - kafka-3
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  trading-service-2:
+    build:
+      context: ./microservices/trading-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3002
+      POSTGRES_HOST: postgres-primary
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis-master-2
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      KAFKA_BROKERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
+    depends_on:
+      - postgres-primary
+      - redis-master-2
+      - kafka-1
+      - kafka-2
+      - kafka-3
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  trading-service-3:
+    build:
+      context: ./microservices/trading-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3002
+      POSTGRES_HOST: postgres-primary
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis-master-3
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      KAFKA_BROKERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
+    depends_on:
+      - postgres-primary
+      - redis-master-3
+      - kafka-1
+      - kafka-2
+      - kafka-3
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  trading-service-4:
+    build:
+      context: ./microservices/trading-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3002
+      POSTGRES_HOST: postgres-primary
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis-master-1
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      KAFKA_BROKERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
+    depends_on:
+      - postgres-primary
+      - redis-master-1
+      - kafka-1
+      - kafka-2
+      - kafka-3
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  # Enhanced Portfolio Services
+  portfolio-service-1:
+    build:
+      context: ./microservices/portfolio-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3003
+      POSTGRES_HOST: postgres-primary
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis-master-1
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      - postgres-primary
+      - redis-master-1
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  portfolio-service-2:
+    build:
+      context: ./microservices/portfolio-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3003
+      POSTGRES_HOST: postgres-primary
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis-master-2
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      - postgres-primary
+      - redis-master-2
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  portfolio-service-3:
+    build:
+      context: ./microservices/portfolio-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3003
+      POSTGRES_HOST: postgres-primary
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis-master-3
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      - postgres-primary
+      - redis-master-3
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  portfolio-service-4:
+    build:
+      context: ./microservices/portfolio-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3003
+      POSTGRES_HOST: postgres-primary
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis-master-1
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      - postgres-primary
+      - redis-master-1
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  # Enhanced Market Data Services
+  market-data-service-1:
+    build:
+      context: ./microservices/market-data-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3004
+      REDIS_HOST: redis-master-1
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      - redis-master-1
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  market-data-service-2:
+    build:
+      context: ./microservices/market-data-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3004
+      REDIS_HOST: redis-master-2
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      - redis-master-2
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  market-data-service-3:
+    build:
+      context: ./microservices/market-data-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3004
+      REDIS_HOST: redis-master-3
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      - redis-master-3
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  market-data-service-4:
+    build:
+      context: ./microservices/market-data-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3004
+      REDIS_HOST: redis-master-1
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      - redis-master-1
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  # Enhanced Cache Services
+  cache-service-1:
+    build:
+      context: ./microservices/cache-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3006
+      REDIS_HOST: redis-sentinel-1
+      REDIS_PORT: 26379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      - redis-sentinel-1
+      - redis-sentinel-2
+      - redis-sentinel-3
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  cache-service-2:
+    build:
+      context: ./microservices/cache-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3006
+      REDIS_HOST: redis-sentinel-2
+      REDIS_PORT: 26380
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      - redis-sentinel-1
+      - redis-sentinel-2
+      - redis-sentinel-3
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  cache-service-3:
+    build:
+      context: ./microservices/cache-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3006
+      REDIS_HOST: redis-sentinel-3
+      REDIS_PORT: 26381
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      - redis-sentinel-1
+      - redis-sentinel-2
+      - redis-sentinel-3
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  cache-service-4:
+    build:
+      context: ./microservices/cache-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3006
+      REDIS_HOST: redis-sentinel-1
+      REDIS_PORT: 26379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      - redis-sentinel-1
+      - redis-sentinel-2
+      - redis-sentinel-3
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  # Include existing database and infrastructure services
+  # (PostgreSQL, Redis, Kafka, etc. from original docker-compose.yml)
+  postgres-primary:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    command: >
+      postgres
+      -c wal_level=replica
+      -c max_wal_senders=3
+      -c max_replication_slots=3
+      -c hot_standby=on
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  postgres-replica:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGUSER: postgres
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+    depends_on:
+      - postgres-primary
+    command: >
+      bash -c "
+      until pg_basebackup -h postgres-primary -D /var/lib/postgresql/data -U replicator -v -P -W
+      do
+        echo 'Waiting for primary to connect...'
+        sleep 1s
+      done
+      echo 'Standby created'
+      "
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  # Redis Cluster
+  redis-master-1:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD} --port 6379
+    volumes:
+      - redis_master_1_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  redis-master-2:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD} --port 6379
+    volumes:
+      - redis_master_2_data:/data
+    ports:
+      - "6380:6379"
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  redis-master-3:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD} --port 6379
+    volumes:
+      - redis_master_3_data:/data
+    ports:
+      - "6381:6379"
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  # Redis Sentinels
+  redis-sentinel-1:
+    image: redis:7-alpine
+    command: redis-sentinel /etc/redis/sentinel.conf
+    volumes:
+      - ./cache/redis-sentinel-1.conf:/etc/redis/sentinel.conf
+    ports:
+      - "26379:26379"
+    depends_on:
+      - redis-master-1
+      - redis-master-2
+      - redis-master-3
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  redis-sentinel-2:
+    image: redis:7-alpine
+    command: redis-sentinel /etc/redis/sentinel.conf
+    volumes:
+      - ./cache/redis-sentinel-2.conf:/etc/redis/sentinel.conf
+    ports:
+      - "26380:26379"
+    depends_on:
+      - redis-master-1
+      - redis-master-2
+      - redis-master-3
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  redis-sentinel-3:
+    image: redis:7-alpine
+    command: redis-sentinel /etc/redis/sentinel.conf
+    volumes:
+      - ./cache/redis-sentinel-3.conf:/etc/redis/sentinel.conf
+    ports:
+      - "26381:26379"
+    depends_on:
+      - redis-master-1
+      - redis-master-2
+      - redis-master-3
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  # Kafka Cluster
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  kafka-1:
+    image: confluentinc/cp-kafka:7.4.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-1:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: localhost
+    volumes:
+      - kafka_1_data:/var/lib/kafka/data
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  kafka-2:
+    image: confluentinc/cp-kafka:7.4.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9093:9092"
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-2:29092,PLAINTEXT_HOST://localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_JMX_PORT: 9102
+      KAFKA_JMX_HOSTNAME: localhost
+    volumes:
+      - kafka_2_data:/var/lib/kafka/data
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  kafka-3:
+    image: confluentinc/cp-kafka:7.4.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9094:9092"
+    environment:
+      KAFKA_BROKER_ID: 3
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-3:29092,PLAINTEXT_HOST://localhost:9094
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_JMX_PORT: 9103
+      KAFKA_JMX_HOSTNAME: localhost
+    volumes:
+      - kafka_3_data:/var/lib/kafka/data
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  # Monitoring Stack
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  postgres_replica_data:
+  redis_master_1_data:
+  redis_master_2_data:
+  redis_master_3_data:
+  zookeeper_data:
+  zookeeper_logs:
+  kafka_1_data:
+  kafka_2_data:
+  kafka_3_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  prepx-network:
+    driver: bridge

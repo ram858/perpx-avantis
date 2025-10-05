@@ -1,0 +1,277 @@
+# Multi-Region PostgreSQL Setup for PrepX
+# This configuration sets up read replicas in multiple regions
+
+version: '3.8'
+
+services:
+  # Primary Database (US East)
+  postgres-primary-us-east:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+    volumes:
+      - postgres_us_east_data:/var/lib/postgresql/data
+      - ./postgresql-master.conf:/etc/postgresql/postgresql.conf
+      - ./setup-replication.sql:/docker-entrypoint-initdb.d/01-setup-replication.sql
+    ports:
+      - "5432:5432"
+    command: >
+      postgres
+      -c config_file=/etc/postgresql/postgresql.conf
+      -c wal_level=replica
+      -c max_wal_senders=10
+      -c max_replication_slots=10
+      -c hot_standby=on
+      -c synchronous_commit=on
+      -c synchronous_standby_names='ANY 2 (replica-us-west,replica-eu-west)'
+    networks:
+      - prepx-network
+    restart: unless-stopped
+    deploy:
+      placement:
+        constraints:
+          - node.labels.region == us-east
+
+  # Read Replica (US West)
+  postgres-replica-us-west:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      PGUSER: postgres
+    volumes:
+      - postgres_us_west_data:/var/lib/postgresql/data
+      - ./postgresql-replica.conf:/etc/postgresql/postgresql.conf
+      - ./setup-replica.sh:/docker-entrypoint-initdb.d/01-setup-replica.sh
+    depends_on:
+      - postgres-primary-us-east
+    command: >
+      bash -c "
+      echo 'Waiting for primary to be ready...'
+      until pg_basebackup -h postgres-primary-us-east -D /var/lib/postgresql/data -U replicator -v -P -W -R --slot=replication_slot_users
+      do
+        echo 'Waiting for primary to connect...'
+        sleep 5s
+      done
+      echo 'US West replica created'
+      postgres -c config_file=/etc/postgresql/postgresql.conf -c primary_conninfo='host=postgres-primary-us-east port=5432 user=replicator application_name=replica-us-west'
+      "
+    networks:
+      - prepx-network
+    restart: unless-stopped
+    deploy:
+      placement:
+        constraints:
+          - node.labels.region == us-west
+
+  # Read Replica (EU West)
+  postgres-replica-eu-west:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      PGUSER: postgres
+    volumes:
+      - postgres_eu_west_data:/var/lib/postgresql/data
+      - ./postgresql-replica.conf:/etc/postgresql/postgresql.conf
+      - ./setup-replica.sh:/docker-entrypoint-initdb.d/01-setup-replica.sh
+    depends_on:
+      - postgres-primary-us-east
+    command: >
+      bash -c "
+      echo 'Waiting for primary to be ready...'
+      until pg_basebackup -h postgres-primary-us-east -D /var/lib/postgresql/data -U replicator -v -P -W -R --slot=replication_slot_users
+      do
+        echo 'Waiting for primary to connect...'
+        sleep 5s
+      done
+      echo 'EU West replica created'
+      postgres -c config_file=/etc/postgresql/postgresql.conf -c primary_conninfo='host=postgres-primary-us-east port=5432 user=replicator application_name=replica-eu-west'
+      "
+    networks:
+      - prepx-network
+    restart: unless-stopped
+    deploy:
+      placement:
+        constraints:
+          - node.labels.region == eu-west
+
+  # Read Replica (Asia Pacific)
+  postgres-replica-ap-southeast:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      PGUSER: postgres
+    volumes:
+      - postgres_ap_southeast_data:/var/lib/postgresql/data
+      - ./postgresql-replica.conf:/etc/postgresql/postgresql.conf
+      - ./setup-replica.sh:/docker-entrypoint-initdb.d/01-setup-replica.sh
+    depends_on:
+      - postgres-primary-us-east
+    command: >
+      bash -c "
+      echo 'Waiting for primary to be ready...'
+      until pg_basebackup -h postgres-primary-us-east -D /var/lib/postgresql/data -U replicator -v -P -W -R --slot=replication_slot_users
+      do
+        echo 'Waiting for primary to connect...'
+        sleep 5s
+      done
+      echo 'AP Southeast replica created'
+      postgres -c config_file=/etc/postgresql/postgresql.conf -c primary_conninfo='host=postgres-primary-us-east port=5432 user=replicator application_name=replica-ap-southeast'
+      "
+    networks:
+      - prepx-network
+    restart: unless-stopped
+    deploy:
+      placement:
+        constraints:
+          - node.labels.region == ap-southeast
+
+  # Read Replica (EU Central)
+  postgres-replica-eu-central:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: prepx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      PGUSER: postgres
+    volumes:
+      - postgres_eu_central_data:/var/lib/postgresql/data
+      - ./postgresql-replica.conf:/etc/postgresql/postgresql.conf
+      - ./setup-replica.sh:/docker-entrypoint-initdb.d/01-setup-replica.sh
+    depends_on:
+      - postgres-primary-us-east
+    command: >
+      bash -c "
+      echo 'Waiting for primary to be ready...'
+      until pg_basebackup -h postgres-primary-us-east -D /var/lib/postgresql/data -U replicator -v -P -W -R --slot=replication_slot_users
+      do
+        echo 'Waiting for primary to connect...'
+        sleep 5s
+      done
+      echo 'EU Central replica created'
+      postgres -c config_file=/etc/postgresql/postgresql.conf -c primary_conninfo='host=postgres-primary-us-east port=5432 user=replicator application_name=replica-eu-central'
+      "
+    networks:
+      - prepx-network
+    restart: unless-stopped
+    deploy:
+      placement:
+        constraints:
+          - node.labels.region == eu-central
+
+  # Database Proxy for Read/Write Routing
+  postgres-proxy:
+    image: pgbouncer/pgbouncer:latest
+    environment:
+      DATABASES_HOST: postgres-primary-us-east
+      DATABASES_PORT: 5432
+      DATABASES_USER: postgres
+      DATABASES_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASES_DBNAME: prepx
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 25
+      MIN_POOL_SIZE: 5
+      RESERVE_POOL_SIZE: 5
+      RESERVE_POOL_TIMEOUT: 5
+      MAX_DB_CONNECTIONS: 100
+      MAX_USER_CONNECTIONS: 100
+      SERVER_RESET_QUERY: DISCARD ALL
+      SERVER_CHECK_QUERY: SELECT 1
+      SERVER_CHECK_DELAY: 30
+      SERVER_LIFETIME: 3600
+      SERVER_IDLE_TIMEOUT: 600
+      QUERY_TIMEOUT: 300
+      QUERY_WAIT_TIMEOUT: 120
+      CLIENT_LOGIN_TIMEOUT: 60
+      CLIENT_IDLE_TIMEOUT: 0
+      AUTODB_IDLE_TIMEOUT: 3600
+      DNS_MAX_TTL: 15
+      DNS_NXDOMAIN_TTL: 15
+      DNS_CACHE_MAX_TTL: 900
+      CONSOLE_PASSWORD: ${PGBOUNCER_CONSOLE_PASSWORD}
+    volumes:
+      - ./pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini
+      - ./userlist.txt:/etc/pgbouncer/userlist.txt
+    ports:
+      - "6432:6432"
+      - "9127:9127"  # PgBouncer stats port
+    depends_on:
+      - postgres-primary-us-east
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+  # Read-Only Proxy for Replicas
+  postgres-readonly-proxy:
+    image: pgbouncer/pgbouncer:latest
+    environment:
+      DATABASES_HOST: postgres-replica-us-west
+      DATABASES_PORT: 5432
+      DATABASES_USER: postgres
+      DATABASES_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASES_DBNAME: prepx
+      POOL_MODE: session
+      MAX_CLIENT_CONN: 2000
+      DEFAULT_POOL_SIZE: 50
+      MIN_POOL_SIZE: 10
+      RESERVE_POOL_SIZE: 10
+      RESERVE_POOL_TIMEOUT: 5
+      MAX_DB_CONNECTIONS: 200
+      MAX_USER_CONNECTIONS: 200
+      SERVER_RESET_QUERY: DISCARD ALL
+      SERVER_CHECK_QUERY: SELECT 1
+      SERVER_CHECK_DELAY: 30
+      SERVER_LIFETIME: 3600
+      SERVER_IDLE_TIMEOUT: 600
+      QUERY_TIMEOUT: 300
+      QUERY_WAIT_TIMEOUT: 120
+      CLIENT_LOGIN_TIMEOUT: 60
+      CLIENT_IDLE_TIMEOUT: 0
+      AUTODB_IDLE_TIMEOUT: 3600
+      DNS_MAX_TTL: 15
+      DNS_NXDOMAIN_TTL: 15
+      DNS_CACHE_MAX_TTL: 900
+      CONSOLE_PASSWORD: ${PGBOUNCER_CONSOLE_PASSWORD}
+    volumes:
+      - ./pgbouncer-readonly.ini:/etc/pgbouncer/pgbouncer.ini
+      - ./userlist.txt:/etc/pgbouncer/userlist.txt
+    ports:
+      - "6433:6432"
+      - "9128:9127"  # PgBouncer stats port
+    depends_on:
+      - postgres-replica-us-west
+      - postgres-replica-eu-west
+      - postgres-replica-ap-southeast
+    networks:
+      - prepx-network
+    restart: unless-stopped
+
+volumes:
+  postgres_us_east_data:
+  postgres_us_west_data:
+  postgres_eu_west_data:
+  postgres_eu_central_data:
+  postgres_ap_southeast_data:
+
+networks:
+  prepx-network:
+    driver: overlay
+    attachable: true

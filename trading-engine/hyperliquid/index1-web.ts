@@ -366,7 +366,7 @@ async function runWebSession() {
       }
     }
 
-    await delay(10000); // 10s between cycles
+    await delay(5000); // 5s between cycles for faster trading
   }
   
   // If we reach here, the session completed normally without profit goal or liquidation

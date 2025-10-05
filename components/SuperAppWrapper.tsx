@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { SuperAppProvider } from '@/lib/superapp/context';
 import { useSuperAppEnvironment } from '@/lib/superapp/context';
-import { useWallet } from '@/lib/wallet/WalletContext';
+import { useIntegratedWallet } from '@/lib/wallet/IntegratedWalletContext';
 import { createSuperAppHyperliquidClient } from '@/lib/superapp/hyperliquid';
 
 interface SuperAppWrapperProps {
@@ -42,16 +42,16 @@ function SuperAppContent({ children }: { children: React.ReactNode }) {
     console.log('SuperApp not available, running in standalone mode');
   }
 
-  const { connectWallet, isConnected } = useWallet();
+  const { createWallet, isConnected } = useIntegratedWallet();
   const [hyperliquidClient, setHyperliquidClient] = useState<any>(null);
 
   // Auto-connect wallet when SuperApp user is available
   useEffect(() => {
     if (isSuperApp && hasUser && ethereumAddress && !isConnected) {
       console.log('Auto-connecting SuperApp wallet...');
-      connectWallet();
+      createWallet('ethereum');
     }
-  }, [isSuperApp, hasUser, ethereumAddress, isConnected, connectWallet]);
+  }, [isSuperApp, hasUser, ethereumAddress, isConnected, createWallet]);
 
   // Initialize Hyperliquid client when SuperApp user is available
   useEffect(() => {
