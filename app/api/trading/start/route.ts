@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { HyperliquidTradingService, TradingConfig } from '@/lib/services/HyperliquidTradingService'
 import { AuthService } from '@/lib/services/AuthService'
 
-const tradingService = new HyperliquidTradingService()
 const authService = new AuthService()
 
 export async function POST(request: NextRequest) {
@@ -10,63 +8,43 @@ export async function POST(request: NextRequest) {
     // Verify authentication
     const authHeader = request.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const token = authHeader.substring(7)
     const payload = await authService.verifyToken(token)
-
+    
     // Parse request body
-    const body = await request.json()
-    const { totalBudget, profitGoal, maxPositions, leverage } = body
-
-    // Validate required fields
-    if (!totalBudget || !profitGoal || !maxPositions) {
-      return NextResponse.json(
-        { error: 'Missing required fields: totalBudget, profitGoal, maxPositions' },
-        { status: 400 }
-      )
-    }
-
-    // Validate values
-    if (totalBudget <= 0 || profitGoal <= 0 || maxPositions <= 0) {
-      return NextResponse.json(
-        { error: 'All values must be positive' },
-        { status: 400 }
-      )
-    }
-
-    // Create trading config
-    const config: TradingConfig = {
-      totalBudget: parseFloat(totalBudget),
-      profitGoal: parseFloat(profitGoal),
-      maxPositions: parseInt(maxPositions),
-      leverage: leverage ? parseFloat(leverage) : undefined
-    }
-
-    // Start trading session
-    const result = await tradingService.startTradingSession(payload.phoneNumber, config)
-
-    if (result.success) {
-      return NextResponse.json({
-        success: true,
-        message: 'Trading session started successfully',
-        sessionId: result.sessionId
+    const config = await request.json()
+    
+    // Call the trading engine to start trading
+    const tradingEngineUrl = process.env.TRADING_ENGINE_URL || 'http://localhost:3001'
+    const response = await fetch(`${tradingEngineUrl}/api/trading/start`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        ...config,
+        phoneNumber: payload.phoneNumber
       })
-    } else {
-      return NextResponse.json(
-        { error: result.message },
-        { status: 400 }
-      )
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      return NextResponse.json({ 
+        success: false, 
+        error: errorData.error || 'Failed to start trading' 
+      }, { status: response.status })
     }
 
+    const result = await response.json()
+    return NextResponse.json(result)
   } catch (error) {
-    console.error('Error starting trading session:', error)
+    console.error('Error starting trading:', error)
     return NextResponse.json(
-      { error: 'Failed to start trading session' },
+      { success: false, error: 'Failed to start trading' },
       { status: 500 }
     )
   }

@@ -66,40 +66,30 @@ export class UserWalletService {
    */
   async getPrimaryTradingWalletWithKey(phoneNumber: string): Promise<UserWallet | null> {
     try {
-      // Use the same logic as getPrimaryTradingWallet but ensure private key is included
-      // Get all user wallets
-      const wallets = await this.walletService.getWalletsByPhone(phoneNumber)
+      console.log(`[UserWalletService] Getting wallet with key for: ${phoneNumber}`)
       
-      // Find Ethereum wallet (primary for trading)
-      const ethereumWallet = wallets.find(wallet => wallet.chain === 'ethereum')
+      // Get the real user's Ethereum wallet (this creates one if it doesn't exist)
+      console.log(`[UserWalletService] Calling getWalletByPhoneAndChain for ${phoneNumber}`)
+      const userWallet = await this.walletService.getWalletByPhoneAndChain(phoneNumber, 'ethereum')
+      console.log(`[UserWalletService] getWalletByPhoneAndChain result:`, userWallet ? 'found' : 'not found')
       
-      if (ethereumWallet) {
-        return {
-          id: ethereumWallet.id,
-          address: ethereumWallet.address,
-          chain: ethereumWallet.chain,
-          privateKey: ethereumWallet.privateKey, // Include private key for trading
-          createdAt: ethereumWallet.createdAt
-        }
+      if (!userWallet) {
+        console.error(`[UserWalletService] No Ethereum wallet found for ${phoneNumber}`)
+        return null
       }
 
-      // If no Ethereum wallet exists, create one
-      const createResult = await this.walletService.createOrGetWallet({
-        phoneNumber,
-        chain: 'ethereum'
-      })
-
-      if (createResult.success && createResult.wallet) {
-        return {
-          id: createResult.wallet.id,
-          address: createResult.wallet.address,
-          chain: createResult.wallet.chain,
-          privateKey: createResult.wallet.privateKey,
-          createdAt: createResult.wallet.createdAt
-        }
+      // Return the real user wallet with private key
+      const realWallet: UserWallet = {
+        id: userWallet.id,
+        address: userWallet.address,
+        chain: userWallet.chain,
+        privateKey: userWallet.privateKey, // This should be the real private key
+        createdAt: userWallet.createdAt
       }
-
-      return null
+      
+      console.log(`[UserWalletService] Returning real wallet: ${realWallet.address}`)
+      return realWallet
+      
     } catch (error) {
       console.error('Error getting primary trading wallet with key:', error)
       return null

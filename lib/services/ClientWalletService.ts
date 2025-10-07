@@ -68,6 +68,11 @@ export class ClientWalletService {
     return response.wallet || null
   }
 
+  async getPrimaryTradingWalletWithKey(): Promise<UserWallet | null> {
+    const response = await this.makeRequest('/primary-with-key')
+    return response.wallet || null
+  }
+
   async createWallet(request: CreateWalletRequest): Promise<CreateWalletResponse> {
     try {
       const response = await this.makeRequest('/user-wallets', {

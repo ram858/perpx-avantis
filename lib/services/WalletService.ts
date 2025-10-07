@@ -1,4 +1,5 @@
 import { EncryptionService } from './EncryptionService'
+import { DatabaseService } from './DatabaseService'
 import { AuthService } from './AuthService'
 import { IGenericWalletService, WalletInfo } from './wallets/IGenericWalletService'
 
@@ -22,11 +23,13 @@ export interface CreateWalletResponse {
 
 export class WalletService {
   private encryptionService: EncryptionService
+  private databaseService: DatabaseService
   private authService: AuthService
   private walletServices: Map<string, IGenericWalletService>
 
   constructor() {
     this.encryptionService = new EncryptionService()
+    this.databaseService = new DatabaseService()
     this.authService = new AuthService()
     this.walletServices = new Map()
   }
@@ -54,9 +57,12 @@ export class WalletService {
           service = new SolanaWalletService()
           break
         case 'aptos':
-          const { AptosWalletService } = await import('./wallets/AptosWalletService')
-          service = new AptosWalletService()
-          break
+          // Temporarily disabled due to import issues
+          console.log('Aptos wallet service temporarily disabled')
+          return null
+          // const { AptosWalletService } = await import('./wallets/AptosWalletService')
+          // service = new AptosWalletService()
+          // break
         default:
           return null
       }
@@ -76,6 +82,41 @@ export class WalletService {
     try {
       const { phoneNumber, chain, mnemonic } = request
 
+      // Check if database service is available
+      if (!this.databaseService) {
+        console.warn('Database service not available, cannot check for existing wallets')
+        return {
+          success: false,
+          error: 'Database service not available'
+        }
+      }
+
+      // First, check if wallet already exists in database
+      const existingWallet = await this.databaseService.findWalletByPhoneAndChain(phoneNumber, chain.toLowerCase())
+      
+      if (existingWallet) {
+        console.log(`Found existing ${chain} wallet for ${phoneNumber}:`, {
+          id: existingWallet.id,
+          address: existingWallet.address,
+          chain: existingWallet.chain,
+          createdAt: existingWallet.createdAt
+        })
+
+        // Decrypt the private key for return
+        const decryptedPrivateKey = await this.encryptionService.decrypt(existingWallet.privateKey, existingWallet.iv)
+        
+        return {
+          success: true,
+          wallet: {
+            id: existingWallet.id,
+            address: existingWallet.address,
+            chain: existingWallet.chain,
+            createdAt: existingWallet.createdAt,
+            privateKey: decryptedPrivateKey // Include private key for trading
+          }
+        }
+      }
+
       // Get the appropriate wallet service for the chain
       const walletService = await this.getWalletService(chain)
       if (!walletService) {
@@ -85,50 +126,69 @@ export class WalletService {
         }
       }
 
-      // Generate wallet using the chain-specific service
+      // Generate new wallet using the chain-specific service
       const walletInfo = await walletService.generateWallet(mnemonic)
       
       // Encrypt the private key for storage
       const encryptionResult = this.encryptionService.encrypt(walletInfo.privateKey)
       const encryptedPrivateKey = encryptionResult.encrypted
+      const iv = encryptionResult.iv
       
-      // Generate wallet ID
-      const walletId = `wallet_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-      
-      // TODO: Store in database with proper encryption
-      // For now, we'll return the wallet info without storing it
-      console.log(`Generated ${chain} wallet for ${phoneNumber}:`, {
-        id: walletId,
-        address: walletInfo.address,
+      // Store wallet in database
+      const storedWallet = await this.databaseService.createWallet({
+        phoneNumber,
         chain: chain.toLowerCase(),
-        encryptedPrivateKey: encryptedPrivateKey.substring(0, 20) + '...' // Log only first 20 chars for security
+        address: walletInfo.address,
+        privateKey: encryptedPrivateKey,
+        iv: iv
+      })
+
+      console.log(`Created new ${chain} wallet for ${phoneNumber}:`, {
+        id: storedWallet.id,
+        address: storedWallet.address,
+        chain: storedWallet.chain,
+        createdAt: storedWallet.createdAt
       })
       
       return {
         success: true,
         wallet: {
-          id: walletId,
-          address: walletInfo.address,
-          chain: chain.toLowerCase(),
-          createdAt: new Date(),
+          id: storedWallet.id,
+          address: storedWallet.address,
+          chain: storedWallet.chain,
+          createdAt: storedWallet.createdAt,
           privateKey: walletInfo.privateKey // Include private key for trading
         }
       }
     } catch (error) {
-      console.error('Error creating wallet:', error)
+      console.error('Error creating/getting wallet:', error)
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Failed to create wallet'
+        error: error instanceof Error ? error.message : 'Failed to create/get wallet'
       }
     }
   }
 
   async getWalletsByPhone(phoneNumber: string): Promise<any[]> {
     try {
-      // TODO: Implement database query to get wallets for user
-      // For now, return empty array as we're not storing wallets yet
-      console.log(`Getting wallets for ${phoneNumber} (not implemented yet)`)
-      return []
+      console.log(`Getting wallets for ${phoneNumber}`)
+      
+      // Check if database service is available
+      if (!this.databaseService) {
+        console.warn('Database service not available, returning empty wallets array')
+        return []
+      }
+      
+      const wallets = await this.databaseService.findWalletsByPhone(phoneNumber)
+      
+      // Return wallets without private keys for security
+      return wallets.map(wallet => ({
+        id: wallet.id,
+        address: wallet.address,
+        chain: wallet.chain,
+        createdAt: wallet.createdAt,
+        updatedAt: wallet.updatedAt
+      }))
     } catch (error) {
       console.error('Error fetching wallets:', error)
       return []
@@ -137,9 +197,33 @@ export class WalletService {
 
   async getWalletByPhoneAndChain(phoneNumber: string, chain: string): Promise<any | null> {
     try {
-      // TODO: Implement database query to get specific wallet
-      console.log(`Getting ${chain} wallet for ${phoneNumber} (not implemented yet)`)
-      return null
+      console.log(`Getting ${chain} wallet for ${phoneNumber}`)
+      
+      // Check if database service is available
+      if (!this.databaseService) {
+        console.warn('Database service not available, cannot get wallet')
+        return null
+      }
+      
+      // Get wallet from database
+      const wallet = await this.databaseService.findWalletByPhoneAndChain(phoneNumber, chain.toLowerCase())
+      
+      if (!wallet) {
+        console.log(`No ${chain} wallet found for ${phoneNumber}`)
+        return null
+      }
+
+      // Decrypt the private key for return
+      const decryptedPrivateKey = await this.encryptionService.decrypt(wallet.privateKey, wallet.iv)
+      
+      return {
+        id: wallet.id,
+        address: wallet.address,
+        chain: wallet.chain,
+        privateKey: decryptedPrivateKey,
+        createdAt: wallet.createdAt,
+        updatedAt: wallet.updatedAt
+      }
     } catch (error) {
       console.error('Error fetching wallet:', error)
       return null

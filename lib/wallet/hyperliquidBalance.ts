@@ -1,8 +1,12 @@
 import * as hl from "@nktkas/hyperliquid";
 
-// Create Hyperliquid testnet client
-const transport = new hl.HttpTransport({ isTestnet: true });
+// Create Hyperliquid testnet client with proper configuration
+const transport = new hl.HttpTransport({ 
+  isTestnet: true,
+  keepalive: false  // Disable keepalive to prevent the error
+});
 const publicClient = new hl.PublicClient({ transport });
+
 
 export interface HyperliquidBalance {
   totalValue: number;
@@ -19,13 +23,14 @@ export interface HyperliquidBalance {
 
 export async function getHyperliquidBalance(address: string): Promise<HyperliquidBalance> {
   try {
-    console.log('[HyperliquidBalance] Fetching balance for:', address);
+    // Normalize address format (ensure lowercase)
+    const normalizedAddress = address.toLowerCase();
     
     // Get user state from Hyperliquid using clearinghouseState
-    const userState = await publicClient.clearinghouseState({ user: address });
+    const userState = await publicClient.clearinghouseState({ user: normalizedAddress });
+    
     
     if (!userState) {
-      console.log('[HyperliquidBalance] No user state found for address:', address);
       return {
         totalValue: 0,
         availableBalance: 0,
@@ -36,9 +41,19 @@ export async function getHyperliquidBalance(address: string): Promise<Hyperliqui
 
     // Extract balance information from marginSummary
     const marginSummary = userState.marginSummary;
-    const totalValue = parseFloat(marginSummary?.accountValue || '0');
-    const availableBalance = parseFloat(marginSummary?.totalMarginUsed || '0');
-    const marginUsed = parseFloat(marginSummary?.totalNtlPos || '0');
+    
+    // Try different possible field names for account value
+    const accountValue = marginSummary?.accountValue || marginSummary?.accountValue || marginSummary?.totalValue || '0';
+    const totalValue = parseFloat(accountValue);
+    
+    // Try different possible field names for available balance
+    const availableBalanceValue = marginSummary?.totalMarginUsed || marginSummary?.availableBalance || marginSummary?.freeCollateral || '0';
+    const availableBalance = parseFloat(availableBalanceValue);
+    
+    // Try different possible field names for margin used
+    const marginUsedValue = marginSummary?.totalNtlPos || marginSummary?.marginUsed || marginSummary?.usedMargin || '0';
+    const marginUsed = parseFloat(marginUsedValue);
+    
 
     // Extract positions
     const positions = (userState.assetPositions || []).map((pos: any) => ({
@@ -49,13 +64,6 @@ export async function getHyperliquidBalance(address: string): Promise<Hyperliqui
       pnl: parseFloat(pos.position?.unrealizedPnl || '0')
     }));
 
-    console.log('[HyperliquidBalance] Balance fetched:', {
-      totalValue,
-      availableBalance,
-      marginUsed,
-      positionsCount: positions.length
-    });
-
     return {
       totalValue,
       availableBalance,
@@ -64,12 +72,8 @@ export async function getHyperliquidBalance(address: string): Promise<Hyperliqui
     };
   } catch (error) {
     console.error('[HyperliquidBalance] Error fetching balance:', error);
-    return {
-      totalValue: 0,
-      availableBalance: 0,
-      marginUsed: 0,
-      positions: []
-    };
+    // If we get an error, it likely means the wallet is not connected to Hyperliquid
+    throw new Error(`Wallet not connected to Hyperliquid: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
@@ -80,5 +84,28 @@ export async function getHyperliquidBalanceUSD(address: string): Promise<number>
   } catch (error) {
     console.error('[HyperliquidBalance] Error fetching USD balance:', error);
     return 0;
+  }
+}
+
+export async function hasRealHyperliquidBalance(address: string): Promise<{ hasBalance: boolean; balance: number; isConnected: boolean }> {
+  try {
+    const balance = await getHyperliquidBalance(address);
+    const hasBalance = balance.totalValue > 0;
+    const isConnected = true; // If we can fetch data, wallet is connected
+    
+    
+    return {
+      hasBalance,
+      balance: balance.totalValue,
+      isConnected
+    };
+  } catch (error) {
+    console.error('[HyperliquidBalance] Error checking real balance:', error);
+    // If we can't fetch data, wallet is not connected to Hyperliquid
+    return {
+      hasBalance: false,
+      balance: 0,
+      isConnected: false
+    };
   }
 }

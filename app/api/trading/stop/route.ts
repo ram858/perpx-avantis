@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { HyperliquidTradingService } from '@/lib/services/HyperliquidTradingService'
 import { AuthService } from '@/lib/services/AuthService'
 
-const tradingService = new HyperliquidTradingService()
 const authService = new AuthService()
 
 export async function POST(request: NextRequest) {
@@ -10,45 +8,50 @@ export async function POST(request: NextRequest) {
     // Verify authentication
     const authHeader = request.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const token = authHeader.substring(7)
     const payload = await authService.verifyToken(token)
-
+    
     // Parse request body
-    const body = await request.json()
-    const { sessionId } = body
-
+    const { sessionId } = await request.json()
+    
     if (!sessionId) {
-      return NextResponse.json(
-        { error: 'Session ID is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Session ID is required' 
+      }, { status: 400 })
     }
-
-    // Stop trading session
-    const result = await tradingService.stopTradingSession(sessionId)
-
-    if (result.success) {
-      return NextResponse.json({
-        success: true,
-        message: 'Trading session stopped successfully'
+    
+    // Call the trading engine to stop trading
+    const tradingEngineUrl = process.env.TRADING_ENGINE_URL || 'http://localhost:3001'
+    const response = await fetch(`${tradingEngineUrl}/api/trading/stop`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        sessionId,
+        phoneNumber: payload.phoneNumber
       })
-    } else {
-      return NextResponse.json(
-        { error: result.message },
-        { status: 400 }
-      )
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      return NextResponse.json({ 
+        success: false, 
+        error: errorData.error || 'Failed to stop trading' 
+      }, { status: response.status })
     }
 
+    const result = await response.json()
+    return NextResponse.json(result)
   } catch (error) {
-    console.error('Error stopping trading session:', error)
+    console.error('Error stopping trading:', error)
     return NextResponse.json(
-      { error: 'Failed to stop trading session' },
+      { success: false, error: 'Failed to stop trading' },
       { status: 500 }
     )
   }

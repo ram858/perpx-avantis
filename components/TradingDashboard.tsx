@@ -1,15 +1,24 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useTrading, TradingConfig, TradingSession } from '@/lib/hooks/useTrading';
+import { useIntegratedWallet } from '@/lib/wallet/IntegratedWalletContext';
+import { NavigationHeader } from './NavigationHeader';
+import { LoadingSkeleton, CardSkeleton } from './ui/loading-skeleton';
+import { useToast } from './ui/toast';
 
 export function TradingDashboard() {
   const { startTrading, stopTrading, getTradingSessions, isLoading, error } = useTrading();
+  const { totalPortfolioValue, isConnected, primaryWallet, hyperliquidBalance, isHyperliquidConnected, hasRealHyperliquidBalance, isLoading: walletLoading } = useIntegratedWallet();
+  const { addToast } = useToast();
+  
   const [sessions, setSessions] = useState<TradingSession[]>([]);
   const [showStartForm, setShowStartForm] = useState(false);
+  const [balanceError, setBalanceError] = useState<string | null>(null);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const [config, setConfig] = useState<TradingConfig>({
     totalBudget: 100,
     profitGoal: 20,
@@ -17,25 +26,81 @@ export function TradingDashboard() {
     leverage: 5
   });
 
-  // Load trading sessions on mount
-  useEffect(() => {
-    loadSessions();
-  }, []);
-
-  const loadSessions = async () => {
+  const loadSessions = useCallback(async () => {
+    setIsLoadingSessions(true);
     try {
       const userSessions = await getTradingSessions();
       setSessions(userSessions);
     } catch (error) {
       console.error('Failed to load sessions:', error);
+      addToast({
+        type: 'error',
+        title: 'Failed to load trading sessions',
+        message: error instanceof Error ? error.message : 'Unknown error occurred'
+      });
+    } finally {
+      setIsLoadingSessions(false);
     }
+  }, [getTradingSessions, addToast]);
+
+  // Load trading sessions on mount
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
+
+  const validateBalance = (budget: number): boolean => {
+    if (!isConnected) {
+      setBalanceError('Wallet not connected. Please connect your wallet first.');
+      return false;
+    }
+
+    // Removed Hyperliquid connection check since addresses are the same
+
+    if (budget < 10) {
+      setBalanceError('Minimum investment amount is $10');
+      return false;
+    }
+
+    if (budget > 1000) {
+      setBalanceError('Maximum investment amount is $1000 per session');
+      return false;
+    }
+
+    if (hyperliquidBalance === 0) {
+      setBalanceError('Insufficient balance. Your trading balance is $0.00. Please add funds to start trading.');
+      return false;
+    }
+
+    if (budget > hyperliquidBalance) {
+      setBalanceError(`Insufficient balance. You're trying to invest $${budget.toFixed(2)} but your trading balance is only $${hyperliquidBalance.toFixed(2)}.`);
+      return false;
+    }
+
+    setBalanceError(null);
+    return true;
   };
 
-  const handleStartTrading = async () => {
+  const handleStartTrading = useCallback(async () => {
+    // Clear previous balance error
+    setBalanceError(null);
+
+    // Validate balance before starting
+    if (!validateBalance(config.totalBudget)) {
+      return;
+    }
+
     try {
       const newSession = await startTrading(config);
       setSessions(prev => [newSession, ...prev]);
       setShowStartForm(false);
+      
+      // Show success toast
+      addToast({
+        type: 'success',
+        title: 'Trading session started',
+        message: `Trading session with $${config.totalBudget} budget and $${config.profitGoal} profit goal has been started successfully.`
+      });
+      
       // Reset form
       setConfig({
         totalBudget: 100,
@@ -45,8 +110,13 @@ export function TradingDashboard() {
       });
     } catch (error) {
       console.error('Failed to start trading:', error);
+      addToast({
+        type: 'error',
+        title: 'Failed to start trading',
+        message: error instanceof Error ? error.message : 'Unknown error occurred'
+      });
     }
-  };
+  }, [config, startTrading, addToast]);
 
   const handleStopTrading = async (sessionId: string) => {
     try {
@@ -85,23 +155,77 @@ export function TradingDashboard() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-white">Trading Dashboard</h2>
-        <Button 
-          onClick={() => setShowStartForm(true)}
-          disabled={isLoading}
-          className="bg-[#8759ff] hover:bg-[#7c4dff] text-white"
-        >
-          Start Trading Session
-        </Button>
-      </div>
+    <div className="min-h-screen bg-[#0d0d0d] text-white">
+      <NavigationHeader
+        title="Trading Dashboard"
+        showBackButton={true}
+        backHref="/home"
+        breadcrumbs={[
+          { label: 'Home', href: '/home' },
+          { label: 'Trading Dashboard' }
+        ]}
+        actions={
+                 <Button
+                   onClick={() => setShowStartForm(true)}
+                   disabled={isLoading || !isConnected || hyperliquidBalance === 0}
+                   className="bg-[#8759ff] hover:bg-[#7c4dff] text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                 >
+                   {!isConnected ? 'Connect Wallet First' :
+                    hyperliquidBalance === 0 ? 'Add Funds to Start Trading' :
+                    'Start Trading Session'}
+                 </Button>
+        }
+      />
+
+      <div className="px-4 sm:px-6 space-y-6 max-w-md mx-auto py-6">
+
+               {/* Simplified wallet status - no complex connection guides needed */}
+               {walletLoading ? (
+                 <CardSkeleton />
+               ) : isConnected && primaryWallet ? (
+                 <Card className="p-4 bg-[#1a1a1a] border-[#333]">
+                   <div className="flex items-center justify-between">
+                     <div>
+                       <h3 className="text-lg font-semibold text-white">Trading Wallet Ready</h3>
+                       <p className="text-sm text-gray-400">
+                         Your wallet is ready for trading. Balance: <span className="font-medium text-white">${hyperliquidBalance.toFixed(2)}</span>
+                       </p>
+                     </div>
+                     <div className="text-right">
+                       <div className="text-sm text-gray-400">Address:</div>
+                       <div className="text-xs font-mono text-gray-300">
+                         {primaryWallet.address.slice(0, 6)}...{primaryWallet.address.slice(-4)}
+                       </div>
+                     </div>
+                   </div>
+                 </Card>
+               ) : null}
+
+      {/* Wallet Balance Display */}
+      <Card className="p-4 bg-[#1a1a1a] border-[#333]">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-white">Wallet Status</h3>
+                     <p className="text-sm text-gray-400">
+                       {isConnected ? 'Connected' : 'Not Connected'} •
+                       Trading Balance: <span className="font-medium text-white">${hyperliquidBalance.toFixed(2)}</span>
+                     </p>
+          </div>
+          {!isConnected && (
+            <Button 
+              onClick={() => window.location.href = '/home'}
+              className="bg-[#8759ff] hover:bg-[#7c4dff] text-white"
+            >
+              Connect Wallet
+            </Button>
+          )}
+        </div>
+      </Card>
 
       {/* Error Display */}
-      {error && (
+      {(error || balanceError) && (
         <Card className="p-4 bg-red-900/20 border-red-500">
-          <p className="text-red-400">Error: {error}</p>
+          <p className="text-red-400">Error: {error || balanceError}</p>
         </Card>
       )}
 
@@ -118,10 +242,22 @@ export function TradingDashboard() {
               <Input
                 type="number"
                 value={config.totalBudget}
-                onChange={(e) => setConfig(prev => ({ ...prev, totalBudget: parseFloat(e.target.value) || 0 }))}
-                className="bg-[#2a2a2a] border-[#444] text-white"
+                onChange={(e) => {
+                  const value = parseFloat(e.target.value) || 0;
+                  setConfig(prev => ({ ...prev, totalBudget: value }));
+                  // Clear balance error when user changes the value
+                  if (balanceError) setBalanceError(null);
+                }}
+                className={`bg-[#2a2a2a] border-[#444] text-white ${
+                  config.totalBudget > hyperliquidBalance ? 'border-red-500' : ''
+                }`}
                 placeholder="100"
               />
+              {config.totalBudget > hyperliquidBalance && hyperliquidBalance > 0 && (
+                <p className="text-xs text-red-400 mt-1">
+                  Exceeds trading balance by ${(config.totalBudget - hyperliquidBalance).toFixed(2)}
+                </p>
+              )}
             </div>
             
             <div>
@@ -165,13 +301,13 @@ export function TradingDashboard() {
           </div>
 
           <div className="flex gap-3">
-            <Button 
-              onClick={handleStartTrading}
-              disabled={isLoading}
-              className="bg-[#8759ff] hover:bg-[#7c4dff] text-white"
-            >
-              {isLoading ? 'Starting...' : 'Start Trading'}
-            </Button>
+                   <Button
+                     onClick={handleStartTrading}
+                     disabled={isLoading || !isConnected || hyperliquidBalance === 0 || config.totalBudget > hyperliquidBalance || config.totalBudget < 10}
+                     className="bg-[#8759ff] hover:bg-[#7c4dff] text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                   >
+                     {isLoading ? 'Starting...' : 'Start Trading'}
+                   </Button>
             <Button 
               onClick={() => setShowStartForm(false)}
               variant="outline"
@@ -185,9 +321,52 @@ export function TradingDashboard() {
 
       {/* Trading Sessions */}
       <div className="space-y-4">
-        <h3 className="text-xl font-semibold text-white">Trading Sessions</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-xl font-semibold text-white">Trading Sessions</h3>
+          <Button
+            onClick={loadSessions}
+            variant="outline"
+            size="sm"
+            className="border-[#444] text-gray-300 hover:bg-[#2a2a2a] text-xs"
+            disabled={isLoadingSessions}
+          >
+            {isLoadingSessions ? 'Refreshing...' : '🔄 Refresh'}
+          </Button>
+        </div>
         
-        {sessions.length === 0 ? (
+        {isLoadingSessions ? (
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <Card key={i} className="p-6 bg-[#1a1a1a] border-[#333] animate-pulse">
+                <div className="flex justify-between items-start mb-4">
+                  <div className="space-y-2">
+                    <div className="h-6 bg-gray-700 rounded w-32"></div>
+                    <div className="h-4 bg-gray-700 rounded w-24"></div>
+                  </div>
+                  <div className="h-8 bg-gray-700 rounded w-16"></div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="space-y-1">
+                    <div className="h-3 bg-gray-700 rounded w-16"></div>
+                    <div className="h-6 bg-gray-700 rounded w-20"></div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="h-3 bg-gray-700 rounded w-20"></div>
+                    <div className="h-6 bg-gray-700 rounded w-16"></div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="h-3 bg-gray-700 rounded w-24"></div>
+                    <div className="h-6 bg-gray-700 rounded w-18"></div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="h-3 bg-gray-700 rounded w-20"></div>
+                    <div className="h-6 bg-gray-700 rounded w-14"></div>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        ) : sessions.length === 0 ? (
           <Card className="p-6 bg-[#1a1a1a] border-[#333] text-center">
             <p className="text-gray-400">No trading sessions found. Start your first session above.</p>
           </Card>
@@ -262,6 +441,7 @@ export function TradingDashboard() {
             ))}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

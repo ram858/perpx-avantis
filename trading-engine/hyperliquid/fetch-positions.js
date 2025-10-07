@@ -5,10 +5,10 @@ async function fetchPositions(privateKey) {
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(__dirname, 'fetch-positions.ts');
     
-    // Set environment variables for mainnet and use provided private key
+    // Set environment variables and use provided private key
+    // Respect HYPERLIQUID_TESTNET from environment (defaults to testnet if not set)
     const env = {
       ...process.env,
-      HYPERLIQUID_TESTNET: 'false',
       HYPERLIQUID_PK: privateKey
     };
     

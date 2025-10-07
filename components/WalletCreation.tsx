@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { useAuth } from '@/lib/auth/AuthContext';
+import { useIntegratedWallet } from '@/lib/wallet/IntegratedWalletContext';
 
 interface WalletCreationProps {
   className?: string;
@@ -11,12 +13,17 @@ interface WalletCreationProps {
 }
 
 export function WalletCreation({ className = "", onWalletCreated }: WalletCreationProps) {
+  const { token } = useAuth();
+  const { allWallets, primaryWallet } = useIntegratedWallet();
   const [selectedChain, setSelectedChain] = useState('ethereum');
   const [mnemonic, setMnemonic] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [createdWallet, setCreatedWallet] = useState<any>(null);
+  
+  // Check if wallet already exists for selected chain
+  const existingWallet = allWallets.find(wallet => wallet.chain === selectedChain);
 
   const supportedChains = [
     { id: 'ethereum', name: 'Ethereum', icon: 'Ξ' },
@@ -31,12 +38,17 @@ export function WalletCreation({ className = "", onWalletCreated }: WalletCreati
       return;
     }
 
+    // Check if wallet already exists
+    if (existingWallet) {
+      setError(`You already have a ${selectedChain} wallet: ${existingWallet.address}`);
+      return;
+    }
+
     setIsCreating(true);
     setError(null);
     setSuccess(null);
 
     try {
-      const token = localStorage.getItem('authToken');
       if (!token) {
         throw new Error('No authentication token found');
       }
@@ -151,6 +163,23 @@ export function WalletCreation({ className = "", onWalletCreated }: WalletCreati
           </div>
         </div>
 
+        {/* Existing Wallet Warning */}
+        {existingWallet && (
+          <div className="mb-6 p-4 bg-yellow-900/20 border border-yellow-500 rounded-lg">
+            <div className="flex items-center">
+              <svg className="w-5 h-5 text-yellow-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <div>
+                <p className="text-yellow-400 font-medium">Wallet Already Exists</p>
+                <p className="text-yellow-300 text-sm">
+                  You already have a {selectedChain} wallet: <span className="font-mono">{existingWallet.address}</span>
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Mnemonic Input (Optional) */}
         <div className="mb-6">
           <label className="block text-sm font-medium text-white mb-2">
@@ -184,14 +213,20 @@ export function WalletCreation({ className = "", onWalletCreated }: WalletCreati
         {/* Create Wallet Button */}
         <Button
           onClick={handleCreateWallet}
-          disabled={isCreating || !selectedChain}
-          className="w-full bg-[#7c3aed] hover:bg-[#6d28d9] text-white py-3"
+          disabled={isCreating || !selectedChain || existingWallet}
+          className={`w-full py-3 ${
+            existingWallet 
+              ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
+              : 'bg-[#7c3aed] hover:bg-[#6d28d9] text-white'
+          }`}
         >
           {isCreating ? (
             <div className="flex items-center justify-center">
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
               Creating Wallet...
             </div>
+          ) : existingWallet ? (
+            'Wallet Already Exists'
           ) : (
             'Create Wallet'
           )}

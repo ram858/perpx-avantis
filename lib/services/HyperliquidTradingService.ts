@@ -1,6 +1,3 @@
-import * as hl from "@nktkas/hyperliquid";
-import { privateKeyToAccount } from "viem/accounts";
-import Decimal from "decimal.js";
 import { UserWallet, UserWalletService } from './UserWalletService';
 import { EncryptionService } from './EncryptionService';
 
@@ -46,74 +43,84 @@ export class HyperliquidTradingService {
   private encryptionService: EncryptionService;
   private userWalletService: UserWalletService;
   private activeSessions: Map<string, TradingSession>;
-  private isTestnet: boolean;
+  private tradingEngineUrl: string;
 
   constructor() {
     this.encryptionService = new EncryptionService();
     this.userWalletService = new UserWalletService();
     this.activeSessions = new Map();
-    this.isTestnet = process.env.HYPERLIQUID_TESTNET === 'true';
+    this.tradingEngineUrl = process.env.TRADING_ENGINE_URL || 'http://localhost:3001';
   }
 
-  /**
-   * Create a new trading session using user's wallet
-   */
-  async startTradingSession(
-    phoneNumber: string, 
-    config: TradingConfig
-  ): Promise<TradingResult> {
+  async startTradingSession(phoneNumber: string, config: TradingConfig): Promise<TradingResult> {
+    
     try {
-      console.log(`[HyperliquidTrading] Starting trading session for ${phoneNumber}`);
+      // Get user's Ethereum wallet with private key for trading
+      // We need to get this from the API since we need the private key
+      const userWallet = await this.getUserWalletFromAPI(phoneNumber);
       
-      // Get user's Ethereum wallet
-      const userWallet = await this.getUserWallet(phoneNumber);
-      if (!userWallet) {
+      if (!userWallet || !userWallet.privateKey) {
+        console.error(`[HyperliquidTradingService] No Ethereum wallet found for user ${phoneNumber}`);
         return {
           success: false,
           message: 'No Ethereum wallet found for user'
         };
       }
 
-      // Get private key (may be encrypted or unencrypted)
-      let privateKey = userWallet.privateKey!;
-      
-      // Try to decrypt if it looks encrypted (contains special characters)
-      if (privateKey.includes('=') || privateKey.length > 66) {
-        const decryptedKey = await this.decryptPrivateKey(privateKey);
-        if (!decryptedKey) {
+
+      // Decrypt private key if needed
+      const privateKey = await this.decryptPrivateKey(userWallet.privateKey);
+
+      // Convert Next.js config to trading engine format
+      const tradingEngineConfig = {
+        maxBudget: config.totalBudget,
+        profitGoal: config.profitGoal,
+        maxPerSession: config.maxPositions,
+        hyperliquidApiWallet: privateKey
+      };
+
+      // Start trading session via trading engine API
+      const response = await fetch(`${this.tradingEngineUrl}/api/start-trading`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(tradingEngineConfig),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[HyperliquidTradingService] Trading engine API error: ${errorText}`);
+        
+        // Check for specific Hyperliquid wallet errors
+        if (errorText.includes('does not exist')) {
+          const isTestnet = process.env.HYPERLIQUID_TESTNET !== 'false';
+          const hyperliquidUrl = isTestnet ? 'https://app.hyperliquid-testnet.xyz' : 'https://app.hyperliquid.xyz';
           return {
             success: false,
-            message: 'Failed to decrypt wallet private key'
+            message: `Wallet not activated on Hyperliquid ${isTestnet ? 'TESTNET' : 'MAINNET'}. Please visit ${hyperliquidUrl} and connect your wallet (${userWallet.address}) to activate it for trading.`
           };
         }
-        privateKey = decryptedKey;
-      }
-      
-      // Validate private key format
-      if (!privateKey.startsWith('0x') || privateKey.length !== 66) {
+        
         return {
           success: false,
-          message: 'Invalid private key format'
+          message: `Trading engine error: ${errorText}`
         };
       }
 
-      // Create Hyperliquid wallet client
-      const walletClient = this.createHyperliquidClient(privateKey);
-      
-      // Test connection
-      const connectionTest = await this.testConnection(walletClient);
-      if (!connectionTest.success) {
+      const result = await response.json();
+
+      if (!result.sessionId) {
         return {
           success: false,
-          message: `Hyperliquid connection failed: ${connectionTest.error}`
+          message: 'Trading engine did not return session ID'
         };
       }
 
-      // Create trading session
-      const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      // Create local session record
       const session: TradingSession = {
-        id: sessionId,
-        userId: phoneNumber,
+        id: result.sessionId,
+        userId: `user_${Date.now()}_${phoneNumber.replace('+', '')}`,
         phoneNumber,
         config,
         status: 'running',
@@ -122,61 +129,52 @@ export class HyperliquidTradingService {
         positions: []
       };
 
-      // Store session
-      this.activeSessions.set(sessionId, session);
-      
-      // Start trading bot in background
-      this.runTradingBot(sessionId, walletClient, config).catch(error => {
-        console.error(`[HyperliquidTrading] Trading bot error for session ${sessionId}:`, error);
-        const session = this.activeSessions.get(sessionId);
-        if (session) {
-          session.status = 'error';
-          session.error = error.message;
-        }
-      });
+      this.activeSessions.set(result.sessionId, session);
 
       return {
         success: true,
         message: 'Trading session started successfully',
-        sessionId
+        sessionId: result.sessionId
       };
 
     } catch (error) {
-      console.error('[HyperliquidTrading] Error starting trading session:', error);
+      console.error(`[HyperliquidTradingService] Error starting trading session:`, error);
       return {
         success: false,
-        message: 'Failed to start trading session',
-        error: error instanceof Error ? error.message : 'Unknown error'
+        message: `Failed to start trading session: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
     }
   }
 
-  /**
-   * Stop a trading session
-   */
   async stopTradingSession(sessionId: string): Promise<TradingResult> {
+    
     try {
+      // Stop session via trading engine API
+      const response = await fetch(`${this.tradingEngineUrl}/api/stop-trading`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ sessionId }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[HyperliquidTradingService] Trading engine stop error: ${errorText}`);
+        return {
+          success: false,
+          message: `Trading engine error: ${errorText}`
+        };
+      }
+
+      const result = await response.json();
+
+      // Update local session
       const session = this.activeSessions.get(sessionId);
-      if (!session) {
-        return {
-          success: false,
-          message: 'Trading session not found'
-        };
+      if (session) {
+        session.status = 'stopped';
+        session.endTime = new Date();
       }
-
-      if (session.status !== 'running') {
-        return {
-          success: false,
-          message: 'Trading session is not running'
-        };
-      }
-
-      // Close all positions
-      await this.closeAllPositions(session);
-
-      // Update session status
-      session.status = 'completed';
-      session.endTime = new Date();
 
       return {
         success: true,
@@ -184,247 +182,175 @@ export class HyperliquidTradingService {
       };
 
     } catch (error) {
-      console.error('[HyperliquidTrading] Error stopping trading session:', error);
+      console.error(`[HyperliquidTradingService] Error stopping trading session:`, error);
       return {
         success: false,
-        message: 'Failed to stop trading session',
-        error: error instanceof Error ? error.message : 'Unknown error'
+        message: `Failed to stop trading session: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
     }
   }
 
-  /**
-   * Get trading session status
-   */
-  async getTradingSession(sessionId: string): Promise<TradingSession | null> {
-    return this.activeSessions.get(sessionId) || null;
-  }
-
-  /**
-   * Get all active trading sessions for a user
-   */
-  async getUserTradingSessions(phoneNumber: string): Promise<TradingSession[]> {
-    const userSessions: TradingSession[] = [];
-    for (const session of this.activeSessions.values()) {
-      if (session.phoneNumber === phoneNumber) {
-        userSessions.push(session);
+  async getTradingSessions(phoneNumber?: string): Promise<TradingSession[]> {
+    try {
+      // Get sessions from trading engine
+      const response = await fetch(`${this.tradingEngineUrl}/api/status`);
+      
+      if (!response.ok) {
+        console.error(`[HyperliquidTradingService] Failed to get trading sessions: ${response.statusText}`);
+        return Array.from(this.activeSessions.values());
       }
+
+      const result = await response.json();
+
+      // Return local sessions (in a real implementation, you'd merge with trading engine data)
+      const sessions = Array.from(this.activeSessions.values());
+      
+      if (phoneNumber) {
+        return sessions.filter(session => session.phoneNumber === phoneNumber);
+      }
+      
+      return sessions;
+
+    } catch (error) {
+      console.error(`[HyperliquidTradingService] Error getting trading sessions:`, error);
+      return Array.from(this.activeSessions.values());
     }
-    return userSessions;
   }
 
-  /**
-   * Get user's Ethereum wallet
-   */
+  async getTradingSession(sessionId: string): Promise<TradingSession | null> {
+    try {
+      // Get session details from trading engine
+      const response = await fetch(`${this.tradingEngineUrl}/api/session/${sessionId}`);
+      
+      if (!response.ok) {
+        console.error(`[HyperliquidTradingService] Failed to get session ${sessionId}: ${response.statusText}`);
+        return this.activeSessions.get(sessionId) || null;
+      }
+
+      const result = await response.json();
+
+      // Update local session with trading engine data
+      const localSession = this.activeSessions.get(sessionId);
+      if (localSession && result.status) {
+        localSession.status = result.status;
+        localSession.totalPnL = result.pnl || 0;
+        localSession.positions = result.positions || [];
+      }
+
+      return localSession || null;
+
+    } catch (error) {
+      console.error(`[HyperliquidTradingService] Error getting trading session:`, error);
+      return this.activeSessions.get(sessionId) || null;
+    }
+  }
+
+  async getPositions(): Promise<TradingPosition[]> {
+    try {
+      const response = await fetch(`${this.tradingEngineUrl}/api/positions`);
+      
+      if (!response.ok) {
+        console.error(`[HyperliquidTradingService] Failed to get positions: ${response.statusText}`);
+        return [];
+      }
+
+      const result = await response.json();
+
+      return result.positions || [];
+
+    } catch (error) {
+      console.error(`[HyperliquidTradingService] Error getting positions:`, error);
+      return [];
+    }
+  }
+
+  async closePosition(symbol: string): Promise<TradingResult> {
+    try {
+      const response = await fetch(`${this.tradingEngineUrl}/api/close-position`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ symbol }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[HyperliquidTradingService] Failed to close position: ${errorText}`);
+        return {
+          success: false,
+          message: `Failed to close position: ${errorText}`
+        };
+      }
+
+      const result = await response.json();
+
+      return {
+        success: true,
+        message: 'Position closed successfully'
+      };
+
+    } catch (error) {
+      console.error(`[HyperliquidTradingService] Error closing position:`, error);
+      return {
+        success: false,
+        message: `Failed to close position: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
+  }
+
+  async testConnection(): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.tradingEngineUrl}/api/status`, {
+        method: 'GET',
+        timeout: 5000
+      } as any);
+
+      if (response.ok) {
+        const result = await response.json();
+        return true;
+      } else {
+        console.error(`[HyperliquidTradingService] Connection test failed: ${response.statusText}`);
+        return false;
+      }
+    } catch (error) {
+      console.error(`[HyperliquidTradingService] Connection test error:`, error);
+      return false;
+    }
+  }
+
+  private async decryptPrivateKey(encryptedKey: string): Promise<string> {
+    try {
+      // Check if the key looks encrypted (contains special characters or is longer than 66 chars)
+      if (encryptedKey.length > 66 || encryptedKey.includes(' ') || !encryptedKey.startsWith('0x')) {
+        return await this.encryptionService.decrypt(encryptedKey);
+      } else {
+        return encryptedKey;
+      }
+    } catch (error) {
+      console.error(`[HyperliquidTradingService] Failed to decrypt private key:`, error);
+      // If decryption fails, try using the key as-is
+      return encryptedKey;
+    }
+  }
+
+  private async getUserWalletFromAPI(phoneNumber: string): Promise<UserWallet | null> {
+    try {
+      // This method would need to be called from the frontend with proper authentication
+      // For now, we'll use the existing userWalletService method
+      return await this.userWalletService.getPrimaryTradingWalletWithKey(phoneNumber);
+    } catch (error) {
+      console.error(`[HyperliquidTradingService] Error getting user wallet from API:`, error);
+      return null;
+    }
+  }
+
   private async getUserWallet(phoneNumber: string): Promise<UserWallet | null> {
     try {
-      // Get user's primary trading wallet with private key (Ethereum)
-      const primaryWallet = await this.userWalletService.getPrimaryTradingWalletWithKey(phoneNumber);
-      
-      if (!primaryWallet) {
-        console.log(`[HyperliquidTrading] No Ethereum wallet found for ${phoneNumber}`);
-        return null;
-      }
-
-      if (!primaryWallet.privateKey) {
-        console.log(`[HyperliquidTrading] Wallet found but no private key for ${phoneNumber}`);
-        return null;
-      }
-
-      console.log(`[HyperliquidTrading] Found wallet for ${phoneNumber}: ${primaryWallet.address}`);
-      return primaryWallet;
+      return await this.userWalletService.getPrimaryTradingWalletWithKey(phoneNumber);
     } catch (error) {
-      console.error('[HyperliquidTrading] Error getting user wallet:', error);
+      console.error(`[HyperliquidTradingService] Error getting user wallet:`, error);
       return null;
-    }
-  }
-
-  /**
-   * Decrypt private key
-   */
-  private async decryptPrivateKey(encryptedPrivateKey: string): Promise<string | null> {
-    try {
-      const decrypted = this.encryptionService.decrypt(encryptedPrivateKey);
-      return decrypted.decrypted;
-    } catch (error) {
-      console.error('[HyperliquidTrading] Error decrypting private key:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Create Hyperliquid wallet client
-   */
-  private createHyperliquidClient(privateKey: string): hl.WalletClient {
-    const account = privateKeyToAccount(privateKey as `0x${string}`);
-    
-    const transport = this.isTestnet 
-      ? hl.createTransport({ url: "https://api.hyperliquid-testnet.xyz" })
-      : hl.createTransport({ url: "https://api.hyperliquid.xyz" });
-
-    return new hl.WalletClient({
-      wallet: account,
-      transport,
-      isTestnet: this.isTestnet,
-      signatureChainId: this.isTestnet ? "0xa4b1" : "0xa"
-    });
-  }
-
-  /**
-   * Test Hyperliquid connection
-   */
-  private async testConnection(walletClient: hl.WalletClient): Promise<{ success: boolean; error?: string }> {
-    try {
-      // Get user state to test connection
-      const userState = await walletClient.getUserState();
-      console.log(`[HyperliquidTrading] Connection test successful. User address: ${userState.meta?.address}`);
-      return { success: true };
-    } catch (error) {
-      console.error('[HyperliquidTrading] Connection test failed:', error);
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Connection failed' 
-      };
-    }
-  }
-
-  /**
-   * Run the trading bot
-   */
-  private async runTradingBot(
-    sessionId: string, 
-    walletClient: hl.WalletClient, 
-    config: TradingConfig
-  ): Promise<void> {
-    const session = this.activeSessions.get(sessionId);
-    if (!session) return;
-
-    console.log(`[HyperliquidTrading] Starting trading bot for session ${sessionId}`);
-    
-    try {
-      // Get initial positions
-      await this.updatePositions(session, walletClient);
-      
-      // Main trading loop
-      while (session.status === 'running') {
-        try {
-          // Check if profit goal reached
-          if (session.totalPnL >= config.profitGoal) {
-            console.log(`[HyperliquidTrading] Profit goal reached: $${session.totalPnL.toFixed(2)}`);
-            session.status = 'completed';
-            session.endTime = new Date();
-            break;
-          }
-
-          // Update positions
-          await this.updatePositions(session, walletClient);
-          
-          // Check for new trading opportunities
-          await this.checkTradingOpportunities(session, walletClient, config);
-          
-          // Wait before next iteration
-          await new Promise(resolve => setTimeout(resolve, 30000)); // 30 seconds
-          
-        } catch (error) {
-          console.error(`[HyperliquidTrading] Error in trading loop:`, error);
-          // Continue trading loop even if there's an error
-        }
-      }
-      
-      console.log(`[HyperliquidTrading] Trading bot stopped for session ${sessionId}`);
-      
-    } catch (error) {
-      console.error(`[HyperliquidTrading] Trading bot error:`, error);
-      session.status = 'error';
-      session.error = error instanceof Error ? error.message : 'Unknown error';
-    }
-  }
-
-  /**
-   * Update current positions
-   */
-  private async updatePositions(session: TradingSession, walletClient: hl.WalletClient): Promise<void> {
-    try {
-      const userState = await walletClient.getUserState();
-      const positions = userState.assetPositions || [];
-      
-      // Update session positions
-      session.positions = positions.map((pos: any) => ({
-        symbol: pos.position.coin,
-        side: parseFloat(pos.position.szi) > 0 ? 'LONG' : 'SHORT',
-        size: Math.abs(parseFloat(pos.position.szi)),
-        entryPrice: parseFloat(pos.position.entryPx),
-        currentPrice: parseFloat(pos.position.positionValue) / Math.abs(parseFloat(pos.position.szi)),
-        pnl: parseFloat(pos.position.unrealizedPnl),
-        leverage: parseFloat(pos.position.leverage) || 1,
-        timestamp: new Date()
-      }));
-      
-      // Calculate total PnL
-      session.totalPnL = session.positions.reduce((sum, pos) => sum + pos.pnl, 0);
-      
-      console.log(`[HyperliquidTrading] Updated positions for session ${session.id}: ${session.positions.length} positions, PnL: $${session.totalPnL.toFixed(2)}`);
-      
-    } catch (error) {
-      console.error(`[HyperliquidTrading] Error updating positions:`, error);
-    }
-  }
-
-  /**
-   * Check for trading opportunities (simplified version)
-   */
-  private async checkTradingOpportunities(
-    session: TradingSession, 
-    walletClient: hl.WalletClient, 
-    config: TradingConfig
-  ): Promise<void> {
-    try {
-      // For now, this is a placeholder
-      // In a real implementation, you would integrate with your trading strategy
-      console.log(`[HyperliquidTrading] Checking trading opportunities for session ${session.id}`);
-      
-      // Example: Simple buy/sell logic based on current positions
-      if (session.positions.length < config.maxPositions) {
-        // Could open new positions here
-        console.log(`[HyperliquidTrading] Room for new positions (${session.positions.length}/${config.maxPositions})`);
-      }
-      
-    } catch (error) {
-      console.error(`[HyperliquidTrading] Error checking trading opportunities:`, error);
-    }
-  }
-
-  /**
-   * Close all positions for a session
-   */
-  private async closeAllPositions(session: TradingSession): Promise<void> {
-    try {
-      console.log(`[HyperliquidTrading] Closing all positions for session ${session.id}`);
-      
-      // Get user wallet and create client
-      const userWallet = await this.getUserWallet(session.phoneNumber);
-      if (!userWallet?.privateKey) return;
-      
-      const privateKey = await this.decryptPrivateKey(userWallet.privateKey);
-      if (!privateKey) return;
-      
-      const walletClient = this.createHyperliquidClient(privateKey);
-      
-      // Close each position
-      for (const position of session.positions) {
-        try {
-          await walletClient.closePosition({
-            coin: position.symbol,
-            is_buy: position.side === 'SHORT' // If we're long, we need to sell to close
-          });
-          console.log(`[HyperliquidTrading] Closed position: ${position.symbol} ${position.side}`);
-        } catch (error) {
-          console.error(`[HyperliquidTrading] Error closing position ${position.symbol}:`, error);
-        }
-      }
-      
-    } catch (error) {
-      console.error(`[HyperliquidTrading] Error closing all positions:`, error);
     }
   }
 }

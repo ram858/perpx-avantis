@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     const token = authHeader.substring(7) // Remove 'Bearer ' prefix
 
     // Verify JWT token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as { phoneNumber: string; userId: string }
 
     const { userId, phoneNumber } = await request.json()
 

@@ -29,14 +29,19 @@ export class JwtAuthGuard {
       const token = authHeader.substring(7) // Remove 'Bearer ' prefix
       const payload = await this.authService.verifyToken(token)
       
+      console.log(`🔍 JWT Auth Guard: Looking up user with ID: ${payload.userId}`)
+      
       // Verify user still exists
       const user = await this.authService.getUserById(payload.userId)
       if (!user) {
+        console.log(`❌ JWT Auth Guard: User not found for ID: ${payload.userId}`)
         return {
           success: false,
           error: 'User not found'
         }
       }
+      
+      console.log(`✅ JWT Auth Guard: User found: ${user.phoneNumber} (ID: ${user.id})`)
 
       return {
         success: true,

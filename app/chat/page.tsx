@@ -6,9 +6,9 @@ import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { useTrading } from "@/lib/hooks/useTrading"
+import { useTradingSession } from "@/lib/hooks/useTradingSession"
 import { usePositions } from "@/lib/hooks/usePositions"
-import { useWallet } from "@/lib/wallet/WalletContext"
+import { useIntegratedWallet } from "@/lib/wallet/IntegratedWalletContext"
 import { useSearchParams } from "next/navigation"
 
 export default function ChatPage() {
@@ -40,7 +40,7 @@ export default function ChatPage() {
     stopTrading,
     refreshSessionStatus,
     clearSession,
-  } = useTrading()
+  } = useTradingSession()
 
   // Real-time position data
   const {
@@ -55,7 +55,7 @@ export default function ChatPage() {
   const {
     isConnected,
     totalPortfolioValue,
-  } = useWallet()
+  } = useIntegratedWallet()
 
   // Update trading phase based on session status
   useEffect(() => {
@@ -132,7 +132,7 @@ export default function ChatPage() {
           profitGoal: profitNum,
           maxBudget: investmentNum,
           maxPerSession: 5
-        }, hyperliquidApiWallet).catch(error => {
+        }).catch(error => {
           setMessages(prev => [...prev, {
             type: "bot",
             content: `❌ Failed to start real trading: ${error.message}`,
@@ -152,7 +152,7 @@ export default function ChatPage() {
           profitGoal: profitNum,
           maxBudget: investmentNum,
           maxPerSession: 5
-        }, hyperliquidApiWallet).catch(error => {
+        }).catch(error => {
           setMessages(prev => [...prev, {
             type: "bot",
             content: `❌ Failed to start simulation: ${error.message}`,
@@ -215,7 +215,7 @@ export default function ChatPage() {
               maxBudget: investmentAmount,
               profitGoal: profitGoal,
               maxPerSession: 5
-            }, searchParams.get('hyperliquidApiWallet') || undefined)
+            })
             
             if (sessionId) {
               setTradingPhase("active")
@@ -279,7 +279,7 @@ export default function ChatPage() {
       
       if (positionId === "live" && tradingSession?.sessionId) {
         // Close all positions (legacy behavior)
-        success = await stopTrading(tradingSession.sessionId, true);
+        success = await stopTrading(tradingSession.sessionId);
         
         if (success) {
           const closeMessage = {
@@ -1400,7 +1400,7 @@ export default function ChatPage() {
                       profitGoal: profit,
                       maxBudget: investment,
                       maxPerSession: 5
-                    }, searchParams.get('hyperliquidApiWallet') || undefined);
+                    });
                     
                     // Close the modal
                     setShowTradingGoals(false);

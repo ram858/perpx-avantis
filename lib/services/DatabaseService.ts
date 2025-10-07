@@ -179,6 +179,20 @@ export class DatabaseService {
     return result.rows[0] || null
   }
 
+  async findUserById(userId: string): Promise<any | null> {
+    const client = await this.getClient()
+    
+    const query = `
+      SELECT id, phone_number as "phoneNumber", is_verified as "isVerified",
+             last_login_at as "lastLoginAt", created_at as "createdAt", updated_at as "updatedAt"
+      FROM users
+      WHERE id = $1
+    `
+    
+    const result = await client.query(query, [userId])
+    return result.rows[0] || null
+  }
+
   async updateUserLastLogin(userId: string): Promise<void> {
     const client = await this.getClient()
     
@@ -189,5 +203,129 @@ export class DatabaseService {
     `
     
     await client.query(query, [new Date(), userId])
+  }
+
+  // Wallet operations
+  async createWallet(data: {
+    phoneNumber: string
+    chain: string
+    address: string
+    privateKey: string
+    iv: string
+  }): Promise<any> {
+    const client = await this.getClient()
+    
+    const query = `
+      INSERT INTO wallets (phone_number, chain, address, private_key, iv, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT (phone_number, chain) 
+      DO UPDATE SET address = $3, private_key = $4, iv = $5, updated_at = CURRENT_TIMESTAMP
+      RETURNING id, phone_number as "phoneNumber", chain, address, 
+                private_key as "privateKey", iv, created_at as "createdAt", updated_at as "updatedAt"
+    `
+    
+    const values = [data.phoneNumber, data.chain, data.address, data.privateKey, data.iv]
+    const result = await client.query(query, values)
+    
+    return result.rows[0]
+  }
+
+  async findWalletByPhoneAndChain(phoneNumber: string, chain: string): Promise<any | null> {
+    const client = await this.getClient()
+    
+    const query = `
+      SELECT id, phone_number as "phoneNumber", chain, address, 
+             private_key as "privateKey", iv, created_at as "createdAt", updated_at as "updatedAt"
+      FROM wallets
+      WHERE phone_number = $1 AND chain = $2
+    `
+    
+    const result = await client.query(query, [phoneNumber, chain])
+    return result.rows[0] || null
+  }
+
+  async findWalletsByPhone(phoneNumber: string): Promise<any[]> {
+    const client = await this.getClient()
+    
+    const query = `
+      SELECT id, phone_number as "phoneNumber", chain, address, 
+             private_key as "privateKey", iv, created_at as "createdAt", updated_at as "updatedAt"
+      FROM wallets
+      WHERE phone_number = $1
+      ORDER BY created_at DESC
+    `
+    
+    const result = await client.query(query, [phoneNumber])
+    return result.rows
+  }
+
+  async updateWallet(id: string, updates: {
+    address?: string
+    privateKey?: string
+    iv?: string
+  }): Promise<any | null> {
+    const client = await this.getClient()
+    
+    const setClause = []
+    const values = []
+    let paramCount = 0
+
+    if (updates.address !== undefined) {
+      paramCount++
+      setClause.push(`address = $${paramCount}`)
+      values.push(updates.address)
+    }
+
+    if (updates.privateKey !== undefined) {
+      paramCount++
+      setClause.push(`private_key = $${paramCount}`)
+      values.push(updates.privateKey)
+    }
+
+    if (updates.iv !== undefined) {
+      paramCount++
+      setClause.push(`iv = $${paramCount}`)
+      values.push(updates.iv)
+    }
+
+    if (setClause.length === 0) {
+      return null
+    }
+
+    paramCount++
+    setClause.push(`updated_at = $${paramCount}`)
+    values.push(new Date())
+
+    paramCount++
+    values.push(id)
+
+    const query = `
+      UPDATE wallets 
+      SET ${setClause.join(', ')}
+      WHERE id = $${paramCount}
+      RETURNING id, phone_number as "phoneNumber", chain, address, 
+                private_key as "privateKey", iv, created_at as "createdAt", updated_at as "updatedAt"
+    `
+
+    const result = await client.query(query, values)
+    return result.rows[0] || null
+  }
+
+  async deleteWallet(id: string): Promise<boolean> {
+    const client = await this.getClient()
+    
+    const query = `DELETE FROM wallets WHERE id = $1`
+    const result = await client.query(query, [id])
+    
+    return result.rowCount > 0
+  }
+
+  async deleteWalletsByPhone(phoneNumber: string): Promise<number> {
+    const client = await this.getClient()
+    
+    const query = `DELETE FROM wallets WHERE phone_number = $1`
+    const result = await client.query(query, [phoneNumber])
+    
+    return result.rowCount || 0
   }
 }

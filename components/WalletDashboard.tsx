@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { WalletCreation } from './WalletCreation';
 import { WalletManagement } from './WalletManagement';
+import { NavigationHeader } from './NavigationHeader';
 
 interface WalletDashboardProps {
   className?: string;
@@ -22,14 +23,23 @@ export function WalletDashboard({ className = "" }: WalletDashboardProps) {
   };
 
   return (
-    <div className={`space-y-6 ${className}`}>
-      {/* Header */}
-      <div className="text-center">
-        <h1 className="text-3xl font-bold text-white mb-2">Wallet Dashboard</h1>
-        <p className="text-[#9ca3af]">
-          Create and manage your blockchain wallets
-        </p>
-      </div>
+    <div className="min-h-screen bg-[#0d0d0d]">
+      <NavigationHeader
+        title="Wallet Dashboard"
+        showBackButton={true}
+        backHref="/home"
+        breadcrumbs={[
+          { label: 'Home', href: '/home' },
+          { label: 'Wallet Dashboard' }
+        ]}
+      />
+      
+      <div className={`space-y-6 max-w-md mx-auto px-4 sm:px-6 py-6 ${className}`}>
+        <div className="text-center">
+          <p className="text-[#9ca3af]">
+            Create and manage your blockchain wallets
+          </p>
+        </div>
 
       {/* Tab Navigation */}
       <Card className="p-1 bg-[#1f2937] border-[#374151]">
@@ -231,6 +241,7 @@ export function WalletDashboard({ className = "" }: WalletDashboardProps) {
           </Button>
         </div>
       </Card>
+      </div>
     </div>
   );
 }

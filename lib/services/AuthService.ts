@@ -54,9 +54,9 @@ export class AuthService {
 
   async getUserById(userId: string): Promise<any | null> {
     try {
-      // This would require a new method in DatabaseService
-      console.log(`🔍 Retrieved user by ID: ${userId}`)
-      return null // Implement as needed
+      const user = await this.db.findUserById(userId)
+      console.log(`🔍 Retrieved user by ID: ${userId}`, user ? 'Found' : 'Not found')
+      return user
     } catch (error) {
       console.error('Error fetching user by ID:', error)
       return null

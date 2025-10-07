@@ -5,6 +5,7 @@ import { UserWallet } from '../services/UserWalletService';
 import { ClientWalletService } from '../services/ClientWalletService';
 import { RealBalanceService, RealBalanceData } from '../services/RealBalanceService';
 import { useAuth } from '../auth/AuthContext';
+import { useMetaMask } from '../hooks/useMetaMask';
 
 // Types
 export interface Token {
@@ -34,6 +35,8 @@ export interface IntegratedWalletState {
   dailyChangePercentage: number;
   lastDayValue: number;
   hyperliquidBalance: number;
+  isHyperliquidConnected: boolean;
+  hasRealHyperliquidBalance: boolean;
   isLoading: boolean;
   error: string | null;
 }
@@ -54,6 +57,7 @@ const realBalanceService = new RealBalanceService();
 export function IntegratedWalletProvider({ children }: { children: React.ReactNode }) {
   const { user, token } = useAuth();
   const clientWalletService = new ClientWalletService(() => token || '');
+  const { isConnected: isMetaMaskConnected, account: metaMaskAccount } = useMetaMask();
   
   const [state, setState] = useState<IntegratedWalletState>({
     isConnected: false,
@@ -67,6 +71,8 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     dailyChangePercentage: 0,
     lastDayValue: 0,
     hyperliquidBalance: 0,
+    isHyperliquidConnected: false,
+    hasRealHyperliquidBalance: false,
     isLoading: false,
     error: null
   });
@@ -77,8 +83,8 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      // Get primary trading wallet (Ethereum)
-      const primaryWallet = await clientWalletService.getPrimaryTradingWallet();
+      // Get primary trading wallet (Ethereum) with private key
+      const primaryWallet = await clientWalletService.getPrimaryTradingWalletWithKey();
       
       // Get all user wallets
       const allWallets = await clientWalletService.getAllUserWallets();
@@ -178,16 +184,46 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
 
       console.log(`[IntegratedWallet] Real balance fetched: $${balanceData.totalPortfolioValue.toFixed(2)}`);
 
+      // Check Hyperliquid connection and fetch balance
+      let hyperliquidBalance = 0;
+      let isHyperliquidConnected = false;
+      let hasRealHyperliquidBalance = false;
+      
+      // Use stored wallet address for Hyperliquid (not MetaMask account)
+      // MetaMask account might be different from the wallet we created
+      const hyperliquidAddress = state.primaryWallet.address;
+      
+      
+      try {
+        const { hasRealHyperliquidBalance: checkRealBalance } = await import('./hyperliquidBalance');
+        
+        // Check if wallet has real balance on Hyperliquid using MetaMask address
+        const hyperliquidStatus = await checkRealBalance(hyperliquidAddress);
+        hyperliquidBalance = hyperliquidStatus.balance;
+        isHyperliquidConnected = hyperliquidStatus.isConnected;
+        hasRealHyperliquidBalance = hyperliquidStatus.hasBalance;
+        
+      } catch (error) {
+        console.error('[IntegratedWallet] Error fetching Hyperliquid data:', error);
+        // If we can't fetch data, wallet is not connected to Hyperliquid
+        isHyperliquidConnected = false;
+        hasRealHyperliquidBalance = false;
+      }
+
+      const totalPortfolioValue = balanceData.totalPortfolioValue + hyperliquidBalance;
+
       setState(prev => ({
         ...prev,
         ethBalance: balanceData.ethBalance,
         ethBalanceFormatted: `${balanceData.ethBalanceFormatted} ETH`,
         holdings,
-        totalPortfolioValue: balanceData.totalPortfolioValue,
+        totalPortfolioValue,
         dailyChange: balanceData.dailyChange,
         dailyChangePercentage: balanceData.dailyChangePercentage,
         lastDayValue: balanceData.lastDayValue,
-        hyperliquidBalance: 0, // TODO: Implement real Hyperliquid balance fetching
+        hyperliquidBalance,
+        isHyperliquidConnected,
+        hasRealHyperliquidBalance,
         error: null
       }));
     } catch (error) {
@@ -197,7 +233,15 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         error: 'Failed to refresh balances'
       }));
     }
-  }, [state.primaryWallet]);
+  }, [state.primaryWallet, metaMaskAccount, isMetaMaskConnected]);
+
+  // Refresh balances when MetaMask connection changes
+  useEffect(() => {
+    if (state.primaryWallet && (isMetaMaskConnected || metaMaskAccount)) {
+      console.log('[IntegratedWallet] MetaMask connection changed, refreshing balances...');
+      refreshBalances();
+    }
+  }, [isMetaMaskConnected, metaMaskAccount, state.primaryWallet, refreshBalances]);
 
   const getWalletForChain = useCallback((chain: string): UserWallet | null => {
     return state.allWallets.find(wallet => wallet.chain === chain) || null;

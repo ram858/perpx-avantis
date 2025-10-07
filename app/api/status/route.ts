@@ -8,7 +8,12 @@ export async function GET(request: NextRequest) {
     
     // TODO: Implement real trading sessions table and queries
     // For now, return empty data since no real trading has occurred
-    const realSessions: any[] = []
+    const realSessions: Array<{
+      status: string;
+      pnl: number;
+      trades: number;
+      winRate: number;
+    }> = []
 
     // Calculate summary statistics from real data
     const completedSessions = realSessions.filter(s => s.status === 'completed')

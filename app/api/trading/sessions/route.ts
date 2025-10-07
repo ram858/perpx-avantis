@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { HyperliquidTradingService } from '@/lib/services/HyperliquidTradingService'
 import { AuthService } from '@/lib/services/AuthService'
 
-const tradingService = new HyperliquidTradingService()
 const authService = new AuthService()
 
 export async function GET(request: NextRequest) {
@@ -10,40 +8,35 @@ export async function GET(request: NextRequest) {
     // Verify authentication
     const authHeader = request.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const token = authHeader.substring(7)
     const payload = await authService.verifyToken(token)
-
-    // Get user's trading sessions
-    const sessions = await tradingService.getUserTradingSessions(payload.phoneNumber)
-
-    return NextResponse.json({
-      success: true,
-      sessions: sessions.map(session => ({
-        id: session.id,
-        status: session.status,
-        startTime: session.startTime,
-        endTime: session.endTime,
-        totalPnL: session.totalPnL,
-        positions: session.positions.length,
-        config: {
-          totalBudget: session.config.totalBudget,
-          profitGoal: session.config.profitGoal,
-          maxPositions: session.config.maxPositions
-        },
-        error: session.error
-      }))
+    
+    // Call the trading engine to get sessions
+    const tradingEngineUrl = process.env.TRADING_ENGINE_URL || 'http://localhost:3001'
+    const response = await fetch(`${tradingEngineUrl}/api/trading/sessions`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      }
     })
 
+    if (!response.ok) {
+      const errorData = await response.json()
+      return NextResponse.json({ 
+        success: false, 
+        error: errorData.error || 'Failed to fetch trading sessions' 
+      }, { status: response.status })
+    }
+
+    const result = await response.json()
+    return NextResponse.json(result)
   } catch (error) {
     console.error('Error fetching trading sessions:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch trading sessions' },
+      { success: false, error: 'Failed to fetch trading sessions' },
       { status: 500 }
     )
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../auth/AuthContext';
 
 export interface Position {
   coin: string;
@@ -22,17 +23,24 @@ export interface PositionData {
 }
 
 export function usePositions() {
+  const { token } = useAuth();
   const [positionData, setPositionData] = useState<PositionData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchPositions = useCallback(async () => {
+    if (!token) return;
+    
     setIsLoading(true);
     setError(null);
     
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${apiUrl}/api/positions`);
+      const response = await fetch('/api/positions', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
@@ -46,14 +54,16 @@ export function usePositions() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [token]);
 
   const closePosition = useCallback(async (symbol: string): Promise<boolean> => {
+    if (!token) return false;
+    
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${apiUrl}/api/close-position`, {
+      const response = await fetch('/api/close-position', {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ symbol }),
@@ -71,7 +81,7 @@ export function usePositions() {
       setError(errorMessage);
       return false;
     }
-  }, []);
+  }, [token]);
 
   // Auto-refresh positions every 5 seconds
   useEffect(() => {

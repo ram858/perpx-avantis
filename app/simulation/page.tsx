@@ -5,6 +5,10 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useTrading } from "@/lib/hooks/useTrading";
+import { useIntegratedWallet } from "@/lib/wallet/IntegratedWalletContext";
+import { useWebSocket } from "@/lib/hooks/useWebSocket";
+import { NavigationHeader } from "@/components/NavigationHeader";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 export default function SimulationPage() {
   const [targetProfit, setTargetProfit] = useState("10");
@@ -12,12 +16,21 @@ export default function SimulationPage() {
   const [isSimulationMode, setIsSimulationMode] = useState(true);
 
   const {
-    tradingSession,
+    isLoading,
+    error,
     startTrading,
     stopTrading,
-    isConnected,
-    error
+    tradingSession
   } = useTrading();
+
+  const { isConnected: isWalletConnected } = useIntegratedWallet();
+  
+  // WebSocket connection for real-time trading data
+  const { 
+    isConnected: isWebSocketConnected, 
+    error: webSocketError,
+    sendMessage: sendWebSocketMessage 
+  } = useWebSocket('ws://localhost:3002');
 
   const handleStartSimulation = async () => {
     const profit = parseFloat(targetProfit);
@@ -36,8 +49,8 @@ export default function SimulationPage() {
     try {
       await startTrading({
         profitGoal: profit,
-        maxBudget: investment,
-        maxPerSession: 5
+        totalBudget: investment,
+        maxPositions: 5
       });
     } catch (err) {
       console.error('Error starting simulation:', err);
@@ -51,13 +64,22 @@ export default function SimulationPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white p-4">
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold text-white">🎮 Trading Simulation</h1>
-          <p className="text-[#b4b4b4]">Test the trading engine without real money</p>
-        </div>
+    <ProtectedRoute>
+      <div className="min-h-screen bg-[#0d0d0d] text-white">
+        <NavigationHeader
+          title="Trading Simulation"
+          showBackButton={true}
+          backHref="/home"
+          breadcrumbs={[
+            { label: 'Home', href: '/home' },
+            { label: 'Trading Simulation' }
+          ]}
+        />
+        
+        <div className="px-4 sm:px-6 space-y-6 max-w-md mx-auto py-6">
+          <div className="text-center space-y-2">
+            <p className="text-[#b4b4b4]">Test the trading engine without real money</p>
+          </div>
 
         {/* Status Card */}
         <Card className="bg-[#1a1a1a] border-[#262626] p-6 rounded-2xl">
@@ -67,9 +89,14 @@ export default function SimulationPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-[#262626] p-4 rounded-lg">
                 <div className="text-[#b4b4b4] text-sm">WebSocket Status</div>
-                <div className={`text-lg font-semibold ${isConnected ? 'text-green-400' : 'text-red-400'}`}>
-                  {isConnected ? '✅ Connected' : '❌ Disconnected'}
+                <div className={`text-lg font-semibold ${isWebSocketConnected ? 'text-green-400' : 'text-red-400'}`}>
+                  {isWebSocketConnected ? '✅ Connected' : '❌ Disconnected'}
                 </div>
+                {!isWebSocketConnected && (
+                  <div className="text-xs text-red-300 mt-1">
+                    Server: ws://localhost:3002
+                  </div>
+                )}
               </div>
               
               <div className="bg-[#262626] p-4 rounded-lg">
@@ -94,8 +121,15 @@ export default function SimulationPage() {
 
             {error && (
               <div className="bg-red-900/20 border border-red-500/50 p-4 rounded-lg">
-                <div className="text-red-400 font-semibold">Error:</div>
+                <div className="text-red-400 font-semibold">Trading Error:</div>
                 <div className="text-red-300">{error}</div>
+              </div>
+            )}
+
+            {webSocketError && (
+              <div className="bg-yellow-900/20 border border-yellow-500/50 p-4 rounded-lg">
+                <div className="text-yellow-400 font-semibold">WebSocket Warning:</div>
+                <div className="text-yellow-300">{webSocketError}</div>
               </div>
             )}
           </div>
@@ -210,7 +244,7 @@ export default function SimulationPage() {
               
               <div className="flex items-start space-x-3">
                 <div className="w-6 h-6 bg-[#8759ff] rounded-full flex items-center justify-center text-white text-sm font-bold">2</div>
-                <div>Click "Start Simulation" to begin the trading simulation</div>
+                <div>Click &quot;Start Simulation&quot; to begin the trading simulation</div>
               </div>
               
               <div className="flex items-start space-x-3">
@@ -225,7 +259,8 @@ export default function SimulationPage() {
             </div>
           </div>
         </Card>
+        </div>
       </div>
-    </div>
+    </ProtectedRoute>
   );
 }

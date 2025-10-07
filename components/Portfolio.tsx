@@ -234,7 +234,7 @@ export function Portfolio({ className = "" }: PortfolioProps) {
       {/* Portfolio Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-[#1f2937] rounded-xl p-4 border border-[#374151]">
-          <p className="text-[#9ca3af] text-sm mb-1">Today's Change</p>
+          <p className="text-[#9ca3af] text-sm mb-1">Today&apos;s Change</p>
           <div className="flex items-center gap-2">
             <p className={`font-semibold ${dailyChange >= 0 ? 'text-[#10b981]' : 'text-[#ef4444]'}`}>
               {formatValue(dailyChange)}

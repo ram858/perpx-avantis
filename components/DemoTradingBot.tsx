@@ -114,7 +114,7 @@ export const DemoTradingBot: React.FC<DemoTradingBotProps> = ({ onTradingUpdate 
 
   // Expose methods for external use
   useEffect(() => {
-    // @ts-ignore
+    // @ts-expect-error
     window.demoTradingBot = {
       startSession,
       stopSession,

@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { HyperliquidTradingService } from '@/lib/services/HyperliquidTradingService'
 import { AuthService } from '@/lib/services/AuthService'
 
-const tradingService = new HyperliquidTradingService()
 const authService = new AuthService()
 
 export async function GET(
@@ -13,60 +11,44 @@ export async function GET(
     // Verify authentication
     const authHeader = request.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const token = authHeader.substring(7)
     const payload = await authService.verifyToken(token)
-
+    
     const { sessionId } = params
-
+    
     if (!sessionId) {
-      return NextResponse.json(
-        { error: 'Session ID is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Session ID is required' 
+      }, { status: 400 })
     }
-
-    // Get trading session
-    const session = await tradingService.getTradingSession(sessionId)
-
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Trading session not found' },
-        { status: 404 }
-      )
-    }
-
-    // Check if user owns this session
-    if (session.phoneNumber !== payload.phoneNumber) {
-      return NextResponse.json(
-        { error: 'Unauthorized access to session' },
-        { status: 403 }
-      )
-    }
-
-    return NextResponse.json({
-      success: true,
-      session: {
-        id: session.id,
-        status: session.status,
-        startTime: session.startTime,
-        endTime: session.endTime,
-        totalPnL: session.totalPnL,
-        positions: session.positions,
-        config: session.config,
-        error: session.error
+    
+    // Call the trading engine to get specific session
+    const tradingEngineUrl = process.env.TRADING_ENGINE_URL || 'http://localhost:3001'
+    const response = await fetch(`${tradingEngineUrl}/api/trading/session/${sessionId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
       }
     })
 
+    if (!response.ok) {
+      const errorData = await response.json()
+      return NextResponse.json({ 
+        success: false, 
+        error: errorData.error || 'Failed to fetch trading session' 
+      }, { status: response.status })
+    }
+
+    const result = await response.json()
+    return NextResponse.json(result)
   } catch (error) {
     console.error('Error fetching trading session:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch trading session' },
+      { success: false, error: 'Failed to fetch trading session' },
       { status: 500 }
     )
   }

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { useAuth } from '@/lib/auth/AuthContext';
 
 interface Wallet {
   id: string;
@@ -16,6 +17,7 @@ interface WalletManagementProps {
 }
 
 export function WalletManagement({ className = "" }: WalletManagementProps) {
+  const { token } = useAuth();
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +43,6 @@ export function WalletManagement({ className = "" }: WalletManagementProps) {
     setError(null);
 
     try {
-      const token = localStorage.getItem('authToken');
       if (!token) {
         throw new Error('No authentication token found');
       }
@@ -91,8 +92,10 @@ export function WalletManagement({ className = "" }: WalletManagementProps) {
   };
 
   useEffect(() => {
-    fetchWallets();
-  }, []);
+    if (token) {
+      fetchWallets();
+    }
+  }, [token]);
 
   return (
     <div className={`space-y-6 ${className}`}>
