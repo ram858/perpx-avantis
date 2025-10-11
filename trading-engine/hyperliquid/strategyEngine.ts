@@ -157,33 +157,33 @@ export async function evaluateSignalOnly(
     // --- Sniper & Reversal conditions ---
     const sniperConditions = {
       long: {
-        signalScore: { value: signalScore, pass: signalScore > 0.4, expected: '> 0.4' }, // Loosened
-        rsi: { value: rsi, pass: rsi >= 20 && rsi <= 65, expected: '20–65' },
-        rsiSlope: { value: rsiSlope30m, pass: rsiSlope30m > 0, expected: '> 0' },
-        atr: { value: atrPct, pass: atrPct > 0.15, expected: '> 0.15%' },
-        adx: { value: adx, pass: adx > 12, expected: '> 12' },
-        priceSlope: { value: priceSlopePct, pass: priceSlopePct > -0.004, expected: '> -0.4%' },
-        trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h > -0.005, expected: '> -0.5%' },
-        volumePct: { value: volumePct, pass: volumePct > (mos > mosThresholdExtreme ? 0.01 : 0.002), expected: '> 0.01 if extreme long' }, // Loosened base, higher in extreme
+        signalScore: { value: signalScore, pass: signalScore > 0.1, expected: '> 0.1' }, // Much looser
+        rsi: { value: rsi, pass: rsi >= 15 && rsi <= 75, expected: '15–75' }, // Wider range
+        rsiSlope: { value: rsiSlope30m, pass: rsiSlope30m > -0.5, expected: '> -0.5' }, // Allow some decline
+        atr: { value: atrPct, pass: atrPct > 0.05, expected: '> 0.05%' }, // Much lower volatility requirement
+        adx: { value: adx, pass: adx > 8, expected: '> 8' }, // Lower trend strength requirement
+        priceSlope: { value: priceSlopePct, pass: priceSlopePct > -0.01, expected: '> -1%' }, // Allow more decline
+        trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h > -0.015, expected: '> -1.5%' }, // Allow more decline
+        volumePct: { value: volumePct, pass: volumePct > 0.001, expected: '> 0.1%' }, // Much lower volume requirement
         candlePos5m: {
           value: candlePos5m,
-          pass: ['bottom', 'anticipation_bottom', 'doji_bottom', 'middle'].includes(candlePos5m),
-          expected: 'bottom/anticipation_bottom/doji_bottom/middle',
+          pass: ['bottom', 'anticipation_bottom', 'doji_bottom', 'middle', 'top'].includes(candlePos5m), // Allow more positions
+          expected: 'bottom/anticipation_bottom/doji_bottom/middle/top',
         },
       },
       short: {
-        signalScore: { value: signalScore, pass: signalScore > 0.4, expected: '> 0.4' }, // Loosened
-        rsi: { value: rsi, pass: rsi >= 35 && rsi <= 75, expected: '35–75' },
-        rsiSlope: { value: rsiSlope30m, pass: rsiSlope30m < 0, expected: '< 0' },
-        atr: { value: atrPct, pass: atrPct > 0.15, expected: '> 0.15%' },
-        adx: { value: adx, pass: adx > 12, expected: '> 12' },
-        priceSlope: { value: priceSlopePct, pass: priceSlopePct < 0.004, expected: '< 0.4%' },
-        trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h < 0.005, expected: '< 0.5%' },
-        volumePct: { value: volumePct, pass: volumePct > (mos < -mosThresholdExtreme ? 0.01 : 0.002), expected: '> 0.01 if extreme short' }, // Loosened base, higher in extreme
+        signalScore: { value: signalScore, pass: signalScore > 0.1, expected: '> 0.1' }, // Much looser
+        rsi: { value: rsi, pass: rsi >= 25 && rsi <= 85, expected: '25–85' }, // Wider range
+        rsiSlope: { value: rsiSlope30m, pass: rsiSlope30m < 0.5, expected: '< 0.5' }, // Allow some increase
+        atr: { value: atrPct, pass: atrPct > 0.05, expected: '> 0.05%' }, // Much lower volatility requirement
+        adx: { value: adx, pass: adx > 8, expected: '> 8' }, // Lower trend strength requirement
+        priceSlope: { value: priceSlopePct, pass: priceSlopePct < 0.01, expected: '< 1%' }, // Allow more increase
+        trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h < 0.015, expected: '< 1.5%' }, // Allow more increase
+        volumePct: { value: volumePct, pass: volumePct > 0.001, expected: '> 0.1%' }, // Much lower volume requirement
         candlePos5m: {
           value: candlePos5m,
-          pass: ['top', 'anticipation_top', 'doji_top', 'middle'].includes(candlePos5m),
-          expected: 'top/anticipation_top/doji_top/middle',
+          pass: ['top', 'anticipation_top', 'doji_top', 'middle', 'bottom'].includes(candlePos5m), // Allow more positions
+          expected: 'top/anticipation_top/doji_top/middle/bottom',
         },
       },
       longReversal: { // Short position from overbought

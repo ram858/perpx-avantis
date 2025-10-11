@@ -141,17 +141,18 @@ export function useTradingSession() {
     }
   }, [positionData]); // Removed tradingSession from dependencies to prevent infinite loop
 
-  // Auto-refresh session status periodically
-  useEffect(() => {
-    if (!tradingSession || tradingSession.status !== 'running') return;
+      // Auto-refresh session status periodically
+      useEffect(() => {
+        if (!tradingSession || tradingSession.status !== 'running') return;
 
-    const interval = setInterval(() => {
-      refreshSessionStatus();
-      fetchPositions();
-    }, 5000); // Refresh every 5 seconds
+        const interval = setInterval(() => {
+          refreshSessionStatus();
+          // Don't call fetchPositions here - it's already handled by usePositions hook
+          // fetchPositions();
+        }, 10000); // Refresh every 10 seconds (less frequent)
 
-    return () => clearInterval(interval);
-  }, [tradingSession?.status]); // Only depend on status, not the entire session object
+        return () => clearInterval(interval);
+      }, [tradingSession?.status]); // Only depend on status, not the entire session object
 
   return {
     tradingSession,

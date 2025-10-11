@@ -160,7 +160,7 @@ export class WebTradingBot {
         }
 
         // Wait before next cycle
-        await delay(5000); // 5 seconds between cycles for faster trading
+        await delay(10000); // 10 seconds between cycles to reduce server load
 
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);

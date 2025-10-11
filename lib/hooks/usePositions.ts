@@ -31,34 +31,37 @@ export function usePositions() {
   const retryCountRef = useRef(0);
   const maxRetries = 3;
 
-  const fetchPositions = useCallback(async (force = false) => {
-    // TEMPORARY: Skip authentication for testing
-    // TODO: Re-enable authentication once basic functionality is working
-    // if (!token) return;
-    
-    // Prevent concurrent fetches
-    if (fetchInProgressRef.current && !force) {
-      console.log('[usePositions] Fetch already in progress, skipping...');
-      return;
-    }
-    
-    fetchInProgressRef.current = true;
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
-      
-      const response = await fetch('/api/positions', {
-        headers: {
-          // 'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        signal: controller.signal,
-      });
-      
-      clearTimeout(timeoutId);
+      const fetchPositions = useCallback(async (force = false) => {
+        // TEMPORARY: Skip authentication for testing
+        // TODO: Re-enable authentication once basic functionality is working
+        // if (!token) return;
+
+        // Prevent concurrent fetches
+        if (fetchInProgressRef.current && !force) {
+          console.log('[usePositions] Fetch already in progress, skipping...');
+          return;
+        }
+
+        fetchInProgressRef.current = true;
+        setIsLoading(true);
+        setError(null);
+
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => {
+            console.log('[usePositions] Request timeout, aborting...');
+            controller.abort();
+          }, 30000); // Increased to 30s timeout
+
+          const response = await fetch('/api/positions', {
+            headers: {
+              // 'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeoutId);
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
@@ -72,13 +75,21 @@ export function usePositions() {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch positions';
       console.error('[usePositions] Error fetching positions:', errorMessage);
       
-      // Retry logic for network errors
-      if (retryCountRef.current < maxRetries && errorMessage.includes('fetch')) {
-        retryCountRef.current++;
-        console.log(`[usePositions] Retrying... (${retryCountRef.current}/${maxRetries})`);
-        setTimeout(() => fetchPositions(true), 2000 * retryCountRef.current);
+      // Handle AbortError gracefully
+      if (err instanceof Error && err.name === 'AbortError') {
+        console.log('[usePositions] Request was aborted, likely due to timeout');
+        setError('Request timeout - please check your connection');
+        setPositionData({ positions: [], totalPnL: 0, openPositions: 0 });
       } else {
-        setError(errorMessage);
+        // Retry logic for network errors (but not abort errors)
+        if (retryCountRef.current < maxRetries && errorMessage.includes('fetch')) {
+          retryCountRef.current++;
+          console.log(`[usePositions] Retrying... (${retryCountRef.current}/${maxRetries})`);
+          setTimeout(() => fetchPositions(true), 2000 * retryCountRef.current);
+        } else {
+          setError(errorMessage);
+          setPositionData({ positions: [], totalPnL: 0, openPositions: 0 });
+        }
       }
     } finally {
       setIsLoading(false);
@@ -193,19 +204,25 @@ export function usePositions() {
     }
   }, [fetchPositions]); // Removed token dependency
 
-  // Smart auto-refresh: only refresh when positions exist and page is visible
-  useEffect(() => {
-    fetchPositions();
-    
-    let interval: NodeJS.Timeout | null = null;
-    
-    const startPolling = () => {
-      if (interval) return; // Already polling
-      
-      // Faster polling (3s) when positions exist, slower (10s) when no positions
-      const pollInterval = positionData && positionData.openPositions > 0 ? 3000 : 10000;
-      interval = setInterval(() => fetchPositions(), pollInterval);
-    };
+      // Smart auto-refresh: only refresh when positions exist and page is visible
+      useEffect(() => {
+        fetchPositions();
+
+        let interval: NodeJS.Timeout | null = null;
+
+        const startPolling = () => {
+          if (interval) return; // Already polling
+
+          // Much slower polling to reduce server load and prevent conflicts
+          // Only poll every 45 seconds when no positions, 20 seconds when positions exist
+          const pollInterval = positionData && positionData.openPositions > 0 ? 20000 : 45000;
+          interval = setInterval(() => {
+            // Only fetch if not already in progress
+            if (!fetchInProgressRef.current) {
+              fetchPositions();
+            }
+          }, pollInterval);
+        };
     
     const stopPolling = () => {
       if (interval) {
