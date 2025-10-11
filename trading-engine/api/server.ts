@@ -141,6 +141,45 @@ app.get('/api/trading/sessions', (req, res) => {
   }
 });
 
+// Close all positions
+app.post('/api/close-all-positions', async (req, res) => {
+  try {
+    console.log('[API] Close all positions endpoint called');
+    
+    // Import the closeAllPositions function
+    const { closeAllPositions } = await import('../hyperliquid/hyperliquid');
+    
+    console.log('[API] Calling closeAllPositions...');
+    const result = await closeAllPositions();
+    
+    if (result.success) {
+      console.log(`[API] Successfully closed ${result.closedCount} positions`);
+      res.json({
+        success: true,
+        message: result.message || `Successfully closed ${result.closedCount} positions`,
+        closedCount: result.closedCount,
+        errorCount: result.errorCount,
+        totalPositions: result.totalPositions
+      });
+    } else {
+      console.error(`[API] Failed to close positions: ${result.error}`);
+      res.status(400).json({
+        success: false,
+        error: result.error || 'Failed to close all positions',
+        closedCount: result.closedCount || 0,
+        errorCount: result.errorCount || 0,
+        totalPositions: result.totalPositions || 0
+      });
+    }
+  } catch (error) {
+    console.error('[API] Error closing all positions:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    });
+  }
+});
+
 // Stop trading session
 app.post('/api/trading/stop/:sessionId', (req, res) => {
   try {

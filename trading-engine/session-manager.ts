@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import { SimpleTradingBot } from './trading-bot';
+import { WebTradingBot } from './hyperliquid/web-trading-bot';
 
 export interface TradingConfig {
   maxBudget: number;
@@ -21,7 +21,7 @@ export interface SessionStatus {
 }
 
 export class TradingSessionManager {
-  private tradingBot: SimpleTradingBot;
+  private tradingBot: WebTradingBot;
   private sessions: Map<string, {
     config: TradingConfig;
     status: SessionStatus;
@@ -29,11 +29,20 @@ export class TradingSessionManager {
   }> = new Map();
 
   constructor() {
-    this.tradingBot = new SimpleTradingBot();
+    this.tradingBot = new WebTradingBot();
   }
 
   async startSession(config: TradingConfig): Promise<string> {
-    const sessionId = await this.tradingBot.startSession(config);
+    const sessionId = `session_${Date.now()}`;
+    
+    // Create config with sessionId
+    const botConfig = {
+      ...config,
+      sessionId
+    };
+    
+    // Start the real trading bot
+    await this.tradingBot.startTrading(botConfig);
     
     console.log(`[SESSION_MANAGER] Starting session ${sessionId} with config:`, config);
 
@@ -61,10 +70,10 @@ export class TradingSessionManager {
 
   private startSessionMonitoring(sessionId: string) {
     const monitorInterval = setInterval(() => {
-      const botSession = this.tradingBot.getSessionStatus(sessionId);
+      const botStatus = this.tradingBot.getStatus();
       const session = this.sessions.get(sessionId);
       
-      if (!botSession || !session) {
+      if (!botStatus || !session) {
         clearInterval(monitorInterval);
         return;
       }
@@ -72,17 +81,17 @@ export class TradingSessionManager {
       // Update session status from bot
       session.status = {
         ...session.status,
-        pnl: botSession.pnl,
-        openPositions: botSession.openPositions,
-        cycle: botSession.cycle,
-        status: botSession.status,
-        lastUpdate: botSession.lastUpdate
+        pnl: botStatus.pnl || 0,
+        openPositions: botStatus.openPositions || 0,
+        cycle: botStatus.cycle || 0,
+        status: botStatus.isRunning ? 'running' : 'stopped',
+        lastUpdate: new Date()
       };
 
       this.broadcastUpdate(sessionId);
 
       // Clean up if session is completed or stopped
-      if (botSession.status === 'completed' || botSession.status === 'error') {
+      if (!botStatus.isRunning) {
         clearInterval(monitorInterval);
         setTimeout(() => {
           this.sessions.delete(sessionId);
@@ -166,7 +175,7 @@ export class TradingSessionManager {
     const session = this.sessions.get(sessionId);
     if (session) {
       console.log(`[SESSION_MANAGER] Stopping session ${sessionId}`);
-      this.tradingBot.stopSession(sessionId);
+      this.tradingBot.stopTrading();
       this.updateSessionStatus(sessionId, { status: 'stopped', lastUpdate: new Date() });
       return true;
     }
@@ -179,7 +188,7 @@ export class TradingSessionManager {
 
   cleanup() {
     console.log('[SESSION_MANAGER] Cleaning up all sessions');
-    this.tradingBot.cleanup();
+    this.tradingBot.stopTrading();
     this.sessions.clear();
   }
 }

@@ -53,12 +53,18 @@ export class WebTradingBot {
   private shouldStop = false;
   private sessionId: string = '';
   private config: TradingConfig | null = null;
+  private pnl: number = 0;
+  private openPositions: number = 0;
+  private cycle: number = 0;
 
   async startTrading(config: TradingConfig): Promise<void> {
     this.config = config;
     this.sessionId = config.sessionId;
     this.isRunning = true;
     this.shouldStop = false;
+    this.pnl = 0;
+    this.openPositions = 0;
+    this.cycle = 0;
 
     log('WEB_BOT', `Starting trading session ${this.sessionId}`);
     log('WEB_BOT', `Config: Budget=$${config.maxBudget}, Goal=$${config.profitGoal}, MaxPos=${config.maxPerSession}`);
@@ -95,7 +101,7 @@ export class WebTradingBot {
     let sessionCount = 0;
 
     // Validate and cap budget
-    const validatedBudget = await validateAndCapBudget(maxBudget);
+    const validatedBudget = await validateAndCapBudget(maxBudget, maxPerSession);
     log('WEB_BOT', `Validated budget: $${validatedBudget}`);
 
     // Get initial positions and record them
@@ -115,6 +121,8 @@ export class WebTradingBot {
 
         // Get current PnL
         const totalPnL = await getTotalPnL();
+        this.pnl = totalPnL;
+        this.cycle = sessionCount;
         log('WEB_BOT', `Cycle ${sessionCount}: Total PnL: $${totalPnL.toFixed(2)}`);
 
         // Check profit goal
@@ -133,28 +141,69 @@ export class WebTradingBot {
 
         // Get current positions
         const positions = await getPositions();
+        this.openPositions = positions.length;
         log('WEB_BOT', `Open positions: ${positions.length}`);
 
         // Check for take profit on existing positions
-        await checkAndCloseForTP();
+        await checkAndCloseForTP({
+          client,
+          account,
+          profitGoal,
+          closePosition
+        });
 
-        // Get market regime
-        const marketRegime = await guessMarketRegime();
+        // Get market regime (use BTC as default)
+        const btcOHLCV = await getCachedOHLCV('BTC', '15m', 300).catch(() => null);
+        const regimeResult = btcOHLCV ? await guessMarketRegime('BTC', btcOHLCV, btcOHLCV) : { regime: 'neutral' };
+        const marketRegime = regimeResult.regime;
         log('WEB_BOT', `Market regime: ${marketRegime}`);
 
         // Only open new positions if we're under the limit
         if (positions.length < maxPerSession) {
-          // Get budget and leverage for new positions
-          const { budget, leverage } = await getBudgetAndLeverage(validatedBudget, positions.length, maxPerSession);
-          
-          if (budget > 0) {
-            // Run signal check and potentially open new positions
-            const { symbol, signalScore, reason } = await runSignalCheckAndOpen(budget, leverage, marketRegime);
-            
-            if (symbol && signalScore > 0) {
-              log('WEB_BOT', `✅ ${symbol} opened | Regime=${marketRegime} | Score=${signalScore} | Count=${sessionCount}`);
-            } else {
-              log('WEB_BOT', `${symbol || 'No symbol'} => ❌ No trade | Reason: ${reason}`);
+          // Get available trading symbols
+          const tokens = ['BTC', 'ETH', 'SOL', 'AVAX', 'MATIC', 'LINK', 'UNI', 'ATOM'];
+          const slotsLeft = maxPerSession - positions.length;
+          let entriesThis = 0;
+
+          for (const symbol of tokens) {
+            if (entriesThis >= slotsLeft) break;
+
+            try {
+              // Get OHLCV data for signal evaluation
+              const ohlcv15 = await getCachedOHLCV(symbol, '15m', 300).catch(() => null);
+              const ohlcv30 = await getCachedOHLCV(symbol, '30m', 300).catch(() => null);
+              
+              if (!ohlcv15 || !ohlcv30 || ohlcv15.close.length < 100) {
+                log('WEB_BOT', `Skipping ${symbol}: insufficient data`);
+                continue;
+              }
+
+              // Calculate budget per position
+              const perPositionBudget = validatedBudget.budgetPerPosition;
+              
+              // Get leverage for this symbol
+              const { leverage } = getBudgetAndLeverage(marketRegime as any, symbol, perPositionBudget);
+
+              log('WEB_BOT', `Evaluating ${symbol} | Budget=$${perPositionBudget.toFixed(2)} | Leverage=${leverage}x`);
+
+              // Run signal check and potentially open new positions
+              const result = await runSignalCheckAndOpen({
+                symbol,
+                perPositionBudget,
+                leverage,
+                regimeOverride: marketRegime
+              });
+
+              const { positionOpened, signalScore, reason } = result;
+              
+              if (positionOpened) {
+                entriesThis++;
+                log('WEB_BOT', `✅ ${symbol} opened | Score=${signalScore} | Count=${entriesThis}`);
+              } else {
+                log('WEB_BOT', `${symbol} => ❌ No trade | Reason: ${reason}`);
+              }
+            } catch (error) {
+              log('WEB_BOT', `Error evaluating ${symbol}: ${error instanceof Error ? error.message : String(error)}`);
             }
           }
         }
@@ -191,11 +240,21 @@ export class WebTradingBot {
     }
   }
 
-  getStatus(): { isRunning: boolean; sessionId: string; config: TradingConfig | null } {
+  getStatus(): { 
+    isRunning: boolean; 
+    sessionId: string; 
+    config: TradingConfig | null;
+    pnl: number;
+    openPositions: number;
+    cycle: number;
+  } {
     return {
       isRunning: this.isRunning,
       sessionId: this.sessionId,
-      config: this.config
+      config: this.config,
+      pnl: this.pnl,
+      openPositions: this.openPositions,
+      cycle: this.cycle
     };
   }
 }

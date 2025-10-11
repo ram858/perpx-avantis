@@ -7,6 +7,7 @@ import { useIntegratedWallet } from "@/lib/wallet/IntegratedWalletContext"
 import { useAuth } from "@/lib/auth/AuthContext"
 import { useTrading } from "@/lib/hooks/useTrading"
 import { useTradingProfits } from "@/lib/hooks/useTradingProfits"
+import { usePositions } from "@/lib/hooks/usePositions"
 import { ProtectedRoute } from "@/components/ProtectedRoute"
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { NavigationHeader } from "@/components/NavigationHeader"
@@ -164,7 +165,7 @@ const PortfolioBalanceCard = ({
 const TradingCard = ({ 
   targetProfit, 
   setTargetProfit, 
-  investmentAmount, 
+  investmentAmount,
   setInvestmentAmount, 
   primaryWallet, 
   hyperliquidBalance 
@@ -177,8 +178,12 @@ const TradingCard = ({
   hyperliquidBalance: number
 }) => {
   const [isTrading, setIsTrading] = useState(false)
+  const { positionData, isLoading: positionsLoading } = usePositions()
 
   const router = useRouter()
+
+  // Check if there are active positions
+  const hasActivePositions = positionData && positionData.openPositions > 0
 
   const handleStartTrading = async () => {
     // Redirect to chat page with trading parameters
@@ -186,6 +191,16 @@ const TradingCard = ({
       profit: targetProfit,
       investment: investmentAmount,
       mode: 'real' // Use real trading mode
+    })
+    
+    router.push(`/chat?${params.toString()}`)
+  }
+
+  const handleViewTrades = async () => {
+    // Redirect to chat page to view ongoing trades
+    const params = new URLSearchParams({
+      mode: 'real',
+      view: 'positions' // Add a parameter to indicate we're viewing positions
     })
     
     router.push(`/chat?${params.toString()}`)
@@ -210,42 +225,63 @@ const TradingCard = ({
         Your wallet is connected and ready for live trading on Hyperliquid. Configure your trading parameters and start your first session.
       </p>
       
-      <div className="space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-[#9ca3af] text-xs font-medium mb-1">
-              Target Profit (USD)
-            </label>
-            <Input
-              type="number"
-              value={targetProfit}
-              onChange={(e) => setTargetProfit(e.target.value)}
-              className="bg-[#2a2a2a] border-[#444] text-white text-sm"
-              placeholder="20"
-            />
+        <div className="space-y-3">
+        {/* Only show input fields when no active positions */}
+        {!hasActivePositions && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[#9ca3af] text-xs font-medium mb-1">
+                Target Profit (USD)
+              </label>
+              <Input
+                type="number"
+                value={targetProfit}
+                onChange={(e) => setTargetProfit(e.target.value)}
+                className="bg-[#2a2a2a] border-[#444] text-white text-sm"
+                placeholder="20"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-[#9ca3af] text-xs font-medium mb-1">
+                Investment Amount (USD)
+              </label>
+              <Input
+                type="number"
+                value={investmentAmount}
+                onChange={(e) => setInvestmentAmount(e.target.value)}
+                className="bg-[#2a2a2a] border-[#444] text-white text-sm"
+                placeholder="50"
+              />
+            </div>
           </div>
-          
-          <div>
-            <label className="block text-[#9ca3af] text-xs font-medium mb-1">
-              Investment Amount (USD)
-            </label>
-            <Input
-              type="number"
-              value={investmentAmount}
-              onChange={(e) => setInvestmentAmount(e.target.value)}
-              className="bg-[#2a2a2a] border-[#444] text-white text-sm"
-              placeholder="50"
-            />
-          </div>
-        </div>
+        )}
         
-            <Button 
-              onClick={handleStartTrading}
-              disabled={isTrading || hyperliquidBalance === 0}
-              className="w-full bg-[#8759ff] hover:bg-[#7C3AED] text-white font-semibold py-3 rounded-xl disabled:opacity-50"
-            >
-              {isTrading ? '🔄 Starting...' : '🚀 Start Trading'}
-            </Button>
+        {/* Show active positions info when positions exist */}
+        {hasActivePositions && (
+          <div className="bg-[#1f2937] border border-[#374151] rounded-lg p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-white font-medium">Active Positions</h3>
+              <span className="text-[#27c47d] text-sm font-medium">
+                {positionData.openPositions} position{positionData.openPositions !== 1 ? 's' : ''}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[#9ca3af] text-sm">Total PnL:</span>
+              <span className={`font-medium ${positionData.totalPnL >= 0 ? 'text-[#27c47d]' : 'text-[#ef4444]'}`}>
+                ${positionData.totalPnL.toFixed(2)}
+              </span>
+            </div>
+          </div>
+        )}
+        
+        <Button 
+          onClick={hasActivePositions ? handleViewTrades : handleStartTrading}
+          disabled={isTrading || hyperliquidBalance === 0 || positionsLoading}
+          className="w-full bg-[#8759ff] hover:bg-[#7C3AED] text-white font-semibold py-3 rounded-xl disabled:opacity-50"
+        >
+          {isTrading ? '🔄 Starting...' : hasActivePositions ? '👁️ View Trades' : '🚀 Start Trading'}
+        </Button>
         
         {/* Show helpful message when no funds */}
         {hyperliquidBalance === 0 && (
@@ -271,8 +307,19 @@ const TradingCard = ({
         <div className="bg-[#1f2937] border border-[#374151] rounded-lg p-3">
           <div className="flex items-center justify-between text-sm">
             <span className="text-[#9ca3af]">Trading Status:</span>
-            <span className={`font-medium ${hyperliquidBalance > 0 ? 'text-[#27c47d]' : 'text-[#f59e0b]'}`}>
-              {hyperliquidBalance > 0 ? 'Ready to Trade' : 'Add Funds to Start'}
+            <span className={`font-medium ${
+              hasActivePositions 
+                ? 'text-[#27c47d]' 
+                : hyperliquidBalance > 0 
+                  ? 'text-[#27c47d]' 
+                  : 'text-[#f59e0b]'
+            }`}>
+              {hasActivePositions 
+                ? 'Trading Active' 
+                : hyperliquidBalance > 0 
+                  ? 'Ready to Trade' 
+                  : 'Add Funds to Start'
+              }
             </span>
           </div>
           <div className="flex items-center justify-between text-sm mt-1">
@@ -291,6 +338,14 @@ const TradingCard = ({
               ${hyperliquidBalance.toFixed(2)}
             </span>
           </div>
+          {hasActivePositions && (
+            <div className="flex items-center justify-between text-sm mt-1">
+              <span className="text-[#9ca3af]">Open Positions:</span>
+              <span className="font-medium text-[#27c47d]">
+                {positionData.openPositions}
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </div>

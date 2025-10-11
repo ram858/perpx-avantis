@@ -79,26 +79,43 @@ async function recordTradeInWinRateTracker(symbol: string, exitPrice: number, si
 
 dotenv.config();
 
-// 🔐 Load private key and init account
+// 🔐 Load private key and init account (lazy initialization)
 // Priority: Environment variable (from API server) > .env file
-const rawKey = process.env.HYPERLIQUID_PK;
-console.log(`[HYPERLIQUID_BOT] 🔑 Using private key: ${rawKey ? rawKey.substring(0, 10) + '...' + rawKey.substring(rawKey.length - 4) : 'null'}`);
-console.log(`[HYPERLIQUID_BOT] 🔑 Key source: ${process.env.HYPERLIQUID_PK ? 'Environment variable' : 'Not found'}`);
+let _account: any = null;
 
-if (!rawKey) {
-  console.error('❌ Missing required environment variable: HYPERLIQUID_PK');
-  console.error('💡 The bot requires a Hyperliquid private key to be provided by the API server');
-  console.error('   (Your private key must start with 0x)');
-  process.exit(1);
+function getAccount() {
+  const rawKey = process.env.HYPERLIQUID_PK;
+  console.log(`[HYPERLIQUID_BOT] 🔑 Using private key: ${rawKey ? rawKey.substring(0, 10) + '...' + rawKey.substring(rawKey.length - 4) : 'null'}`);
+  console.log(`[HYPERLIQUID_BOT] 🔑 Key source: ${process.env.HYPERLIQUID_PK ? 'Environment variable' : 'Not found'}`);
+
+  if (!rawKey) {
+    console.error('❌ Missing required environment variable: HYPERLIQUID_PK');
+    console.error('💡 The bot requires a Hyperliquid private key to be provided by the API server');
+    console.error('   (Your private key must start with 0x)');
+    throw new Error('HYPERLIQUID_PK not set');
+  }
+
+  if (!rawKey.startsWith("0x")) {
+    console.error('❌ Invalid private key format. Private key must start with 0x');
+    console.error('💡 Example: HYPERLIQUID_PK=0x1234567890abcdef...');
+    throw new Error('Invalid private key format');
+  }
+
+  if (!_account) {
+    _account = privateKeyToAccount(rawKey as `0x${string}`);
+    console.log(`🔑 Initialized with Wallet: ${_account.address}`);
+  }
+  
+  return _account;
 }
 
-if (!rawKey.startsWith("0x")) {
-  console.error('❌ Invalid private key format. Private key must start with 0x');
-  console.error('💡 Example: HYPERLIQUID_PK=0x1234567890abcdef...');
-  process.exit(1);
-}
-
-export const account = privateKeyToAccount(rawKey as `0x${string}`);
+export const account = {
+  get address() {
+    return getAccount().address;
+  },
+  signMessage: (message: any) => getAccount().signMessage(message),
+  signTypedData: (typedData: any) => getAccount().signTypedData(typedData)
+};
 
 
 // 🌐 Use testnet or mainnet transport based on environment
@@ -107,8 +124,6 @@ export const transport = new hl.HttpTransport({ isTestnet });
 export const publicClient = new hl.PublicClient({ transport });
 
 console.log(`🌐 Using ${isTestnet ? 'TESTNET' : 'MAINNET'} environment`);
-
-console.log(`🔑 Initialized with Wallet: ${account.address}`);
 
 // 🌐 Test network connectivity
 async function testNetworkConnectivity() {
@@ -136,13 +151,14 @@ async function testNetworkConnectivity() {
 let _walletClient: hl.WalletClient | null = null;
 export function getWalletClient(): hl.WalletClient {
   if (!_walletClient) {
+    const walletAccount = getAccount(); // This will initialize the account if needed
     _walletClient = new hl.WalletClient({
-      wallet: account,
+      wallet: walletAccount,
       transport,
       isTestnet,
       signatureChainId: isTestnet ? "0xa4b1" : "0xa", // Testnet: 0xa4b1, Mainnet: 0xa
     });
-    console.log(`🔐 WalletClient instantiated: ${account.address} (${isTestnet ? 'TESTNET' : 'MAINNET'})`);
+    console.log(`🔐 WalletClient instantiated: ${walletAccount.address} (${isTestnet ? 'TESTNET' : 'MAINNET'})`);
   }
   return _walletClient;
 }
