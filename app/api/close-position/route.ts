@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { UserWalletService } from '@/lib/services/UserWalletService'
+import { HyperliquidTradingService } from '@/lib/services/HyperliquidTradingService'
 import { AuthService } from '@/lib/services/AuthService'
 
-const userWalletService = new UserWalletService()
+const tradingService = new HyperliquidTradingService()
 const authService = new AuthService()
 
 export async function POST(request: NextRequest) {
@@ -23,28 +23,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Symbol is required' }, { status: 400 })
     }
 
-    // Get user's primary wallet
-    const wallet = await userWalletService.getPrimaryTradingWalletWithKey(payload.phoneNumber)
+    console.log(`[ClosePosition] Closing position for ${symbol} for user ${payload.phoneNumber}`)
+
+    // Use the trading service to close the position
+    const result = await tradingService.closePosition(symbol)
     
-    if (!wallet || !wallet.privateKey) {
-      return NextResponse.json({ error: 'Wallet not found or private key not available' }, { status: 404 })
+    if (result.success) {
+      console.log(`[ClosePosition] Successfully closed position for ${symbol}`)
+      return NextResponse.json({
+        success: true,
+        message: result.message
+      })
+    } else {
+      console.error(`[ClosePosition] Failed to close position for ${symbol}: ${result.message}`)
+      return NextResponse.json({
+        success: false,
+        error: result.message
+      }, { status: 400 })
     }
 
-    // TODO: Implement actual position closing using Hyperliquid API
-    // For now, return success (simulation)
-    console.log(`Closing position for ${symbol} using wallet ${wallet.address}`)
-    
-    return NextResponse.json({
-      success: true,
-      message: `Position ${symbol} closed successfully`
-    })
-
   } catch (error) {
-    console.error('Error closing position:', error)
+    console.error('[ClosePosition] Error closing position:', error)
     return NextResponse.json(
       { 
         success: false,
-        error: 'Failed to close position'
+        error: error instanceof Error ? error.message : 'Failed to close position'
       },
       { status: 500 }
     )

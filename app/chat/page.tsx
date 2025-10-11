@@ -4,12 +4,14 @@ import type React from "react"
 import Image from "next/image"
 
 import { Button } from "@/components/ui/button"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import Link from "next/link"
 import { useTradingSession } from "@/lib/hooks/useTradingSession"
 import { usePositions } from "@/lib/hooks/usePositions"
 import { useIntegratedWallet } from "@/lib/wallet/IntegratedWalletContext"
 import { useSearchParams } from "next/navigation"
+import { ErrorBoundary } from "@/components/ErrorBoundary"
+import { getStorageItem, setStorageItem } from "@/lib/utils/safeStorage"
 
 export default function ChatPage() {
   const searchParams = useSearchParams()
@@ -49,6 +51,7 @@ export default function ChatPage() {
     error: positionsError,
     fetchPositions,
     closePosition: closeIndividualPosition,
+    closeAllPositions: closeAllPositionsHook,
   } = usePositions()
 
   // Wallet integration
@@ -74,15 +77,11 @@ export default function ChatPage() {
     }
   }, [tradingSession])
 
-  // Initialize component state when component mounts
   useEffect(() => {
-    // Don't clear existing trading session - let it persist
-    // Only set initial phase if no trading session exists
     if (!tradingSession) {
       setTradingPhase('initial')
     }
     
-    // Refresh session status to check for active sessions
     refreshSessionStatus()
   }, [])
 
@@ -97,9 +96,9 @@ export default function ChatPage() {
       const profitNum = parseInt(profit)
       const investmentNum = parseInt(investment)
       
-      // Determine trading mode
-      const isRealTradingMode = mode === 'real' && isConnected && totalPortfolioValue > 0
-      const isSimulationMode = mode === 'simulation' || !isConnected || totalPortfolioValue === 0
+      // Determine trading mode - prioritize mode parameter
+      const isRealTradingMode = mode === 'real' && isConnected
+      const isSimulationMode = mode === 'simulation' || (!isConnected && mode !== 'real')
       
       if (isRealTradingMode) {
         // Real trading mode - check wallet requirements
@@ -160,7 +159,6 @@ export default function ChatPage() {
           }])
         })
       } else {
-        // Ambiguous mode - ask user to choose
         setMessages([{
           type: "bot",
           content: `🤔 I see you want to trade with $${investmentNum} targeting $${profitNum} profit. Would you like to:\n\n💰 **Real Trading** (uses actual money)\n🎮 **Simulation** (no real money)\n\nPlease visit the trading page to choose your mode.`,
@@ -181,7 +179,7 @@ export default function ChatPage() {
     }
   }, [searchParams, messages.length])
 
-  const handleSendMessage = async () => {
+  const handleSendMessage = useCallback(async () => {
     if (inputValue.trim()) {
       const newMessage = {
         type: "user" as const,
@@ -259,36 +257,53 @@ export default function ChatPage() {
       
       setInputValue("")
     }
-  }
+  }, [inputValue, tradingSession, startTrading, setTradingPhase])
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       handleSendMessage()
     }
-  }
+  }, [handleSendMessage])
 
-  const toggleSection = (section: string) => {
+  const toggleSection = useCallback((section: string) => {
     setExpandedSections((prev) => (prev.includes(section) ? prev.filter((s) => s !== section) : [...prev, section]))
-  }
+  }, [])
 
-  const handleClosePosition = async (positionId: string) => {
+  const handleClosePosition = useCallback(async (positionId: string) => {
     setClosingPositions((prev) => [...prev, positionId])
     
     try {
       let success = false;
       
       if (positionId === "live" && tradingSession?.sessionId) {
-        // Close all positions (legacy behavior)
-        success = await stopTrading(tradingSession.sessionId);
+        // Close all positions by calling the new endpoint
+        const token = getStorageItem('token', '');
+        const response = await fetch('/api/close-all-positions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
         
-        if (success) {
-          const closeMessage = {
-            type: "bot" as const,
-            content: `✅ All positions closed successfully! Trading session stopped. Final PnL: $${tradingSession.pnl?.toFixed(2) || '0.00'}`,
-            timestamp: new Date().toISOString()
-          };
-          setMessages(prev => [...prev, closeMessage]);
-          setTradingPhase("completed");
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success) {
+            success = true;
+            const closeMessage = {
+              type: "bot" as const,
+              content: `✅ All positions closed successfully! Trading session stopped. Final PnL: $${tradingSession.pnl?.toFixed(2) || '0.00'}`,
+              timestamp: new Date().toISOString()
+            };
+            setMessages(prev => [...prev, closeMessage]);
+            setTradingPhase("completed");
+            
+            // Also stop the trading session
+            await stopTrading(tradingSession.sessionId);
+            
+            // Refresh positions to show updated data
+            await fetchPositions();
+          }
         }
       } else {
         // Close individual position
@@ -316,7 +331,7 @@ export default function ChatPage() {
         setMessages(prev => [...prev, errorMessage]);
       }
     } catch (error) {
-      // Security: Remove error logging in production
+      console.error('Error closing position:', error);
       const errorMessage = {
         type: "bot" as const,
         content: `❌ Error closing position ${positionId}. Please try again.`,
@@ -327,22 +342,73 @@ export default function ChatPage() {
       // Remove from closing positions list
       setClosingPositions((prev) => prev.filter((id) => id !== positionId));
     }
-  }
+  }, [tradingSession, closeIndividualPosition, stopTrading, fetchPositions])
 
-  const toggleTerminal = () => {
+  const handleCloseAllPositions = useCallback(async () => {
+    if (!positionData || positionData.openPositions === 0) {
+      return;
+    }
+
+    // Mark all positions as closing
+    const allPositionIds = positionData.positions.map(p => p.coin);
+    setClosingPositions(allPositionIds);
+    
+    try {
+      console.log('[ChatPage] Closing all positions...');
+      const success = await closeAllPositionsHook();
+      
+      if (success) {
+        const closeMessage = {
+          type: "bot" as const,
+          content: `✅ All ${positionData.openPositions} positions closed successfully! Final PnL: $${positionData.totalPnL?.toFixed(2) || '0.00'}`,
+          timestamp: new Date().toISOString()
+        };
+        setMessages(prev => [...prev, closeMessage]);
+        
+        // Stop the trading session if it exists
+        if (tradingSession?.sessionId) {
+          await stopTrading(tradingSession.sessionId);
+          setTradingPhase("completed");
+        }
+        
+        // Refresh positions to show updated data
+        await fetchPositions();
+      } else {
+        const errorMessage = {
+          type: "bot" as const,
+          content: `❌ Failed to close all positions. Please try again or close them individually.`,
+          timestamp: new Date().toISOString()
+        };
+        setMessages(prev => [...prev, errorMessage]);
+      }
+    } catch (error) {
+      console.error('[ChatPage] Error closing all positions:', error);
+      const errorMessage = {
+        type: "bot" as const,
+        content: `❌ Error closing all positions. Please try again.`,
+        timestamp: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      // Clear all closing positions
+      setClosingPositions([]);
+    }
+  }, [positionData, closeAllPositionsHook, tradingSession, stopTrading, fetchPositions])
+
+  const toggleTerminal = useCallback(() => {
     setIsTerminalExpanded(!isTerminalExpanded)
-  }
+  }, [isTerminalExpanded])
 
-  const handleResetChat = () => {
+  const handleResetChat = useCallback(() => {
     setMessages([])
     setInputValue("")
     setShowTyping(false)
     setTradingPhase("conversation")
     setClosingPositions([])
     setExpandedSections([])
-  }
+  }, [])
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
     setDragStartPosition({ x: e.clientX, y: e.clientY })
     setHasDragged(false)
     setIsDragging(true)
@@ -353,9 +419,9 @@ export default function ChatPage() {
         y: e.clientY - rect.top,
       })
     }
-  }
+  }, [])
 
-  const handleTouchStart = (e: React.TouchEvent) => {
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
     const touch = e.touches[0]
     setDragStartPosition({ x: touch.clientX, y: touch.clientY })
     setHasDragged(false)
@@ -367,13 +433,13 @@ export default function ChatPage() {
         y: touch.clientY - rect.top,
       })
     }
-  }
+  }, [])
 
-  const handleTerminalClick = () => {
+  const handleTerminalClick = useCallback(() => {
     if (!hasDragged) {
       toggleTerminal()
     }
-  }
+  }, [hasDragged, toggleTerminal])
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -458,6 +524,7 @@ export default function ChatPage() {
 
 
   return (
+    <ErrorBoundary>
     <div className="min-h-screen bg-[#0d0d0d] text-white flex flex-col relative">
       {/* Header */}
       <header className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4">
@@ -740,6 +807,24 @@ export default function ChatPage() {
                   <h3 className="text-white font-semibold">Open Positions</h3>
                   <span className="text-[#b4b4b4] text-sm">{positionData.openPositions} positions</span>
                 </div>
+                
+                {/* Close All Positions Button */}
+                {positionData.openPositions > 1 && (
+                  <Button
+                    onClick={handleCloseAllPositions}
+                    disabled={closingPositions.length > 0}
+                    className="w-full bg-red-600 hover:bg-red-700 text-white rounded-lg py-3 mb-4 font-semibold"
+                  >
+                    {closingPositions.length > 0 ? (
+                      <div className="flex items-center justify-center space-x-2">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <span>Closing All Positions...</span>
+                      </div>
+                    ) : (
+                      `Close All ${positionData.openPositions} Positions`
+                    )}
+                  </Button>
+                )}
                 
                 {/* Individual Position Cards */}
                 <div className="space-y-3">
@@ -1464,6 +1549,7 @@ export default function ChatPage() {
         </div>
       )}
     </div>
+    </ErrorBoundary>
   )
 }
 

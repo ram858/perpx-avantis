@@ -139,7 +139,7 @@ export function useTradingSession() {
         cycle: (prev.cycle || 0) + 1
       } : null);
     }
-  }, [positionData, tradingSession]);
+  }, [positionData]); // Removed tradingSession from dependencies to prevent infinite loop
 
   // Auto-refresh session status periodically
   useEffect(() => {
@@ -151,7 +151,7 @@ export function useTradingSession() {
     }, 5000); // Refresh every 5 seconds
 
     return () => clearInterval(interval);
-  }, [tradingSession, refreshSessionStatus, fetchPositions]);
+  }, [tradingSession?.status]); // Only depend on status, not the entire session object
 
   return {
     tradingSession,

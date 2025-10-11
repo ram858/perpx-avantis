@@ -1,10 +1,12 @@
 import WebSocket from 'ws';
-import { SimpleTradingBot } from './trading-bot.js';
+import { SimpleTradingBot } from './trading-bot';
 
 export interface TradingConfig {
   maxBudget: number;
   profitGoal: number;
   maxPerSession: number;
+  userPhoneNumber?: string;
+  walletAddress?: string;
 }
 
 export interface SessionStatus {

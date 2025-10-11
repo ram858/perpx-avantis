@@ -185,7 +185,7 @@ const TradingCard = ({
     const params = new URLSearchParams({
       profit: targetProfit,
       investment: investmentAmount,
-      mode: 'simulation' // Default to simulation mode
+      mode: 'real' // Use real trading mode
     })
     
     router.push(`/chat?${params.toString()}`)

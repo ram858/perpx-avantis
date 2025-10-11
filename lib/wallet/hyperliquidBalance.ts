@@ -2,8 +2,7 @@ import * as hl from "@nktkas/hyperliquid";
 
 // Create Hyperliquid testnet client with proper configuration
 const transport = new hl.HttpTransport({ 
-  isTestnet: true,
-  keepalive: false  // Disable keepalive to prevent the error
+  isTestnet: true
 });
 const publicClient = new hl.PublicClient({ transport });
 

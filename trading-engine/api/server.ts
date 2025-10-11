@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { TradingSessionManager } from '../session-manager.js';
+import { TradingSessionManager } from '../session-manager';
 
 const app = express();
 const port = process.env.API_PORT || 3001;
@@ -29,7 +29,7 @@ app.get('/api/health', (req, res) => {
 // Start trading session
 app.post('/api/trading/start', async (req, res) => {
   try {
-    const { maxBudget, profitGoal, maxPerSession } = req.body;
+    const { maxBudget, profitGoal, maxPerSession, hyperliquidApiWallet, userPhoneNumber, walletAddress } = req.body;
 
     // Validate input
     if (!maxBudget || !profitGoal || !maxPerSession) {
@@ -37,6 +37,17 @@ app.post('/api/trading/start', async (req, res) => {
         error: 'Missing required parameters: maxBudget, profitGoal, maxPerSession' 
       });
     }
+
+    // Validate wallet data
+    if (!hyperliquidApiWallet || !userPhoneNumber || !walletAddress) {
+      return res.status(400).json({ 
+        error: 'Missing wallet data: hyperliquidApiWallet, userPhoneNumber, walletAddress are required' 
+      });
+    }
+
+    // Set the Hyperliquid private key for this session
+    process.env.HYPERLIQUID_PK = hyperliquidApiWallet;
+    console.log(`[API] Set HYPERLIQUID_PK for user ${userPhoneNumber} with wallet ${walletAddress}`);
 
     if (maxBudget < 10 || maxBudget > 10000000) {
       return res.status(400).json({ 
@@ -59,14 +70,17 @@ app.post('/api/trading/start', async (req, res) => {
     const sessionId = await sessionManager.startSession({
       maxBudget: parseFloat(maxBudget),
       profitGoal: parseFloat(profitGoal),
-      maxPerSession: parseInt(maxPerSession)
+      maxPerSession: parseInt(maxPerSession),
+      userPhoneNumber,
+      walletAddress
     });
 
-    console.log(`[API] Started trading session ${sessionId}`);
+    console.log(`[API] Started trading session ${sessionId} for user ${userPhoneNumber}`);
     res.json({ 
       sessionId, 
       status: 'started',
-      config: { maxBudget, profitGoal, maxPerSession }
+      config: { maxBudget, profitGoal, maxPerSession },
+      user: { phoneNumber: userPhoneNumber, walletAddress }
     });
   } catch (error) {
     console.error('[API] Error starting trading session:', error);
@@ -89,6 +103,25 @@ app.get('/api/trading/status/:sessionId', (req, res) => {
     res.json(status);
   } catch (error) {
     console.error('[API] Error getting session status:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Unknown error occurred' 
+    });
+  }
+});
+
+// Get session details (alternative endpoint for frontend)
+app.get('/api/trading/session/:sessionId', (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const status = sessionManager.getSessionStatus(sessionId);
+    
+    if (!status) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    
+    res.json(status);
+  } catch (error) {
+    console.error('[API] Error getting session details:', error);
     res.status(500).json({ 
       error: error instanceof Error ? error.message : 'Unknown error occurred' 
     });
@@ -128,6 +161,75 @@ app.post('/api/trading/stop/:sessionId', (req, res) => {
     console.error('[API] Error stopping trading session:', error);
     res.status(500).json({ 
       error: error instanceof Error ? error.message : 'Unknown error occurred' 
+    });
+  }
+});
+
+// Close all positions
+app.post('/api/close-all-positions', async (req, res) => {
+  try {
+    const { privateKey, phoneNumber } = req.body;
+    
+    if (!privateKey) {
+      return res.status(400).json({ 
+        error: 'Private key is required' 
+      });
+    }
+
+    console.log(`[API] Closing all positions for user ${phoneNumber || 'unknown'}`);
+    
+    // Import the closeAllPositions function from the hyperliquid module
+    const { closeAllPositions } = await import('../hyperliquid/hyperliquid');
+    
+    // Call the closeAllPositions function
+    const result = await closeAllPositions();
+    
+    if (result.success) {
+      console.log(`[API] Successfully closed all positions`);
+      res.json({ 
+        success: true, 
+        message: 'All positions closed successfully',
+        details: result
+      });
+    } else {
+      console.error(`[API] Failed to close all positions: ${result.error}`);
+      res.status(400).json({ 
+        success: false,
+        error: result.error || 'Failed to close all positions'
+      });
+    }
+  } catch (error) {
+    console.error('[API] Error closing all positions:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred' 
+    });
+  }
+});
+
+// Get positions
+app.get('/api/positions', async (req, res) => {
+  try {
+    // Import the hyperliquid module to get real positions
+    const { getPositions } = await import('../hyperliquid/hyperliquid');
+    
+    const positions = await getPositions();
+    
+    const totalPnL = positions.reduce((sum, pos) => sum + (pos.pnl || 0), 0);
+    const openPositions = positions.length;
+    
+    res.json({
+      positions,
+      totalPnL,
+      openPositions
+    });
+  } catch (error) {
+    console.error('[API] Error getting positions:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      positions: [],
+      totalPnL: 0,
+      openPositions: 0
     });
   }
 });

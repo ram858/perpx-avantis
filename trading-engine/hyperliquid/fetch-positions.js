@@ -23,9 +23,18 @@ async function fetchPositions(privateKey) {
       }
       
       try {
-        const data = JSON.parse(stdout.trim());
+        // Find the last line that looks like JSON (starts with {)
+        const lines = stdout.trim().split('\n');
+        const jsonLine = lines.find(line => line.trim().startsWith('{'));
+        
+        if (!jsonLine) {
+          throw new Error('No valid JSON found in output');
+        }
+        
+        const data = JSON.parse(jsonLine);
         resolve(data);
       } catch (parseError) {
+        console.error('Failed to parse positions data. Raw stdout:', stdout);
         reject(new Error(`Failed to parse positions data: ${parseError.message}`));
       }
     });

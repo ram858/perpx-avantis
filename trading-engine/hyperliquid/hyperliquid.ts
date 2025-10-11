@@ -637,8 +637,15 @@ export async function closeAllPositions() {
     
     if (!positions || positions.length === 0) {
       console.log(`🔧 [DEBUG] No positions to close`);
-      return;
+      return {
+        success: true,
+        message: 'No positions to close',
+        closedCount: 0
+      };
     }
+    
+    let closedCount = 0;
+    let errorCount = 0;
     
     // Log all positions found
     positions.forEach((pos, index) => {
@@ -677,23 +684,41 @@ export async function closeAllPositions() {
           // Pass the position object as-is to closePosition
           await closePosition(coin, pos, "session_end", price);
           console.log(`🔧 [DEBUG] closePosition completed for ${coin}`);
+          closedCount++;
           
           // Add small delay between closes to avoid rate limiting
           await new Promise(resolve => setTimeout(resolve, 1000));
         } else {
           console.log(`🔧 [DEBUG] Invalid price for ${coin}: ${price}`);
+          errorCount++;
         }
       } catch (error) {
         console.log(`🔧 [DEBUG] Error closing ${coin}:`, error);
+        errorCount++;
         // Continue with other positions even if one fails
       }
     }
     
-    console.log(`🔧 [DEBUG] closeAllPositions completed`);
+    console.log(`🔧 [DEBUG] closeAllPositions completed - Closed: ${closedCount}, Errors: ${errorCount}`);
     // Log final statistics
     winRateTracker.logStats();
+    
+    return {
+      success: true,
+      message: `Successfully closed ${closedCount} positions`,
+      closedCount,
+      errorCount,
+      totalPositions: positions.length
+    };
   } catch (error) {
     console.log(`🔧 [DEBUG] Error in closeAllPositions:`, error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      closedCount: 0,
+      errorCount: 0,
+      totalPositions: 0
+    };
   }
 }
 

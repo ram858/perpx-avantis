@@ -340,10 +340,13 @@ class RealTradingBot {
   async getHyperliquidPositions(privateKey) {
     try {
       const botPath = path.join(__dirname, 'trading-engine', 'hyperliquid');
-      const { fetchPositions } = require(path.join(botPath, 'fetch-positions.js'));
+      const fetchPositionsPath = path.join(botPath, 'fetch-positions.js');
+      console.log(`[API] Loading fetchPositions from: ${fetchPositionsPath}`);
+      const { fetchPositions } = require(fetchPositionsPath);
       
       return await fetchPositions(privateKey);
     } catch (error) {
+      console.error(`[API] Error in getHyperliquidPositions:`, error);
       throw new Error(`Error fetching positions: ${error.message}`);
     }
   }
@@ -352,10 +355,13 @@ class RealTradingBot {
   async closeIndividualPosition(symbol, privateKey) {
     try {
       const botPath = path.join(__dirname, 'trading-engine', 'hyperliquid');
-      const { closePosition } = require(path.join(botPath, 'close-position.js'));
+      const closePositionPath = path.join(botPath, 'close-position.js');
+      console.log(`[API] Loading closePosition from: ${closePositionPath}`);
+      const { closePosition } = require(closePositionPath);
       
       return await closePosition(symbol, privateKey);
     } catch (error) {
+      console.error(`[API] Error in closeIndividualPosition:`, error);
       return { success: false, error: error.message };
     }
   }
@@ -540,6 +546,62 @@ app.post('/api/close-position', async (req, res) => {
   } catch (error) {
     console.error('[API] Error closing position:', error);
     res.status(500).json({ error: 'Failed to close position' });
+  }
+});
+
+// New endpoint to close all positions
+app.post('/api/close-all-positions', async (req, res) => {
+  try {
+    console.log('[API] Close all positions endpoint called');
+    
+    // Get the most recent trading session to use its API key
+    const sessions = tradingBot.getAllSessions();
+    const activeSession = sessions.find(s => s.status === 'running') || sessions[sessions.length - 1];
+    
+    if (!activeSession || !activeSession.userHyperliquidApiWallet) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'No active trading session found with API key' 
+      });
+    }
+
+    console.log(`[API] Closing all positions for session ${activeSession.sessionId}`);
+    
+    // Call the closeAllPositions function from the hyperliquid module
+    const botPath = path.join(__dirname, 'trading-engine', 'hyperliquid');
+    const { closeAllPositions } = require(path.join(botPath, 'hyperliquid.js'));
+    
+    // Set the private key in environment for the closeAllPositions function
+    const originalKey = process.env.HYPERLIQUID_PK;
+    process.env.HYPERLIQUID_PK = activeSession.userHyperliquidApiWallet;
+    
+    try {
+      const result = await closeAllPositions();
+      
+      console.log('[API] Close all positions result:', result);
+      
+      if (result.success) {
+        res.json({ 
+          success: true, 
+          message: result.message || 'All positions closed successfully',
+          details: result
+        });
+      } else {
+        res.status(400).json({ 
+          success: false,
+          error: result.error || 'Failed to close all positions'
+        });
+      }
+    } finally {
+      // Restore original key
+      process.env.HYPERLIQUID_PK = originalKey;
+    }
+  } catch (error) {
+    console.error('[API] Error closing all positions:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to close all positions'
+    });
   }
 });
 

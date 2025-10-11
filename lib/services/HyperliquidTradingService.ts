@@ -299,6 +299,61 @@ export class HyperliquidTradingService {
     }
   }
 
+  async closeAllPositions(phoneNumber: string): Promise<TradingResult> {
+    try {
+      console.log(`[HyperliquidTradingService] Closing all positions for user ${phoneNumber}`);
+
+      // Get user's wallet with private key
+      const userWallet = await this.getUserWallet(phoneNumber);
+      
+      if (!userWallet || !userWallet.privateKey) {
+        console.error(`[HyperliquidTradingService] No wallet with private key found for user ${phoneNumber}`);
+        return {
+          success: false,
+          message: 'No wallet with private key found for user'
+        };
+      }
+
+      // Decrypt private key if needed
+      const privateKey = await this.decryptPrivateKey(userWallet.privateKey);
+
+      // Call the trading engine's close all positions endpoint
+      const response = await fetch(`${this.tradingEngineUrl}/api/close-all-positions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          privateKey: privateKey,
+          phoneNumber: phoneNumber
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[HyperliquidTradingService] Failed to close all positions: ${errorText}`);
+        return {
+          success: false,
+          message: `Failed to close all positions: ${errorText}`
+        };
+      }
+
+      const result = await response.json();
+
+      return {
+        success: true,
+        message: result.message || 'All positions closed successfully'
+      };
+
+    } catch (error) {
+      console.error(`[HyperliquidTradingService] Error closing all positions:`, error);
+      return {
+        success: false,
+        message: `Failed to close all positions: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
+  }
+
   async testConnection(): Promise<boolean> {
     try {
       const response = await fetch(`${this.tradingEngineUrl}/api/status`, {
