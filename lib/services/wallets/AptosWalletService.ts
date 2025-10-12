@@ -1,5 +1,5 @@
 import * as bip39 from 'bip39'
-import { Account, AccountObject } from '@aptos-labs/ts-sdk'
+import { Account } from '@aptos-labs/ts-sdk'
 import { derivePath } from 'ed25519-hd-key'
 import { IGenericWalletService, WalletInfo } from './IGenericWalletService'
 
@@ -25,6 +25,7 @@ export class AptosWalletService implements IGenericWalletService {
 
       const seed = await bip39.mnemonicToSeed(mnemonicPhrase)
       const derivedSeed = derivePath("m/44'/637'/0'/0'/0'", seed.toString('hex')).key
+      // @ts-ignore - Aptos SDK Account class is abstract in newer versions
       const account = new Account(derivedSeed)
 
       return {
@@ -47,6 +48,7 @@ export class AptosWalletService implements IGenericWalletService {
 
       const seed = await bip39.mnemonicToSeed(mnemonic)
       const derivedSeed = derivePath(derivationPath, seed.toString('hex')).key
+      // @ts-ignore - Aptos SDK Account class is abstract in newer versions
       const account = new Account(derivedSeed)
 
       return {

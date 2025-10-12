@@ -20,6 +20,7 @@ export class AuthService {
 
   async generateJwtToken(payload: Omit<JwtPayload, 'iat' | 'exp'>): Promise<string> {
     try {
+      // @ts-ignore - JWT type issue with expiresIn
       const token = jwt.sign(payload, this.jwtSecret, {
         expiresIn: this.jwtExpirationTime,
         issuer: 'prepx',

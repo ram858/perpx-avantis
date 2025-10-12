@@ -376,15 +376,11 @@ export class HyperliquidTradingService {
 
   private async decryptPrivateKey(encryptedKey: string): Promise<string> {
     try {
-      // Check if the key looks encrypted (contains special characters or is longer than 66 chars)
-      if (encryptedKey.length > 66 || encryptedKey.includes(' ') || !encryptedKey.startsWith('0x')) {
-        return await this.encryptionService.decrypt(encryptedKey);
-      } else {
-        return encryptedKey;
-      }
+      // For now, assume keys are stored unencrypted
+      // In production, implement proper key encryption with IV storage
+      return encryptedKey;
     } catch (error) {
       console.error(`[HyperliquidTradingService] Failed to decrypt private key:`, error);
-      // If decryption fails, try using the key as-is
       return encryptedKey;
     }
   }

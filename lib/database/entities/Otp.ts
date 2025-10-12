@@ -4,25 +4,25 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateCol
 @Index(['phoneNumber', 'code'], { unique: true })
 export class Otp {
   @PrimaryGeneratedColumn('uuid')
-  id: string
+  id!: string
 
   @Column({ type: 'varchar', length: 20 })
-  phoneNumber: string
+  phoneNumber!: string
 
   @Column({ type: 'varchar', length: 6 })
-  code: string
+  code!: string
 
   @Column({ type: 'boolean', default: false })
-  isVerified: boolean
+  isVerified!: boolean
 
   @Column({ type: 'timestamp' })
-  expiresAt: Date
+  expiresAt!: Date
 
   @CreateDateColumn()
-  createdAt: Date
+  createdAt!: Date
 
   @UpdateDateColumn()
-  updatedAt: Date
+  updatedAt!: Date
 
   // Helper method to check if OTP is expired
   isExpired(): boolean {

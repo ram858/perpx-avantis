@@ -28,11 +28,17 @@ export function useMetaMask() {
     try {
       setState(prev => ({ ...prev, isInstalled: true, error: null }));
 
-      // Check if already connected
-      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+      const ethereum = window.ethereum;
+      if (!ethereum || !ethereum.request) {
+        setState(prev => ({ ...prev, isInstalled: false }));
+        return;
+      }
 
-      if (accounts.length > 0) {
+      // Check if already connected
+      const accounts = await ethereum.request({ method: 'eth_accounts' });
+      const chainId = await ethereum.request({ method: 'eth_chainId' });
+
+      if (accounts && accounts.length > 0) {
         setState(prev => ({
           ...prev,
           isConnected: true,
@@ -65,18 +71,26 @@ export function useMetaMask() {
     try {
       setState(prev => ({ ...prev, error: null }));
       
-      const accounts = await window.ethereum.request({ 
+      const ethereum = window.ethereum;
+      if (!ethereum || !ethereum.request) {
+        setState(prev => ({ ...prev, error: 'MetaMask is not installed' }));
+        return;
+      }
+
+      const accounts = await ethereum.request({ 
         method: 'eth_requestAccounts' 
       });
       
-      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+      const chainId = await ethereum.request({ method: 'eth_chainId' });
 
-      setState(prev => ({
-        ...prev,
-        isConnected: true,
-        account: accounts[0],
-        chainId: parseInt(chainId, 16)
-      }));
+      if (accounts && accounts.length > 0) {
+        setState(prev => ({
+          ...prev,
+          isConnected: true,
+          account: accounts[0],
+          chainId: parseInt(chainId, 16)
+        }));
+      }
     } catch (error) {
       console.error('Error connecting to MetaMask:', error);
       setState(prev => ({
@@ -123,13 +137,16 @@ export function useMetaMask() {
       }));
     };
 
-    if (window.ethereum) {
-      window.ethereum.on('accountsChanged', handleAccountsChanged);
-      window.ethereum.on('chainChanged', handleChainChanged);
+    const ethereum = window.ethereum as any;
+    if (ethereum && ethereum.on) {
+      ethereum.on('accountsChanged', handleAccountsChanged);
+      ethereum.on('chainChanged', handleChainChanged);
 
       return () => {
-        window.ethereum?.removeListener('accountsChanged', handleAccountsChanged);
-        window.ethereum?.removeListener('chainChanged', handleChainChanged);
+        if (ethereum.removeListener) {
+          ethereum.removeListener('accountsChanged', handleAccountsChanged);
+          ethereum.removeListener('chainChanged', handleChainChanged);
+        }
       };
     }
   }, [checkConnection]);

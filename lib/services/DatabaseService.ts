@@ -134,7 +134,7 @@ export class DatabaseService {
     const query = `DELETE FROM otps WHERE id = $1`
     const result = await client.query(query, [id])
     
-    return result.rowCount > 0
+    return (result.rowCount ?? 0) > 0
   }
 
   async deleteOtpsByPhone(phoneNumber: string): Promise<number> {
@@ -317,7 +317,7 @@ export class DatabaseService {
     const query = `DELETE FROM wallets WHERE id = $1`
     const result = await client.query(query, [id])
     
-    return result.rowCount > 0
+    return (result.rowCount ?? 0) > 0
   }
 
   async deleteWalletsByPhone(phoneNumber: string): Promise<number> {

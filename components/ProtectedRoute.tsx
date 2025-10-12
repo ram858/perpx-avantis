@@ -9,7 +9,7 @@ interface ProtectedRouteProps {
   fallback?: React.ReactNode
 }
 
-export function ProtectedRoute({ children, fallback }: ProtectedRouteProps) {
+export function ProtectedRoute({ children, fallback }: ProtectedRouteProps): JSX.Element | null {
   const { isAuthenticated, isLoading } = useAuth()
   const router = useRouter()
 
@@ -21,7 +21,7 @@ export function ProtectedRoute({ children, fallback }: ProtectedRouteProps) {
 
   if (isLoading) {
     return (
-      fallback || (
+      (fallback as JSX.Element) || (
         <div className="min-h-screen bg-[#0d0d0d] flex flex-col items-center justify-center px-6 relative overflow-hidden">
           {/* Background gradient circles */}
           <div className="absolute inset-0 flex items-center justify-center">

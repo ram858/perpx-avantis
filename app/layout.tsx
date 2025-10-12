@@ -6,7 +6,6 @@ import { Analytics } from "@vercel/analytics/next"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { IntegratedWalletProvider } from "@/lib/wallet/IntegratedWalletContext"
 import { AuthProvider } from "@/lib/auth/AuthContext"
-import { SuperAppWrapper } from "@/components/SuperAppWrapper"
 import { PerformanceMonitor } from "@/components/PerformanceMonitor"
 import { ToastProvider } from "@/components/ui/toast"
 import { Suspense } from "react"
@@ -52,40 +51,38 @@ export default function RootLayout({
         <ToastProvider>
           <AuthProvider>
             <IntegratedWalletProvider>
-              <SuperAppWrapper deploymentToken={process.env.NEXT_PUBLIC_SUPERAPP_DEPLOYMENT_TOKEN}>
-                <Suspense
-                  fallback={
-                    <div className="min-h-screen bg-[#0d0d0d] flex flex-col items-center justify-center px-6 relative overflow-hidden">
-                      {/* Background gradient circles */}
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-80 h-80 rounded-full bg-gradient-to-br from-[#8759ff]/20 to-[#2c2146]/30 blur-xl animate-pulse"></div>
+              <Suspense
+                fallback={
+                  <div className="min-h-screen bg-[#0d0d0d] flex flex-col items-center justify-center px-6 relative overflow-hidden">
+                    {/* Background gradient circles */}
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-80 h-80 rounded-full bg-gradient-to-br from-[#8759ff]/20 to-[#2c2146]/30 blur-xl animate-pulse"></div>
+                    </div>
+
+                    {/* Main content */}
+                    <div className="relative z-10 flex flex-col items-center text-center space-y-8">
+                      {/* Logo/Icon */}
+                      <div className="relative">
+                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#8759ff] to-[#A855F7] flex items-center justify-center animate-spin">
+                          <div className="w-8 h-8 bg-white rounded-sm"></div>
+                        </div>
+                        {/* Pulsing ring */}
+                        <div className="absolute inset-0 w-16 h-16 rounded-full border-2 border-[#8759ff]/30 animate-ping"></div>
                       </div>
 
-                      {/* Main content */}
-                      <div className="relative z-10 flex flex-col items-center text-center space-y-8">
-                        {/* Logo/Icon */}
-                        <div className="relative">
-                          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#8759ff] to-[#A855F7] flex items-center justify-center animate-spin">
-                            <div className="w-8 h-8 bg-white rounded-sm"></div>
-                          </div>
-                          {/* Pulsing ring */}
-                          <div className="absolute inset-0 w-16 h-16 rounded-full border-2 border-[#8759ff]/30 animate-ping"></div>
-                        </div>
-
-                        {/* PrepX Title */}
-                        <div className="space-y-2">
-                          <h1 className="text-2xl font-bold bg-gradient-to-r from-[#8759ff] to-[#A855F7] bg-clip-text text-transparent">
-                            PrepX AI
-                          </h1>
-                          <p className="text-[#b4b4b4] text-sm animate-pulse">Loading...</p>
-                        </div>
+                      {/* PrepX Title */}
+                      <div className="space-y-2">
+                        <h1 className="text-2xl font-bold bg-gradient-to-r from-[#8759ff] to-[#A855F7] bg-clip-text text-transparent">
+                          PrepX AI
+                        </h1>
+                        <p className="text-[#b4b4b4] text-sm animate-pulse">Loading...</p>
                       </div>
                     </div>
-                  }
-                >
-                  <ErrorBoundary>{children}</ErrorBoundary>
-                </Suspense>
-              </SuperAppWrapper>
+                  </div>
+                }
+              >
+                <ErrorBoundary>{children}</ErrorBoundary>
+              </Suspense>
             </IntegratedWalletProvider>
           </AuthProvider>
         </ToastProvider>

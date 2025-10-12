@@ -71,8 +71,8 @@ export function useTradingSession() {
 
     try {
       const session = await startTradingAPI({
-        totalBudget: config.maxBudget || config.investmentAmount,
-        profitGoal: config.profitGoal || config.targetProfit,
+        totalBudget: config.maxBudget || config.investmentAmount || 50,
+        profitGoal: config.profitGoal || config.targetProfit || 10,
         maxPositions: config.maxPerSession || 5,
         leverage: config.leverage || 1
       });
@@ -89,10 +89,10 @@ export function useTradingSession() {
         openPositions: 0,
         pnl: session.totalPnL,
         config: {
-          profitGoal: config.profitGoal || config.targetProfit,
-          maxBudget: config.maxBudget || config.investmentAmount,
+          profitGoal: config.profitGoal || config.targetProfit || 10,
+          maxBudget: config.maxBudget || config.investmentAmount || 50,
           maxPerSession: config.maxPerSession || 5,
-          totalBudget: config.maxBudget || config.investmentAmount,
+          totalBudget: config.maxBudget || config.investmentAmount || 50,
         }
       };
 

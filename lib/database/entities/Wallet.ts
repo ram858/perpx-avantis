@@ -4,26 +4,26 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateCol
 @Index(['phoneNumber', 'chain'], { unique: true })
 export class Wallet {
   @PrimaryGeneratedColumn('uuid')
-  id: string
+  id!: string
 
   @Column({ type: 'varchar', length: 20 })
-  phoneNumber: string
+  phoneNumber!: string
 
   @Column({ type: 'varchar', length: 32 })
-  iv: string
+  iv!: string
 
   @Column({ type: 'text' })
-  privateKey: string
+  privateKey!: string
 
   @Column({ type: 'varchar', length: 50 })
-  chain: string
+  chain!: string
 
   @Column({ type: 'varchar', length: 100 })
-  address: string
+  address!: string
 
   @CreateDateColumn()
-  createdAt: Date
+  createdAt!: Date
 
   @UpdateDateColumn()
-  updatedAt: Date
+  updatedAt!: Date
 }

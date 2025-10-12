@@ -21,25 +21,25 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Generate and store OTP
+    // Generate and store OTP using the service
     const otpService = new OTPService()
-    const otp = otpService.generateOTP()
-    otpService.storeOTP(phoneNumber, otp)
+    const result = await otpService.sendOtp(phoneNumber)
+    
+    if (!result.success) {
+      return NextResponse.json(
+        { error: result.message },
+        { status: 500 }
+      )
+    }
 
     // In production, integrate with SMS service like Twilio, AWS SNS, etc.
-    console.log(`OTP for ${phoneNumber}: ${otp}`)
+    // For now, OTP is logged in the service
     
-    // For development, we'll just log the OTP
-    // In production, send SMS here
-    /*
-    await sendSMS(phoneNumber, `Your PrepX verification code is: ${otp}. This code expires in 5 minutes.`)
-    */
-
     return NextResponse.json({
       success: true,
       message: 'OTP sent successfully',
       // In development, include OTP in response
-      ...(process.env.NODE_ENV === 'development' && { otp })
+      ...(process.env.NODE_ENV === 'development' && result.otp && { otp: result.otp })
     })
 
   } catch (error) {

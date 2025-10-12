@@ -39,7 +39,7 @@ export class EncryptionService {
   encryptGCM(text: string): { encrypted: string; iv: string; authTag: string } {
     const iv = crypto.randomBytes(this.ivLength)
     const key = crypto.scryptSync(this.secret, 'salt', 32)
-    const cipher = crypto.createCipherGCM('aes-256-gcm', key, iv)
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv)
     
     let encrypted = cipher.update(text, 'utf8', 'hex')
     encrypted += cipher.final('hex')
@@ -55,7 +55,7 @@ export class EncryptionService {
 
   decryptGCM(encryptedText: string, iv: string, authTag: string): string {
     const key = crypto.scryptSync(this.secret, 'salt', 32)
-    const decipher = crypto.createDecipherGCM('aes-256-gcm', key, Buffer.from(iv, 'hex'))
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'hex'))
     decipher.setAuthTag(Buffer.from(authTag, 'hex'))
     
     let decrypted = decipher.update(encryptedText, 'hex', 'utf8')

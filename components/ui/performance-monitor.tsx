@@ -35,8 +35,10 @@ export function PerformanceMonitor({ onMetricsUpdate, enableLogging = false }: P
     const updateMemoryUsage = () => {
       if ('memory' in performance) {
         const memory = (performance as { memory?: { usedJSHeapSize: number } }).memory
-        const memoryUsage = memory.usedJSHeapSize / 1024 / 1024 // MB
-        updateMetrics({ memoryUsage })
+        if (memory && memory.usedJSHeapSize) {
+          const memoryUsage = memory.usedJSHeapSize / 1024 / 1024 // MB
+          updateMetrics({ memoryUsage })
+        }
       }
     }
 

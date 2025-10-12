@@ -92,7 +92,7 @@ export class RealBalanceService {
             return data.ethereum?.usd || 2500
           }
         } catch (err) {
-          console.log(`Failed to fetch from ${api}:`, err.message)
+          console.log(`Failed to fetch from ${api}:`, err instanceof Error ? err.message : String(err))
           continue
         }
       }
@@ -131,7 +131,7 @@ export class RealBalanceService {
             return data[symbol.toLowerCase()]?.usd || 0
           }
         } catch (err) {
-          console.log(`Failed to fetch ${symbol} price from ${api}:`, err.message)
+          console.log(`Failed to fetch ${symbol} price from ${api}:`, err instanceof Error ? err.message : String(err))
           continue
         }
       }

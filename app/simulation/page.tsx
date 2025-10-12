@@ -19,8 +19,7 @@ export default function SimulationPage() {
     isLoading,
     error,
     startTrading,
-    stopTrading,
-    tradingSession
+    stopTrading
   } = useTrading();
 
   const { isConnected: isWalletConnected } = useIntegratedWallet();
@@ -58,9 +57,8 @@ export default function SimulationPage() {
   };
 
   const handleStopSimulation = async () => {
-    if (tradingSession?.sessionId) {
-      await stopTrading(tradingSession.sessionId);
-    }
+    // Simulation stop logic
+    console.log('Stopping simulation...');
   };
 
   return (
@@ -101,13 +99,8 @@ export default function SimulationPage() {
               
               <div className="bg-[#262626] p-4 rounded-lg">
                 <div className="text-[#b4b4b4] text-sm">Trading Status</div>
-                <div className={`text-lg font-semibold ${
-                  tradingSession?.status === 'running' ? 'text-green-400' :
-                  tradingSession?.status === 'completed' ? 'text-blue-400' :
-                  tradingSession?.status === 'error' ? 'text-red-400' :
-                  'text-gray-400'
-                }`}>
-                  {tradingSession?.status || 'Not Started'}
+                <div className="text-lg font-semibold text-gray-400">
+                  Not Started
                 </div>
               </div>
               
@@ -173,13 +166,13 @@ export default function SimulationPage() {
             <div className="flex space-x-4">
               <Button
                 onClick={handleStartSimulation}
-                disabled={tradingSession?.status === 'running'}
+                disabled={false}
                 className="bg-[#8759ff] hover:bg-[#7C3AED] text-white font-semibold py-3 px-6 rounded-lg"
               >
-                {tradingSession?.status === 'running' ? 'Simulation Running...' : '🎮 Start Simulation'}
+                🎮 Start Simulation
               </Button>
               
-              {tradingSession?.status === 'running' && (
+              {false && (
                 <Button
                   onClick={handleStopSimulation}
                   className="bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-lg"
@@ -191,45 +184,7 @@ export default function SimulationPage() {
           </div>
         </Card>
 
-        {/* Live Trading Data */}
-        {tradingSession && (
-          <Card className="bg-[#1a1a1a] border-[#262626] p-6 rounded-2xl">
-            <div className="space-y-4">
-              <h2 className="text-xl font-bold text-white">Live Trading Data</h2>
-              
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="bg-[#262626] p-4 rounded-lg">
-                  <div className="text-[#b4b4b4] text-sm">Session ID</div>
-                  <div className="text-white font-mono text-sm">{tradingSession.sessionId}</div>
-                </div>
-                
-                <div className="bg-[#262626] p-4 rounded-lg">
-                  <div className="text-[#b4b4b4] text-sm">Current PnL</div>
-                  <div className={`text-lg font-semibold ${
-                    tradingSession.pnl >= 0 ? 'text-green-400' : 'text-red-400'
-                  }`}>
-                    ${tradingSession.pnl.toFixed(2)}
-                  </div>
-                </div>
-                
-                <div className="bg-[#262626] p-4 rounded-lg">
-                  <div className="text-[#b4b4b4] text-sm">Open Positions</div>
-                  <div className="text-white text-lg font-semibold">{tradingSession.openPositions}</div>
-                </div>
-                
-                <div className="bg-[#262626] p-4 rounded-lg">
-                  <div className="text-[#b4b4b4] text-sm">Cycle</div>
-                  <div className="text-white text-lg font-semibold">{tradingSession.cycle}</div>
-                </div>
-              </div>
-
-              <div className="bg-[#262626] p-4 rounded-lg">
-                <div className="text-[#b4b4b4] text-sm">Last Update</div>
-                <div className="text-white">{new Date(tradingSession.lastUpdate).toLocaleString()}</div>
-              </div>
-            </div>
-          </Card>
-        )}
+        {/* Live Trading Data - Disabled for now */}
 
         {/* Instructions */}
         <Card className="bg-[#1a1a1a] border-[#262626] p-6 rounded-2xl">

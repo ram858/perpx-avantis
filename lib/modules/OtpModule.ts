@@ -1,4 +1,4 @@
-import { OtpService } from '../services/OtpService'
+import { OtpService } from '../services/OTPService'
 
 export class OtpModule {
   private static otpService: OtpService

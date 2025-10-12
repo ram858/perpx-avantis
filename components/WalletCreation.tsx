@@ -213,7 +213,7 @@ export function WalletCreation({ className = "", onWalletCreated }: WalletCreati
         {/* Create Wallet Button */}
         <Button
           onClick={handleCreateWallet}
-          disabled={isCreating || !selectedChain || existingWallet}
+          disabled={isCreating || !selectedChain || !!existingWallet}
           className={`w-full py-3 ${
             existingWallet 
               ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 

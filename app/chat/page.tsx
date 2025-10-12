@@ -4,14 +4,14 @@ import type React from "react"
 import Image from "next/image"
 
 import { Button } from "@/components/ui/button"
-import { useState, useEffect, useMemo, useCallback } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { useTradingSession } from "@/lib/hooks/useTradingSession"
 import { usePositions } from "@/lib/hooks/usePositions"
 import { useIntegratedWallet } from "@/lib/wallet/IntegratedWalletContext"
 import { useSearchParams } from "next/navigation"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
-import { getStorageItem, setStorageItem } from "@/lib/utils/safeStorage"
+import { getStorageItem } from "@/lib/utils/safeStorage"
 
 export default function ChatPage() {
   const searchParams = useSearchParams()
@@ -47,8 +47,6 @@ export default function ChatPage() {
   // Real-time position data
   const {
     positionData,
-    isLoading: positionsLoading,
-    error: positionsError,
     fetchPositions,
     closePosition: closeIndividualPosition,
     closeAllPositions: closeAllPositionsHook,
@@ -83,7 +81,7 @@ export default function ChatPage() {
     }
     
     refreshSessionStatus()
-  }, [])
+  }, [tradingSession, refreshSessionStatus])
 
   // Auto-start trading if parameters are provided
   useEffect(() => {
@@ -91,7 +89,6 @@ export default function ChatPage() {
     const investment = searchParams.get('investment')
     const mode = searchParams.get('mode') // 'real' or 'simulation'
     const view = searchParams.get('view') // 'positions' for viewing existing trades
-    const hyperliquidApiWallet = searchParams.get('hyperliquidApiWallet') || undefined
     
     // Handle view=positions case (viewing existing trades)
     if (view === 'positions' && mode === 'real') {
@@ -178,7 +175,7 @@ export default function ChatPage() {
         }])
       }
     }
-  }, [searchParams, tradingSession, isConnected, totalPortfolioValue, startTrading])
+  }, [searchParams, tradingSession, isConnected, totalPortfolioValue, startTrading, clearSession])
 
   // Default conversation if no parameters
   useEffect(() => {
@@ -876,11 +873,11 @@ export default function ChatPage() {
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
                           <span className="text-[#b4b4b4]">Entry Price</span>
-                          <span className="text-white">${position.entryPrice?.toFixed(6) || '0.000000'}</span>
+                          <span className="text-white">${(position.entryPrice && typeof position.entryPrice === 'number') ? position.entryPrice.toFixed(6) : '0.000000'}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-[#b4b4b4]">Mark Price</span>
-                          <span className="text-white">${position.markPrice?.toFixed(6) || '0.000000'}</span>
+                          <span className="text-white">${(position.markPrice && typeof position.markPrice === 'number') ? position.markPrice.toFixed(6) : '0.000000'}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-[#b4b4b4]">Size</span>
@@ -888,12 +885,12 @@ export default function ChatPage() {
                         </div>
                         <div className="flex justify-between">
                           <span className="text-[#b4b4b4]">Position Value</span>
-                          <span className="text-white">${position.positionValue?.toFixed(2) || '0.00'}</span>
+                          <span className="text-white">${(position.positionValue && typeof position.positionValue === 'number') ? position.positionValue.toFixed(2) : '0.00'}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-[#b4b4b4]">PnL (ROE)</span>
                           <span className={`font-semibold ${(position.pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            ${position.pnl?.toFixed(2) || '0.00'} ({position.roe?.toFixed(2) || '0.00'}%)
+                            ${(position.pnl && typeof position.pnl === 'number') ? position.pnl.toFixed(2) : '0.00'} ({(position.roe && typeof position.roe === 'number') ? position.roe.toFixed(2) : '0.00'}%)
                           </span>
                         </div>
                         <div className="flex justify-between">

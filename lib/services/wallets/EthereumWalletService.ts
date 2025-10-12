@@ -8,7 +8,7 @@ export class EthereumWalletService implements IGenericWalletService {
 
   async generateWallet(mnemonic?: string): Promise<WalletInfo> {
     try {
-      let wallet: ethers.Wallet
+      let wallet: ethers.HDNodeWallet | ethers.Wallet
 
       if (mnemonic) {
         wallet = ethers.Wallet.fromPhrase(mnemonic)

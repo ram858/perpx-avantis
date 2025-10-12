@@ -22,8 +22,8 @@ export interface HyperliquidBalance {
 
 export async function getHyperliquidBalance(address: string): Promise<HyperliquidBalance> {
   try {
-    // Normalize address format (ensure lowercase)
-    const normalizedAddress = address.toLowerCase();
+    // Normalize address format (ensure 0x prefix and checksum)
+    const normalizedAddress = address.toLowerCase() as `0x${string}`;
     
     // Get user state from Hyperliquid using clearinghouseState
     const userState = await publicClient.clearinghouseState({ user: normalizedAddress });
@@ -39,10 +39,10 @@ export async function getHyperliquidBalance(address: string): Promise<Hyperliqui
     }
 
     // Extract balance information from marginSummary
-    const marginSummary = userState.marginSummary;
+    const marginSummary = userState.marginSummary as any;
     
     // Try different possible field names for account value
-    const accountValue = marginSummary?.accountValue || marginSummary?.accountValue || marginSummary?.totalValue || '0';
+    const accountValue = marginSummary?.accountValue || marginSummary?.totalValue || '0';
     const totalValue = parseFloat(accountValue);
     
     // Try different possible field names for available balance

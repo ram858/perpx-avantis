@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { useWallet } from '@/lib/wallet/WalletContext';
-import { useSuperAppEnvironment } from '@/lib/superapp/context';
 
 interface WalletConnectionProps {
   className?: string;
@@ -18,21 +17,8 @@ export function WalletConnection({ className = "" }: WalletConnectionProps) {
     connectWallet,
     disconnectWallet,
     switchNetwork,
-    isSuperAppMode
   } = useWallet();
 
-  // SuperApp integration (optional)
-  let isSuperApp = false;
-  let hasUser = false;
-
-  try {
-    const superAppEnv = useSuperAppEnvironment();
-    isSuperApp = superAppEnv.isSuperApp;
-    hasUser = superAppEnv.hasUser;
-  } catch (error) {
-    // SuperApp not available, continue in standalone mode
-    console.log('SuperApp not available in WalletConnection, running in standalone mode');
-  }
 
   const formatAddress = (address: string) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -74,17 +60,15 @@ export function WalletConnection({ className = "" }: WalletConnectionProps) {
           <div className="flex items-center space-x-2">
             <div className="w-3 h-3 bg-green-500 rounded-full"></div>
             <span className="text-white font-medium">
-              {isSuperAppMode ? 'SuperApp Connected' : 'Connected'}
+              Connected
             </span>
           </div>
-          {!isSuperAppMode && (
-            <button
-              onClick={handleDisconnect}
-              className="text-[#9ca3af] hover:text-white transition-colors text-sm"
-            >
-              Disconnect
-            </button>
-          )}
+          <button
+            onClick={handleDisconnect}
+            className="text-[#9ca3af] hover:text-white transition-colors text-sm"
+          >
+            Disconnect
+          </button>
         </div>
         
         <div className="space-y-2">
@@ -97,7 +81,7 @@ export function WalletConnection({ className = "" }: WalletConnectionProps) {
             <p className="text-[#9ca3af] text-sm">Network</p>
             <div className="flex items-center space-x-2">
               <p className="text-white text-sm">{getNetworkName(chainId)}</p>
-              {chainId !== 1 && !isSuperAppMode && (
+              {chainId !== 1 && (
                 <button
                   onClick={handleSwitchToMainnet}
                   className="text-[#7c3aed] hover:text-[#8b5cf6] text-xs underline"
@@ -108,19 +92,13 @@ export function WalletConnection({ className = "" }: WalletConnectionProps) {
             </div>
           </div>
 
-          {isSuperAppMode && (
-            <div>
-              <p className="text-[#9ca3af] text-sm">Mode</p>
-              <p className="text-[#7c3aed] text-sm font-medium">SuperApp Mini-App</p>
-            </div>
-          )}
         </div>
       </div>
     );
   }
 
-  // If we're in SuperApp mode but not connected, show SuperApp-specific message
-  if (isSuperApp && !isConnected) {
+  // If not connected, show connection message
+  if (!isConnected) {
     return (
       <div className={`bg-[#1f2937] rounded-xl p-6 border border-[#374151] text-center ${className}`}>
         <div className="mb-4">
@@ -155,9 +133,9 @@ export function WalletConnection({ className = "" }: WalletConnectionProps) {
               />
             </svg>
           </div>
-          <h3 className="text-white font-semibold text-lg mb-2">SuperApp Integration</h3>
+          <h3 className="text-white font-semibold text-lg mb-2">Wallet Connection</h3>
           <p className="text-[#9ca3af] text-sm mb-4">
-            Your wallet will be automatically connected through the SuperApp
+            Connect your wallet to start trading
           </p>
         </div>
 
@@ -208,13 +186,13 @@ export function WalletConnection({ className = "" }: WalletConnectionProps) {
                   strokeLinejoin="round"
                 />
               </svg>
-              <span>Connect SuperApp Wallet</span>
+              <span>Connect Wallet</span>
             </>
           )}
         </button>
 
         <p className="text-[#6b7280] text-xs mt-3">
-          Using your existing SuperApp wallet for trading
+          Connect your wallet to start trading
         </p>
       </div>
     );

@@ -5,6 +5,7 @@ import * as ecc from 'tiny-secp256k1'
 import { IGenericWalletService, WalletInfo } from './IGenericWalletService'
 
 // You need to install: npm install bip39 bitcoinjs-lib bip32 tiny-secp256k1
+// @ts-ignore - tiny-secp256k1 type compatibility
 const bip32 = BIP32Factory(ecc)
 
 export class BitcoinWalletService implements IGenericWalletService {

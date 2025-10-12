@@ -4,23 +4,23 @@ import { Wallet } from './Wallet'
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
-  id: string
+  id!: string
 
   @Column({ type: 'varchar', length: 20, unique: true })
-  phoneNumber: string
+  phoneNumber!: string
 
   @Column({ type: 'boolean', default: false })
-  isVerified: boolean
+  isVerified!: boolean
 
   @Column({ type: 'timestamp', nullable: true })
-  lastLoginAt: Date
+  lastLoginAt!: Date
 
   @CreateDateColumn()
-  createdAt: Date
+  createdAt!: Date
 
   @UpdateDateColumn()
-  updatedAt: Date
+  updatedAt!: Date
 
   @OneToMany(() => Wallet, wallet => wallet.phoneNumber)
-  wallets: Wallet[]
+  wallets!: Wallet[]
 }

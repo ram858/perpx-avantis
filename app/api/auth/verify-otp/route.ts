@@ -85,12 +85,12 @@ export async function POST(request: NextRequest) {
 }
 
 // Helper function to get user by phone number
-export function getUserByPhone(phoneNumber: string) {
+function getUserByPhone(phoneNumber: string) {
   return userStorage.get(phoneNumber)
 }
 
 // Helper function to update user wallet
-export function updateUserWallet(phoneNumber: string, walletAddress: string) {
+function updateUserWallet(phoneNumber: string, walletAddress: string) {
   const user = userStorage.get(phoneNumber)
   if (user) {
     user.walletAddress = walletAddress
