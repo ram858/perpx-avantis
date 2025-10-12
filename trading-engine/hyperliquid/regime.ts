@@ -73,8 +73,9 @@ export async function detectRegime(
   timeframe: string
 ): Promise<RegimeResult> {
 
-  if (!ohlcv.close?.length || ohlcv.close.length < 30) {
-    throw new Error(`Insufficient data for regime detection (${timeframe})`);
+  if (!ohlcv.close?.length || ohlcv.close.length < 10) {
+    console.warn(`⚠️ Insufficient data for regime detection (${timeframe}): ${ohlcv.close?.length || 0} candles, using neutral`);
+    return { regime: 'neutral', confidence: 0.1, timeframe };
   }
 
   const closeArr = ohlcv.close;

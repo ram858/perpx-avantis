@@ -863,8 +863,9 @@ export async function runSignalCheckAndOpen({
   const ohlcv4h = await getCachedOHLCV(symbol, "4h", 300);
   const ohlcv6h = await getCachedOHLCV(symbol, "6h", 300);
   const entryPrice = ohlcv4h.close.at(-1);
-  if (!ohlcv6h || ohlcv6h.close.length < 100 || !entryPrice || entryPrice <= 0) {
-    return { positionOpened: false, marketRegime: "unknown", reason: "invalid_ohlcv_or_price", signalScore: 0 };
+  if (!ohlcv4h || !ohlcv6h || ohlcv4h.close.length < 10 || ohlcv6h.close.length < 10 || !entryPrice || entryPrice <= 0) {
+    console.warn(`⚠️ Insufficient OHLCV data for ${symbol}: 4h=${ohlcv4h?.close.length || 0}, 6h=${ohlcv6h?.close.length || 0}`);
+    return { positionOpened: false, marketRegime: "insufficient_data", reason: "insufficient_ohlcv_data", signalScore: 0 };
   }
 
   const { regime: guessedRegime, confidence: regimeConfidence } =

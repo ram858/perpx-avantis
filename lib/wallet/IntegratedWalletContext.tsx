@@ -6,6 +6,7 @@ import { ClientWalletService } from '../services/ClientWalletService';
 import { RealBalanceService, RealBalanceData } from '../services/RealBalanceService';
 import { useAuth } from '../auth/AuthContext';
 import { useMetaMask } from '../hooks/useMetaMask';
+import { hasRealHyperliquidBalance } from './hyperliquidBalance';
 
 // Types
 export interface Token {
@@ -198,7 +199,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       // Check Hyperliquid connection and fetch balance
       let hyperliquidBalance = 0;
       let isHyperliquidConnected = false;
-      let hasRealHyperliquidBalance = false;
+      let hasRealHyperliquidBalanceFlag = false;
       
       // Use stored wallet address for Hyperliquid (not MetaMask account)
       // MetaMask account might be different from the wallet we created
@@ -206,19 +207,17 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       
       
       try {
-        const { hasRealHyperliquidBalance: checkRealBalance } = await import('./hyperliquidBalance');
-        
         // Check if wallet has real balance on Hyperliquid using MetaMask address
-        const hyperliquidStatus = await checkRealBalance(hyperliquidAddress);
+        const hyperliquidStatus = await hasRealHyperliquidBalance(hyperliquidAddress);
         hyperliquidBalance = hyperliquidStatus.balance;
         isHyperliquidConnected = hyperliquidStatus.isConnected;
-        hasRealHyperliquidBalance = hyperliquidStatus.hasBalance;
+        hasRealHyperliquidBalanceFlag = hyperliquidStatus.hasBalance;
         
       } catch (error) {
         console.error('[IntegratedWallet] Error fetching Hyperliquid data:', error);
         // If we can't fetch data, wallet is not connected to Hyperliquid
         isHyperliquidConnected = false;
-        hasRealHyperliquidBalance = false;
+        hasRealHyperliquidBalanceFlag = false;
       }
 
       const totalPortfolioValue = balanceData.totalPortfolioValue + hyperliquidBalance;
@@ -234,7 +233,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         lastDayValue: balanceData.lastDayValue,
         hyperliquidBalance,
         isHyperliquidConnected,
-        hasRealHyperliquidBalance,
+        hasRealHyperliquidBalance: hasRealHyperliquidBalanceFlag,
         error: null
       }));
     } catch (error) {

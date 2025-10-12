@@ -152,9 +152,10 @@ export class WebTradingBot {
           closePosition
         });
 
-        // Get market regime (use BTC as default)
-        const btcOHLCV = await getCachedOHLCV('BTC', '15m', 300).catch(() => null);
-        const regimeResult = btcOHLCV ? await guessMarketRegime('BTC', btcOHLCV, btcOHLCV) : { regime: 'neutral' };
+        // Get market regime (use BTC as default) - use 4h and 6h timeframes as expected by guessMarketRegime
+        const btcOHLCV4h = await getCachedOHLCV('BTC', '4h', 300).catch(() => null);
+        const btcOHLCV6h = await getCachedOHLCV('BTC', '6h', 300).catch(() => null);
+        const regimeResult = (btcOHLCV4h && btcOHLCV6h) ? await guessMarketRegime('BTC', btcOHLCV4h, btcOHLCV6h) : { regime: 'neutral' };
         const marketRegime = regimeResult.regime;
         log('WEB_BOT', `Market regime: ${marketRegime}`);
 
@@ -169,12 +170,12 @@ export class WebTradingBot {
             if (entriesThis >= slotsLeft) break;
 
             try {
-              // Get OHLCV data for signal evaluation
-              const ohlcv15 = await getCachedOHLCV(symbol, '15m', 300).catch(() => null);
-              const ohlcv30 = await getCachedOHLCV(symbol, '30m', 300).catch(() => null);
+              // Get OHLCV data for signal evaluation - use 4h and 6h as expected by runSignalCheckAndOpen
+              const ohlcv4h = await getCachedOHLCV(symbol, '4h', 300).catch(() => null);
+              const ohlcv6h = await getCachedOHLCV(symbol, '6h', 300).catch(() => null);
               
-              if (!ohlcv15 || !ohlcv30 || ohlcv15.close.length < 100) {
-                log('WEB_BOT', `Skipping ${symbol}: insufficient data`);
+              if (!ohlcv4h || !ohlcv6h || ohlcv4h.close.length < 30 || ohlcv6h.close.length < 30) {
+                log('WEB_BOT', `Skipping ${symbol}: insufficient data (4h: ${ohlcv4h?.close.length || 0}, 6h: ${ohlcv6h?.close.length || 0})`);
                 continue;
               }
 

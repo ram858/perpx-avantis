@@ -90,8 +90,20 @@ export default function ChatPage() {
     const profit = searchParams.get('profit')
     const investment = searchParams.get('investment')
     const mode = searchParams.get('mode') // 'real' or 'simulation'
+    const view = searchParams.get('view') // 'positions' for viewing existing trades
     const hyperliquidApiWallet = searchParams.get('hyperliquidApiWallet') || undefined
     
+    // Handle view=positions case (viewing existing trades)
+    if (view === 'positions' && mode === 'real') {
+      setTradingPhase('active')
+      setMessages([{
+        type: "bot",
+        content: `📊 **Live Trading Dashboard**\n\nYou have active positions running on Hyperliquid. Here's your current trading status:`,
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      }])
+      return
+    }
+
     if (profit && investment && !tradingSession) {
       const profitNum = parseInt(profit)
       const investmentNum = parseInt(investment)
@@ -170,7 +182,8 @@ export default function ChatPage() {
 
   // Default conversation if no parameters
   useEffect(() => {
-    if (!searchParams.get('profit') && !searchParams.get('investment') && messages.length === 0) {
+    const view = searchParams.get('view')
+    if (!searchParams.get('profit') && !searchParams.get('investment') && !view && messages.length === 0) {
       setMessages([{
         type: "bot",
         content: "🎮 Starting simulation mode - no real money involved!",
@@ -863,11 +876,11 @@ export default function ChatPage() {
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
                           <span className="text-[#b4b4b4]">Entry Price</span>
-                          <span className="text-white">${position.entryPrice.toFixed(6)}</span>
+                          <span className="text-white">${position.entryPrice?.toFixed(6) || '0.000000'}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-[#b4b4b4]">Mark Price</span>
-                          <span className="text-white">${position.markPrice.toFixed(6)}</span>
+                          <span className="text-white">${position.markPrice?.toFixed(6) || '0.000000'}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-[#b4b4b4]">Size</span>
@@ -875,12 +888,12 @@ export default function ChatPage() {
                         </div>
                         <div className="flex justify-between">
                           <span className="text-[#b4b4b4]">Position Value</span>
-                          <span className="text-white">${position.positionValue.toFixed(2)}</span>
+                          <span className="text-white">${position.positionValue?.toFixed(2) || '0.00'}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-[#b4b4b4]">PnL (ROE)</span>
-                          <span className={`font-semibold ${position.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            ${position.pnl.toFixed(2)} ({position.roe.toFixed(2)}%)
+                          <span className={`font-semibold ${(position.pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            ${position.pnl?.toFixed(2) || '0.00'} ({position.roe?.toFixed(2) || '0.00'}%)
                           </span>
                         </div>
                         <div className="flex justify-between">

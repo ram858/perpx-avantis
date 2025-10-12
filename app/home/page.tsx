@@ -446,7 +446,7 @@ const WalletInfoCard = ({
             <span className="text-[#9ca3af] text-sm">Private Key:</span>
             <div className="flex items-center space-x-2">
               <code className="text-white text-sm font-mono bg-[#374151] px-2 py-1 rounded">
-                ••••••••••••••••••••••••••••••••
+                {primaryWallet?.privateKey?.slice(0, 6)}...{primaryWallet?.privateKey?.slice(-4)}
               </code>
               <button
                 onClick={copyPrivateKey}
