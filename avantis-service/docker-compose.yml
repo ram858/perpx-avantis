@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  avantis-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: avantis-trading-service
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=${DEBUG:-false}
+      - AVANTIS_NETWORK=${AVANTIS_NETWORK:-base-testnet}
+      - AVANTIS_PK=${AVANTIS_PK}
+      - AVANTIS_RPC_URL=${AVANTIS_RPC_URL:-https://sepolia.base.org}
+      - MAX_RETRIES=${MAX_RETRIES:-3}
+      - RETRY_DELAY=${RETRY_DELAY:-1.0}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
