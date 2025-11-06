@@ -273,6 +273,102 @@ app.get('/api/positions', async (req, res) => {
   }
 });
 
+// Prepare transaction for Base Account signing (without executing)
+app.post('/api/trading/prepare-transaction', async (req, res) => {
+  try {
+    const {
+      sessionId,
+      action, // 'open' or 'close'
+      symbol,
+      collateral,
+      leverage,
+      is_long,
+      pair_index, // For close action
+    } = req.body;
+
+    // Validate input
+    if (!sessionId || !action) {
+      return res.status(400).json({
+        error: 'Missing required parameters: sessionId and action are required'
+      });
+    }
+
+    // Get session info
+    const status = sessionManager.getSessionStatus(sessionId);
+    if (!status) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const isBaseAccount = sessionManager.isSessionBaseAccount(sessionId);
+    if (!isBaseAccount) {
+      return res.status(400).json({
+        error: 'This endpoint is only for Base Account sessions. Use regular trading endpoints for traditional wallets.'
+      });
+    }
+
+    const walletAddress = sessionManager.getSessionWalletAddress(sessionId);
+    if (!walletAddress) {
+      return res.status(400).json({ error: 'Wallet address not found for session' });
+    }
+
+    // Prepare transaction parameters based on action
+    let transactionParams: any = {};
+
+    if (action === 'open') {
+      if (!symbol || !collateral || !leverage || is_long === undefined) {
+        return res.status(400).json({
+          error: 'Missing required parameters for open action: symbol, collateral, leverage, is_long'
+        });
+      }
+
+      transactionParams = {
+        action: 'open',
+        symbol,
+        collateral: parseFloat(collateral),
+        leverage: parseInt(leverage),
+        is_long: Boolean(is_long),
+        walletAddress,
+      };
+
+    } else if (action === 'close') {
+      if (!pair_index) {
+        return res.status(400).json({
+          error: 'Missing required parameter for close action: pair_index'
+        });
+      }
+
+      transactionParams = {
+        action: 'close',
+        pair_index: parseInt(pair_index),
+        walletAddress,
+      };
+    } else {
+      return res.status(400).json({ error: 'Invalid action. Must be "open" or "close"' });
+    }
+
+    // Return transaction parameters for frontend to sign
+    // Note: Actual transaction data would come from Avantis SDK
+    res.json({
+      success: true,
+      transaction: {
+        to: '0x...', // Avantis contract address (to be filled by Avantis SDK)
+        data: '0x', // Transaction data (to be filled by Avantis SDK)
+        value: '0x0',
+        gas: '0x0', // To be estimated
+        gasPrice: '0x0', // To be estimated
+      },
+      params: transactionParams,
+      walletAddress,
+      note: 'Sign this transaction via Base Account SDK on the frontend',
+    });
+  } catch (error) {
+    console.error('[API] Error preparing transaction:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    });
+  }
+});
+
 // Get trading configuration
 app.get('/api/trading/config', (req, res) => {
   try {

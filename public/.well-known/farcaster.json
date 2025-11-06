@@ -1,0 +1,33 @@
+{
+  "accountAssociation": {
+    "header": "",
+    "payload": "",
+    "signature": ""
+  },
+  "baseBuilder": {
+    "ownerAddress": "0x"
+  },
+  "miniapp": {
+    "version": "1",
+    "name": "PrepX AI Trading",
+    "homeUrl": "https://your-app.vercel.app",
+    "iconUrl": "https://your-app.vercel.app/placeholder-logo.png",
+    "splashImageUrl": "https://your-app.vercel.app/trading-illustration.svg",
+    "splashBackgroundColor": "#0d0d0d",
+    "webhookUrl": "https://your-app.vercel.app/api/webhook",
+    "subtitle": "AI-Powered Trading Bot",
+    "description": "Advanced AI-powered trading bot for cryptocurrency markets with intelligent risk management and real-time analytics.",
+    "screenshotUrls": [
+      "https://your-app.vercel.app/trading-illustration.svg"
+    ],
+    "primaryCategory": "finance",
+    "tags": ["trading", "crypto", "ai", "avantis", "defi"],
+    "heroImageUrl": "https://your-app.vercel.app/trading-illustration.svg",
+    "tagline": "Trade smarter with AI",
+    "ogTitle": "PrepX - AI Trading Bot",
+    "ogDescription": "Advanced AI-powered trading bot for cryptocurrency markets with intelligent risk management.",
+    "ogImageUrl": "https://your-app.vercel.app/trading-illustration.svg",
+    "noindex": false
+  }
+}
+

@@ -64,7 +64,7 @@ export function NavigationHeader({
         {/* User info and logout */}
         <div className="flex items-center space-x-3">
           <div className="text-right">
-            <p className="text-sm text-[#b4b4b4]">{user?.phoneNumber}</p>
+            <p className="text-sm text-[#b4b4b4]">FID: {user?.fid || 'N/A'}</p>
             <p className="text-xs text-[#666]">Welcome back!</p>
           </div>
           <Button

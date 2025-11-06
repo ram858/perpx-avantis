@@ -1,55 +1,47 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  eslint: {
-    ignoreDuringBuilds: false, // Enable ESLint checks in production
+  // Optimize for Base Mini App
+  reactStrictMode: true,
+  
+  // Webpack configuration to handle Node.js modules
+  webpack: (config, { isServer }) => {
+    // Exclude Node.js modules from client bundle
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+        dns: false,
+        child_process: false,
+      };
+    }
+    
+    // Ignore optional dependencies that may not be installed
+    config.externals = config.externals || [];
+    if (!isServer) {
+      config.externals.push({
+        '@vercel/kv': 'commonjs @vercel/kv',
+        'pg': 'commonjs pg',
+        'typeorm': 'commonjs typeorm',
+      });
+    }
+    
+    // Ignore optional @vercel/kv in client-side builds
+    if (!isServer) {
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        '@vercel/kv': false,
+      };
+    }
+    
+    return config;
   },
-  typescript: {
-    ignoreBuildErrors: false, // Enable TypeScript checks in production
-  },
-  images: {
-    unoptimized: false, // Enable image optimization for better performance
-    domains: ['blob.vercel-storage.com'], // Allow external image domains
-    formats: ['image/webp', 'image/avif'], // Modern image formats
-  },
-  // Performance optimizations
+  
+  // Experimental features
   experimental: {
     optimizeCss: true,
-    optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
   },
-  // Security headers
-  async headers() {
-    return [
-      {
-        source: '/(.*)',
-        headers: [
-          {
-            key: 'X-Frame-Options',
-            value: 'DENY',
-          },
-          {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff',
-          },
-          {
-            key: 'Referrer-Policy',
-            value: 'origin-when-cross-origin',
-          },
-        ],
-      },
-    ]
-  },
-  // Compression and caching
-  compress: true,
-  poweredByHeader: false,
-  // API rewrites for integrated backend
-  async rewrites() {
-    return [
-      {
-        source: '/api/trading/:path*',
-        destination: 'http://localhost:3001/api/trading/:path*',
-      },
-    ]
-  },
-}
+};
 
-export default nextConfig
+export default nextConfig;

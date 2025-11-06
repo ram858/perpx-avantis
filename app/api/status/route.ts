@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { DatabaseService } from '@/lib/services/DatabaseService'
 
 export async function GET(request: NextRequest) {
   try {
-    // In production, fetch real trading data from database
-    const db = new DatabaseService()
-    
-    // TODO: Implement real trading sessions table and queries
-    // For now, return empty data since no real trading has occurred
+    // For Base mini-app, trading data comes from on-chain queries
+    // No database needed - all data is queryable from Avantis blockchain
     const realSessions: Array<{
       status: string;
       pnl: number;

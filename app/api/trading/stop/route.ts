@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         sessionId,
-        phoneNumber: payload.phoneNumber
+        userFid: payload.fid // Changed from phoneNumber
       })
     })
 

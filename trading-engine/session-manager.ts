@@ -1,5 +1,18 @@
 import WebSocket from 'ws';
-import { WebTradingBot } from './hyperliquid/web-trading-bot';
+// Dynamic import to avoid build errors during Avantis migration
+let WebTradingBot: any;
+try {
+  const hyperliquidModule = require('./hyperliquid/web-trading-bot');
+  WebTradingBot = hyperliquidModule.WebTradingBot;
+} catch (error) {
+  console.warn('[SESSION_MANAGER] Hyperliquid module not available, using placeholder');
+  // Placeholder class for when Hyperliquid is not available
+  WebTradingBot = class PlaceholderTradingBot {
+    async startTrading() { console.log('[PLACEHOLDER] Trading bot placeholder'); }
+    async stop() { console.log('[PLACEHOLDER] Stop placeholder'); }
+    getStatus() { return { pnl: 0, positions: [] }; }
+  };
+}
 
 export interface TradingConfig {
   maxBudget: number;
@@ -7,6 +20,8 @@ export interface TradingConfig {
   maxPerSession: number;
   userPhoneNumber?: string;
   walletAddress?: string;
+  userFid?: number; // Base Account FID
+  isBaseAccount?: boolean; // Flag indicating Base Account (no private key)
 }
 
 export interface SessionStatus {
@@ -26,6 +41,8 @@ export class TradingSessionManager {
     config: TradingConfig;
     status: SessionStatus;
     subscribers: Set<WebSocket>;
+    walletAddress?: string; // Store wallet address for Base Account queries
+    isBaseAccount?: boolean; // Flag for Base Account sessions
   }> = new Map();
 
   constructor() {
@@ -57,10 +74,18 @@ export class TradingSessionManager {
         lastUpdate: new Date(),
         config
       },
-      subscribers: new Set<WebSocket>()
+      subscribers: new Set<WebSocket>(),
+      walletAddress: config.walletAddress, // Store for Base Account queries
+      isBaseAccount: config.isBaseAccount || false // Store Base Account flag
     };
 
     this.sessions.set(sessionId, session);
+    
+    // Log Base Account session info
+    if (config.isBaseAccount) {
+      console.log(`[SESSION_MANAGER] Base Account session ${sessionId} with address ${config.walletAddress}`);
+      console.log(`[SESSION_MANAGER] Note: Automated trading disabled - transactions must be signed via Base Account SDK`);
+    }
 
     // Start monitoring the session
     this.startSessionMonitoring(sessionId);
@@ -160,6 +185,22 @@ export class TradingSessionManager {
       session.subscribers.delete(ws);
       console.log(`[SESSION_MANAGER] Client unsubscribed from session ${sessionId}`);
     }
+  }
+
+  /**
+   * Get wallet address for a session (for Base Account queries)
+   */
+  getSessionWalletAddress(sessionId: string): string | undefined {
+    const session = this.sessions.get(sessionId);
+    return session?.walletAddress || session?.config.walletAddress;
+  }
+
+  /**
+   * Check if a session is using Base Account
+   */
+  isSessionBaseAccount(sessionId: string): boolean {
+    const session = this.sessions.get(sessionId);
+    return session?.isBaseAccount || false;
   }
 
   getSessionStatus(sessionId: string): SessionStatus | null {

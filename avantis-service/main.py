@@ -166,13 +166,31 @@ async def api_close_all_positions(request: CloseAllPositionsRequest):
 
 # Query endpoints
 @app.get("/api/positions")
-async def api_get_positions(private_key: Optional[str] = None):
+async def api_get_positions(
+    private_key: Optional[str] = None,
+    address: Optional[str] = None
+):
     """
     Get all open positions.
+    Supports both private_key (traditional wallets) and address (Base Accounts).
     """
     try:
+        # If address provided, try to query by address (for Base Accounts)
+        # Note: This requires the Avantis SDK to support address-based queries
+        # If not supported, we'll need to use private_key
+        if address and not private_key:
+            # TODO: Implement address-based position queries if Avantis SDK supports it
+            # For now, we need a private key to query positions
+            logger.warning(f"Address-based position queries not yet fully supported. Address: {address}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Address-based queries require Avantis SDK support. Please provide private_key or use Base Account SDK for transactions."
+            )
+        
         positions = await get_positions(private_key=private_key)
         return {"positions": positions, "count": len(positions)}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error in get_positions: {e}", exc_info=True)
         raise HTTPException(
@@ -182,13 +200,30 @@ async def api_get_positions(private_key: Optional[str] = None):
 
 
 @app.get("/api/balance")
-async def api_get_balance(private_key: Optional[str] = None):
+async def api_get_balance(
+    private_key: Optional[str] = None,
+    address: Optional[str] = None
+):
     """
     Get account balance information.
+    Supports both private_key (traditional wallets) and address (Base Accounts).
     """
     try:
+        # If address provided, try to query by address (for Base Accounts)
+        # Note: This requires the Avantis SDK to support address-based queries
+        if address and not private_key:
+            # TODO: Implement address-based balance queries if Avantis SDK supports it
+            # For now, we need a private key to query balance
+            logger.warning(f"Address-based balance queries not yet fully supported. Address: {address}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Address-based queries require Avantis SDK support. Please provide private_key or use Base Account SDK for transactions."
+            )
+        
         balance = await get_balance(private_key=private_key)
         return balance
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error in get_balance: {e}", exc_info=True)
         raise HTTPException(

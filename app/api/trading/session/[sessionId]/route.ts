@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { AuthService } from '@/lib/services/AuthService'
+
+const authService = new AuthService()
 
 export async function GET(
   request: NextRequest,
@@ -7,10 +10,16 @@ export async function GET(
   try {
     const params = await context.params
     const sessionId = params.sessionId
-    console.log(`[API] Getting session status for: ${sessionId} (v3 - FIXED)`)
+    console.log(`[API] Getting session status for: ${sessionId}`)
     
-    // TEMPORARY: Skip authentication for testing
-    // TODO: Re-enable authentication once basic functionality is working
+    // Verify authentication
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const token = authHeader.substring(7)
+    const payload = await authService.verifyToken(token)
     
     // Call the trading engine to get session status
     const tradingEngineUrl = process.env.TRADING_ENGINE_URL || 'http://localhost:3001'

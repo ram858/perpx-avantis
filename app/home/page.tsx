@@ -168,14 +168,14 @@ const TradingCard = ({
   investmentAmount,
   setInvestmentAmount, 
   primaryWallet, 
-  hyperliquidBalance 
+  avantisBalance 
 }: {
   targetProfit: string
   setTargetProfit: (value: string) => void
   investmentAmount: string
   setInvestmentAmount: (value: string) => void
   primaryWallet: { address: string; privateKey?: string; chain: string } | null
-  hyperliquidBalance: number
+  avantisBalance: number
 }) => {
   const [isTrading, setIsTrading] = useState(false)
   const { positionData, isLoading: positionsLoading } = usePositions()
@@ -222,7 +222,7 @@ const TradingCard = ({
       </div>
       
       <p className="text-[#9ca3af] text-sm">
-        Your wallet is connected and ready for live trading on Hyperliquid. Configure your trading parameters and start your first session.
+        Your wallet is connected and ready for live trading on Avantis. Configure your trading parameters and start your first session.
       </p>
       
         <div className="space-y-3">
@@ -277,14 +277,14 @@ const TradingCard = ({
         
         <Button 
           onClick={hasActivePositions ? handleViewTrades : handleStartTrading}
-          disabled={isTrading || hyperliquidBalance === 0 || positionsLoading}
+          disabled={isTrading || avantisBalance === 0 || positionsLoading}
           className="w-full bg-[#8759ff] hover:bg-[#7C3AED] text-white font-semibold py-3 rounded-xl disabled:opacity-50"
         >
           {isTrading ? '🔄 Starting...' : hasActivePositions ? '👁️ View Trades' : '🚀 Start Trading'}
         </Button>
         
         {/* Show helpful message when no funds */}
-        {hyperliquidBalance === 0 && (
+        {avantisBalance === 0 && (
           <div className="mt-4 p-4 bg-yellow-900/20 border border-yellow-500 rounded-xl">
             <h4 className="text-yellow-400 font-semibold mb-2">💰 Add Funds to Start Trading</h4>
             <p className="text-yellow-300 text-sm mb-3">
@@ -292,13 +292,13 @@ const TradingCard = ({
             </p>
             <Button
                   onClick={() => {
-                    const isTestnet = process.env.NEXT_PUBLIC_HYPERLIQUID_TESTNET !== 'false';
-                    const url = isTestnet ? 'https://app.hyperliquid-testnet.xyz' : 'https://app.hyperliquid.xyz';
+                    const isTestnet = process.env.NEXT_PUBLIC_AVANTIS_NETWORK === 'base-testnet';
+                    const url = isTestnet ? 'https://testnet.avantis.finance' : 'https://avantis.finance';
                     window.open(url, '_blank');
                   }}
               className="bg-yellow-600 hover:bg-yellow-700 text-white text-sm"
             >
-                  🚀 Add Funds ({process.env.NEXT_PUBLIC_HYPERLIQUID_TESTNET !== 'false' ? 'Testnet' : 'Mainnet'})
+                  🚀 Add Funds ({process.env.NEXT_PUBLIC_AVANTIS_NETWORK === 'base-testnet' ? 'Testnet' : 'Mainnet'})
             </Button>
           </div>
         )}
@@ -310,13 +310,13 @@ const TradingCard = ({
             <span className={`font-medium ${
               hasActivePositions 
                 ? 'text-[#27c47d]' 
-                : hyperliquidBalance > 0 
+                : avantisBalance > 0 
                   ? 'text-[#27c47d]' 
                   : 'text-[#f59e0b]'
             }`}>
               {hasActivePositions 
                 ? 'Trading Active' 
-                : hyperliquidBalance > 0 
+                : avantisBalance > 0 
                   ? 'Ready to Trade' 
                   : 'Add Funds to Start'
               }
@@ -324,7 +324,7 @@ const TradingCard = ({
           </div>
           <div className="flex items-center justify-between text-sm mt-1">
             <span className="text-[#9ca3af]">Platform:</span>
-            <span className="text-white font-medium">Hyperliquid</span>
+            <span className="text-white font-medium">Avantis</span>
           </div>
           <div className="flex items-center justify-between text-sm mt-1">
             <span className="text-[#9ca3af]">Wallet:</span>
@@ -335,7 +335,7 @@ const TradingCard = ({
           <div className="flex items-center justify-between text-sm mt-1">
             <span className="text-[#9ca3af]">Trading Balance:</span>
             <span className="font-medium text-white">
-              ${hyperliquidBalance.toFixed(2)}
+              ${avantisBalance.toFixed(2)}
             </span>
           </div>
           {hasActivePositions && (
@@ -358,11 +358,11 @@ const TradingCard = ({
 const WalletInfoCard = ({ 
   primaryWallet, 
   ethBalanceFormatted, 
-  hyperliquidBalance
+  avantisBalance
 }: {
   primaryWallet: { address: string; privateKey?: string; chain: string } | null
   ethBalanceFormatted: string
-  hyperliquidBalance: number
+  avantisBalance: number
 }) => {
   const [copiedAddress, setCopiedAddress] = useState(false)
   const [copiedPrivateKey, setCopiedPrivateKey] = useState(false)
@@ -399,9 +399,9 @@ const WalletInfoCard = ({
             Your Trading Wallet
           </h3>
           <div className="flex items-center space-x-2">
-            <div className={`w-2 h-2 rounded-full ${hyperliquidBalance > 0 ? 'bg-green-400' : 'bg-yellow-400'}`}></div>
-            <span className={`text-sm font-medium ${hyperliquidBalance > 0 ? 'text-green-400' : 'text-yellow-400'}`}>
-              {hyperliquidBalance > 0 ? 'Ready to Trade' : 'Add Funds'}
+            <div className={`w-2 h-2 rounded-full ${avantisBalance > 0 ? 'bg-green-400' : 'bg-yellow-400'}`}></div>
+            <span className={`text-sm font-medium ${avantisBalance > 0 ? 'text-green-400' : 'text-yellow-400'}`}>
+              {avantisBalance > 0 ? 'Ready to Trade' : 'Add Funds'}
             </span>
           </div>
         </div>
@@ -490,8 +490,8 @@ const WalletInfoCard = ({
         <div className="pt-2 border-t border-[#374151]">
           <div className="space-y-3">
             <p className="text-[#9ca3af] text-xs">
-              {hyperliquidBalance > 0
-                ? 'Your wallet is ready for trading with a balance of $' + hyperliquidBalance.toFixed(2) + '.'
+              {avantisBalance > 0
+                ? 'Your wallet is ready for trading with a balance of $' + avantisBalance.toFixed(2) + '.'
                 : 'Your wallet is ready but has no funds. Add funds to start trading.'
               }
             </p>
@@ -573,7 +573,7 @@ export default function HomePage() {
     dailyChangePercentage,
     isLoading,
     isConnected,
-    hyperliquidBalance,
+    avantisBalance,
     error,
     createWallet,
     refreshBalances
@@ -589,11 +589,11 @@ export default function HomePage() {
     // 2. Not currently loading
     // 3. No primary wallet is connected
     // 4. No wallets exist for this user
-    if (user?.phoneNumber && !isLoading && !primaryWallet && allWallets && allWallets.length === 0) {
-      console.log('Auto-creating wallet for user:', user.phoneNumber)
+    if (user?.fid && !isLoading && !primaryWallet && allWallets && allWallets.length === 0) {
+      console.log('Auto-creating wallet for FID:', user.fid)
       createWallet('ethereum')
     }
-  }, [user?.phoneNumber, isLoading, primaryWallet, allWallets, createWallet])
+  }, [user?.fid, isLoading, primaryWallet, allWallets, createWallet])
 
   useEffect(() => {
     createWalletIfNeeded()
@@ -666,7 +666,7 @@ export default function HomePage() {
               investmentAmount={investmentAmount}
               setInvestmentAmount={setInvestmentAmount}
               primaryWallet={primaryWallet}
-              hyperliquidBalance={hyperliquidBalance}
+              avantisBalance={avantisBalance}
             />
           )}
 
@@ -675,7 +675,7 @@ export default function HomePage() {
             <WalletInfoCard
               primaryWallet={primaryWallet}
               ethBalanceFormatted={ethBalanceFormatted}
-              hyperliquidBalance={hyperliquidBalance}
+              avantisBalance={avantisBalance}
             />
           )}
 

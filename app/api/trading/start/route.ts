@@ -1,31 +1,75 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { AuthService } from '@/lib/services/AuthService'
-import { UserWalletService } from '@/lib/services/UserWalletService'
+import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService'
 
 const authService = new AuthService()
-const userWalletService = new UserWalletService()
+const walletService = new BaseAccountWalletService()
 
 export async function POST(request: NextRequest) {
   try {
     console.log('[API] Trading start endpoint called')
     
+    // Verify authentication
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const token = authHeader.substring(7)
+    const payload = await authService.verifyToken(token)
+    
+    // FID is required for Base Account users
+    if (!payload.fid) {
+      return NextResponse.json(
+        { error: 'Base Account (FID) required. This app runs in Base app only.' },
+        { status: 400 }
+      )
+    }
+    
     // Parse request body
     const config = await request.json()
     console.log('[API] Trading config:', config)
     
-    // TEMPORARY: Skip authentication for testing
-    // TODO: Re-enable authentication once basic functionality is working
+    // For Base Account users, we use their Base Account address
+    // Note: Base Accounts are smart wallets (ERC-4337), so they don't have traditional private keys
+    // The trading engine will need to work with the address and use Base Account SDK for signing
     
-    // Mock user data for testing
-    const user = { phoneNumber: '9808110921' }
-    const wallet = {
-      address: '0xaa0bA0700Cfd1489d08C63C4bd177638Be4C86F6',
-      privateKey: '0xc2614e090f4a9e229c197256ef9c5b0647fadfc44cb1da5b2d5e6969b68ba61b'
+    // Try to get Base Account address from stored wallet or use a trading wallet
+    let walletAddress: string | null = null;
+    let privateKey: string | null = null;
+    let isBaseAccount = false;
+    
+    // First, try to get Base Account address (if stored)
+    const baseAccountAddress = await walletService.getWalletAddress(payload.fid, 'ethereum');
+    
+    if (baseAccountAddress) {
+      // Use Base Account address
+      walletAddress = baseAccountAddress;
+      isBaseAccount = true; // Assume it's a Base Account if we only have address
+      console.log('[API] Using Base Account address:', walletAddress, 'for FID:', payload.fid);
+      
+      // For Base Accounts, we don't have a private key (they're smart wallets)
+      // The trading engine will need to handle Base Account transactions differently
+      // Actual trading will need to be done via Base Account SDK on the frontend
+    } else {
+      // Fallback: Create a trading wallet for automated trading
+      // This is a workaround - ideally all trading should use Base Account
+      const wallet = await walletService.getOrCreateWallet(payload.fid, 'ethereum');
+      
+      if (!wallet || !wallet.privateKey) {
+        return NextResponse.json(
+          { error: 'No trading wallet found. Please ensure you are signed in with Base Account.' },
+          { status: 404 }
+        );
+      }
+      
+      walletAddress = wallet.address;
+      privateKey = wallet.privateKey;
+      isBaseAccount = false;
+      console.log('[API] Using trading wallet:', walletAddress, 'for FID:', payload.fid);
     }
     
-    console.log('[API] Using test wallet:', wallet.address, 'for user:', user.phoneNumber)
-    
-    console.log('[API] Wallet found, calling trading engine...')
+    console.log('[API] Calling trading engine with address:', walletAddress, 'isBaseAccount:', isBaseAccount);
     
     // Call the trading engine to start trading
     const tradingEngineUrl = process.env.TRADING_ENGINE_URL || 'http://localhost:3001'
@@ -38,9 +82,10 @@ export async function POST(request: NextRequest) {
         maxBudget: config.totalBudget || config.investmentAmount || config.maxBudget,
         profitGoal: config.profitGoal || config.targetProfit,
         maxPerSession: config.maxPositions || config.maxPerSession || 5,
-        hyperliquidApiWallet: wallet.privateKey,
-        userPhoneNumber: user.phoneNumber,
-        walletAddress: wallet.address
+        avantisApiWallet: privateKey, // May be null for Base Accounts
+        userFid: payload.fid,
+        walletAddress: walletAddress, // Base Account address or trading wallet address
+        isBaseAccount: isBaseAccount, // Flag to indicate if this is a Base Account (no private key)
       })
     })
 

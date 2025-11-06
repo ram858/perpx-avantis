@@ -12,8 +12,8 @@ export function WalletConnectionGuide() {
   const [connectionStep, setConnectionStep] = useState(0);
   
   // Determine if we're using testnet (default to true for safety)
-  const isTestnet = process.env.NEXT_PUBLIC_HYPERLIQUID_TESTNET !== 'false';
-  const hyperliquidUrl = isTestnet ? 'https://app.hyperliquid-testnet.xyz' : 'https://app.hyperliquid.xyz';
+  const isTestnet = process.env.NEXT_PUBLIC_AVANTIS_NETWORK === 'base-testnet';
+  const avantisUrl = isTestnet ? 'https://avantis-testnet.com' : 'https://avantis.com';
 
   useEffect(() => {
     // Check if MetaMask is installed
@@ -47,13 +47,13 @@ export function WalletConnectionGuide() {
   return (
     <Card className="p-6 bg-[#1a1a1a] border-[#333]">
       <h3 className="text-xl font-semibold text-white mb-4">
-        🔗 Connect Your Wallet to Hyperliquid
+        🔗 Connect Your Wallet to Avantis
       </h3>
       
       <div className="space-y-4">
         <div className="bg-yellow-900/20 border border-yellow-500 p-4 rounded-lg">
           <p className="text-yellow-400 text-sm">
-            ⚠️ <strong>Important:</strong> Hyperliquid only accepts wallet extensions (MetaMask, etc.), not direct private key imports.
+            ⚠️ <strong>Important:</strong> Avantis only accepts wallet extensions (MetaMask, etc.), not direct private key imports.
           </p>
         </div>
 
@@ -180,21 +180,21 @@ export function WalletConnectionGuide() {
             </p>
           </div>
 
-          {/* Step 3: Connect to Hyperliquid */}
+          {/* Step 3: Connect to Avantis */}
           <div className={`p-3 rounded ${connectionStep >= 3 ? 'bg-blue-800/30' : 'bg-gray-800/30'}`}>
             <div className="flex items-center justify-between">
               <span className="text-blue-300 text-sm font-medium">
-                Step 3: Connect to Hyperliquid {isTestnet ? 'TESTNET' : 'MAINNET'}
+                Step 3: Connect to Avantis {isTestnet ? 'TESTNET' : 'MAINNET'}
               </span>
               <Button
                 onClick={() => {
-                  window.open(hyperliquidUrl, '_blank');
+                  window.open(avantisUrl, '_blank');
                   setConnectionStep(3);
                 }}
                 size="sm"
                 className="bg-purple-600 hover:bg-purple-700 text-white"
               >
-                🚀 Open Hyperliquid {isTestnet ? 'Testnet' : ''}
+                🚀 Open Avantis {isTestnet ? 'Testnet' : ''}
               </Button>
             </div>
             <p className="text-xs text-blue-400 mt-1">
@@ -208,13 +208,13 @@ export function WalletConnectionGuide() {
           <p className="text-green-300 text-sm">
             {isTestnet ? (
               <>
-                Make sure to add funds to your wallet on Hyperliquid Testnet. 
-                Visit <a href={hyperliquidUrl} target="_blank" rel="noopener noreferrer" className="underline">Hyperliquid Testnet</a> and 
+                Make sure to add funds to your wallet on Avantis Testnet. 
+                Visit <a href={avantisUrl} target="_blank" rel="noopener noreferrer" className="underline">Avantis Testnet</a> and 
                 use the testnet faucet to get test funds.
               </>
             ) : (
               <>
-                Make sure to send some ETH to your wallet address above before starting to trade on Hyperliquid.
+                Make sure to send some ETH to your wallet address above before starting to trade on Avantis.
                 You can get test ETH from a faucet or transfer from another wallet.
               </>
             )}
@@ -223,10 +223,10 @@ export function WalletConnectionGuide() {
 
         <div className="flex space-x-3">
           <Button
-            onClick={() => window.open(hyperliquidUrl, '_blank')}
+            onClick={() => window.open(avantisUrl, '_blank')}
             className="bg-[#8759ff] hover:bg-[#7c4dff] text-white"
           >
-            🚀 Open Hyperliquid {isTestnet ? 'Testnet' : ''}
+            🚀 Open Avantis {isTestnet ? 'Testnet' : ''}
           </Button>
           {!hasMetaMask ? (
             <Button

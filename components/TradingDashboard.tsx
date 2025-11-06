@@ -9,11 +9,14 @@ import { useIntegratedWallet } from '@/lib/wallet/IntegratedWalletContext';
 import { NavigationHeader } from './NavigationHeader';
 import { LoadingSkeleton, CardSkeleton } from './ui/loading-skeleton';
 import { useToast } from './ui/toast';
+import { BaseAccountTradingOptions } from './BaseAccountTradingOptions';
+import { useBaseMiniApp } from '@/lib/hooks/useBaseMiniApp';
 
 export function TradingDashboard() {
   const { startTrading, stopTrading, getTradingSessions, isLoading, error } = useTrading();
-  const { totalPortfolioValue, isConnected, primaryWallet, hyperliquidBalance, isHyperliquidConnected, hasRealHyperliquidBalance, isLoading: walletLoading } = useIntegratedWallet();
+  const { totalPortfolioValue, isConnected, primaryWallet, avantisBalance, isAvantisConnected, hasRealAvantisBalance, isLoading: walletLoading } = useIntegratedWallet();
   const { addToast } = useToast();
+  const { isBaseContext } = useBaseMiniApp();
   
   const [sessions, setSessions] = useState<TradingSession[]>([]);
   const [showStartForm, setShowStartForm] = useState(false);
@@ -54,7 +57,7 @@ export function TradingDashboard() {
       return false;
     }
 
-    // Removed Hyperliquid connection check since addresses are the same
+    // Removed Avantis connection check since addresses are the same
 
     if (budget < 10) {
       setBalanceError('Minimum investment amount is $10');
@@ -66,13 +69,13 @@ export function TradingDashboard() {
       return false;
     }
 
-    if (hyperliquidBalance === 0) {
+    if (avantisBalance === 0) {
       setBalanceError('Insufficient balance. Your trading balance is $0.00. Please add funds to start trading.');
       return false;
     }
 
-    if (budget > hyperliquidBalance) {
-      setBalanceError(`Insufficient balance. You're trying to invest $${budget.toFixed(2)} but your trading balance is only $${hyperliquidBalance.toFixed(2)}.`);
+    if (budget > avantisBalance) {
+      setBalanceError(`Insufficient balance. You're trying to invest $${budget.toFixed(2)} but your trading balance is only $${avantisBalance.toFixed(2)}.`);
       return false;
     }
 
@@ -91,7 +94,7 @@ export function TradingDashboard() {
 
     try {
       const newSession = await startTrading(config);
-      setSessions(prev => [newSession, ...prev]);
+      setSessions((prev: TradingSession[]) => [newSession, ...prev]);
       setShowStartForm(false);
       
       // Show success toast
@@ -167,17 +170,29 @@ export function TradingDashboard() {
         actions={
                  <Button
                    onClick={() => setShowStartForm(true)}
-                   disabled={isLoading || !isConnected || hyperliquidBalance === 0}
+                   disabled={isLoading || !isConnected || avantisBalance === 0}
                    className="bg-[#8759ff] hover:bg-[#7c4dff] text-white disabled:opacity-50 disabled:cursor-not-allowed"
                  >
                    {!isConnected ? 'Connect Wallet First' :
-                    hyperliquidBalance === 0 ? 'Add Funds to Start Trading' :
+                    avantisBalance === 0 ? 'Add Funds to Start Trading' :
                     'Start Trading Session'}
                  </Button>
         }
       />
 
       <div className="px-4 sm:px-6 space-y-6 max-w-md mx-auto py-6">
+        {/* Base Account Trading Options */}
+        {isBaseContext && (
+          <BaseAccountTradingOptions
+            onFallbackWalletCreated={() => {
+              addToast({
+                type: 'success',
+                title: 'Fallback wallet created',
+                message: 'You can now use automated trading strategies with the fallback wallet.'
+              });
+            }}
+          />
+        )}
 
                {/* Simplified wallet status - no complex connection guides needed */}
                {walletLoading ? (
@@ -188,7 +203,7 @@ export function TradingDashboard() {
                      <div>
                        <h3 className="text-lg font-semibold text-white">Trading Wallet Ready</h3>
                        <p className="text-sm text-gray-400">
-                         Your wallet is ready for trading. Balance: <span className="font-medium text-white">${hyperliquidBalance.toFixed(2)}</span>
+                         Your wallet is ready for trading. Balance: <span className="font-medium text-white">${avantisBalance.toFixed(2)}</span>
                        </p>
                      </div>
                      <div className="text-right">
@@ -208,7 +223,7 @@ export function TradingDashboard() {
             <h3 className="text-lg font-semibold text-white">Wallet Status</h3>
                      <p className="text-sm text-gray-400">
                        {isConnected ? 'Connected' : 'Not Connected'} •
-                       Trading Balance: <span className="font-medium text-white">${hyperliquidBalance.toFixed(2)}</span>
+                       Trading Balance: <span className="font-medium text-white">${avantisBalance.toFixed(2)}</span>
                      </p>
           </div>
           {!isConnected && (
@@ -242,20 +257,20 @@ export function TradingDashboard() {
               <Input
                 type="number"
                 value={config.totalBudget}
-                onChange={(e) => {
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                   const value = parseFloat(e.target.value) || 0;
-                  setConfig(prev => ({ ...prev, totalBudget: value }));
+                  setConfig((prev: TradingConfig) => ({ ...prev, totalBudget: value }));
                   // Clear balance error when user changes the value
                   if (balanceError) setBalanceError(null);
                 }}
                 className={`bg-[#2a2a2a] border-[#444] text-white ${
-                  config.totalBudget > hyperliquidBalance ? 'border-red-500' : ''
+                  config.totalBudget > avantisBalance ? 'border-red-500' : ''
                 }`}
                 placeholder="100"
               />
-              {config.totalBudget > hyperliquidBalance && hyperliquidBalance > 0 && (
+              {config.totalBudget > avantisBalance && avantisBalance > 0 && (
                 <p className="text-xs text-red-400 mt-1">
-                  Exceeds trading balance by ${(config.totalBudget - hyperliquidBalance).toFixed(2)}
+                  Exceeds trading balance by ${(config.totalBudget - avantisBalance).toFixed(2)}
                 </p>
               )}
             </div>
@@ -267,7 +282,7 @@ export function TradingDashboard() {
               <Input
                 type="number"
                 value={config.profitGoal}
-                onChange={(e) => setConfig(prev => ({ ...prev, profitGoal: parseFloat(e.target.value) || 0 }))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfig((prev: TradingConfig) => ({ ...prev, profitGoal: parseFloat(e.target.value) || 0 }))}
                 className="bg-[#2a2a2a] border-[#444] text-white"
                 placeholder="20"
               />
@@ -280,7 +295,7 @@ export function TradingDashboard() {
               <Input
                 type="number"
                 value={config.maxPositions}
-                onChange={(e) => setConfig(prev => ({ ...prev, maxPositions: parseInt(e.target.value) || 1 }))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfig((prev: TradingConfig) => ({ ...prev, maxPositions: parseInt(e.target.value) || 1 }))}
                 className="bg-[#2a2a2a] border-[#444] text-white"
                 placeholder="3"
               />
@@ -293,7 +308,7 @@ export function TradingDashboard() {
               <Input
                 type="number"
                 value={config.leverage}
-                onChange={(e) => setConfig(prev => ({ ...prev, leverage: parseFloat(e.target.value) || 1 }))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfig((prev: TradingConfig) => ({ ...prev, leverage: parseFloat(e.target.value) || 1 }))}
                 className="bg-[#2a2a2a] border-[#444] text-white"
                 placeholder="5"
               />
@@ -303,7 +318,7 @@ export function TradingDashboard() {
           <div className="flex gap-3">
                    <Button
                      onClick={handleStartTrading}
-                     disabled={isLoading || !isConnected || hyperliquidBalance === 0 || config.totalBudget > hyperliquidBalance || config.totalBudget < 10}
+                     disabled={isLoading || !isConnected || avantisBalance === 0 || config.totalBudget > avantisBalance || config.totalBudget < 10}
                      className="bg-[#8759ff] hover:bg-[#7c4dff] text-white disabled:opacity-50 disabled:cursor-not-allowed"
                    >
                      {isLoading ? 'Starting...' : 'Start Trading'}
@@ -372,7 +387,7 @@ export function TradingDashboard() {
           </Card>
         ) : (
           <div className="grid gap-4">
-            {sessions.map((session) => (
+            {sessions.map((session: TradingSession) => (
               <Card key={session.id} className="p-6 bg-[#1a1a1a] border-[#333]">
                 <div className="flex justify-between items-start mb-4">
                   <div>

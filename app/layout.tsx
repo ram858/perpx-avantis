@@ -8,6 +8,7 @@ import { IntegratedWalletProvider } from "@/lib/wallet/IntegratedWalletContext"
 import { AuthProvider } from "@/lib/auth/AuthContext"
 import { PerformanceMonitor } from "@/components/PerformanceMonitor"
 import { ToastProvider } from "@/components/ui/toast"
+import { BaseMiniAppProvider } from "@/components/BaseMiniAppProvider"
 import { Suspense } from "react"
 import "./globals.css"
 
@@ -32,6 +33,8 @@ export const metadata: Metadata = {
     title: "PrepX - AI Trading Bot",
     description: "Advanced AI-powered trading bot for cryptocurrency markets",
   },
+  // Note: fc:miniapp metadata should be added to HTML head via next/head or custom script
+  // This is handled by the Base SDK and manifest file
 }
 
 export const viewport: Viewport = {
@@ -48,9 +51,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
-        <ToastProvider>
-          <AuthProvider>
-            <IntegratedWalletProvider>
+        <BaseMiniAppProvider>
+          <ToastProvider>
+            <AuthProvider>
+              <IntegratedWalletProvider>
               <Suspense
                 fallback={
                   <div className="min-h-screen bg-[#0d0d0d] flex flex-col items-center justify-center px-6 relative overflow-hidden">
@@ -83,9 +87,10 @@ export default function RootLayout({
               >
                 <ErrorBoundary>{children}</ErrorBoundary>
               </Suspense>
-            </IntegratedWalletProvider>
-          </AuthProvider>
-        </ToastProvider>
+              </IntegratedWalletProvider>
+            </AuthProvider>
+          </ToastProvider>
+        </BaseMiniAppProvider>
         <Analytics />
         <PerformanceMonitor />
       </body>

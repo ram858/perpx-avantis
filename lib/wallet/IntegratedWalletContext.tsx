@@ -6,7 +6,7 @@ import { ClientWalletService } from '../services/ClientWalletService';
 import { RealBalanceService, RealBalanceData } from '../services/RealBalanceService';
 import { useAuth } from '../auth/AuthContext';
 import { useMetaMask } from '../hooks/useMetaMask';
-import { hasRealHyperliquidBalance } from './hyperliquidBalance';
+import { hasRealAvantisBalance } from './avantisBalance';
 
 // Types
 export interface Token {
@@ -35,9 +35,9 @@ export interface IntegratedWalletState {
   dailyChange: number;
   dailyChangePercentage: number;
   lastDayValue: number;
-  hyperliquidBalance: number;
-  isHyperliquidConnected: boolean;
-  hasRealHyperliquidBalance: boolean;
+  avantisBalance: number;
+  isAvantisConnected: boolean;
+  hasRealAvantisBalance: boolean;
   isLoading: boolean;
   error: string | null;
 }
@@ -71,9 +71,9 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     dailyChange: 0,
     dailyChangePercentage: 0,
     lastDayValue: 0,
-    hyperliquidBalance: 0,
-    isHyperliquidConnected: false,
-    hasRealHyperliquidBalance: false,
+    avantisBalance: 0,
+    isAvantisConnected: false,
+    hasRealAvantisBalance: false,
     isLoading: false,
     error: null
   });
@@ -121,17 +121,17 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         error: error instanceof Error ? error.message : 'Failed to load wallets'
       }));
     }
-  }, [user?.phoneNumber, token]);
+  }, [user?.fid, token]);
 
   // Load user wallets on mount
   useEffect(() => {
-    if (user?.phoneNumber && token) {
+    if (user?.fid && token) {
       refreshWallets();
     }
-  }, [user?.phoneNumber, token, refreshWallets]);
+  }, [user?.fid, token, refreshWallets]);
 
   const createWallet = useCallback(async (chain: string, mnemonic?: string): Promise<UserWallet | null> => {
-    if (!user?.phoneNumber || !token) return null;
+    if (!user?.fid || !token) return null;
 
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
@@ -154,7 +154,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       }));
       return null;
     }
-  }, [user?.phoneNumber, token, refreshWallets]);
+  }, [user?.fid, token, refreshWallets]);
 
   const switchToWallet = useCallback(async (walletId: string) => {
     const wallet = state.allWallets.find(w => w.id === walletId);
@@ -196,31 +196,30 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
 
       console.log(`[IntegratedWallet] Real balance fetched: $${balanceData.totalPortfolioValue.toFixed(2)}`);
 
-      // Check Hyperliquid connection and fetch balance
-      let hyperliquidBalance = 0;
-      let isHyperliquidConnected = false;
-      let hasRealHyperliquidBalanceFlag = false;
+      // Check Avantis connection and fetch balance
+      let avantisBalance = 0;
+      let isAvantisConnected = false;
+      let hasRealAvantisBalanceFlag = false;
       
-      // Use stored wallet address for Hyperliquid (not MetaMask account)
-      // MetaMask account might be different from the wallet we created
-      const hyperliquidAddress = state.primaryWallet.address;
+      // Use stored wallet private key for Avantis
+      const avantisPrivateKey = state.primaryWallet.privateKey;
       
-      
-      try {
-        // Check if wallet has real balance on Hyperliquid using MetaMask address
-        const hyperliquidStatus = await hasRealHyperliquidBalance(hyperliquidAddress);
-        hyperliquidBalance = hyperliquidStatus.balance;
-        isHyperliquidConnected = hyperliquidStatus.isConnected;
-        hasRealHyperliquidBalanceFlag = hyperliquidStatus.hasBalance;
-        
-      } catch (error) {
-        console.error('[IntegratedWallet] Error fetching Hyperliquid data:', error);
-        // If we can't fetch data, wallet is not connected to Hyperliquid
-        isHyperliquidConnected = false;
-        hasRealHyperliquidBalanceFlag = false;
+      if (avantisPrivateKey) {
+        try {
+          // Check if wallet has real balance on Avantis
+          const avantisStatus = await hasRealAvantisBalance(avantisPrivateKey);
+          avantisBalance = avantisStatus.balance;
+          isAvantisConnected = avantisStatus.isConnected;
+          hasRealAvantisBalanceFlag = avantisStatus.hasBalance;
+        } catch (error) {
+          console.error('[IntegratedWallet] Error fetching Avantis data:', error);
+          // If we can't fetch data, wallet is not connected to Avantis
+          isAvantisConnected = false;
+          hasRealAvantisBalanceFlag = false;
+        }
       }
 
-      const totalPortfolioValue = balanceData.totalPortfolioValue + hyperliquidBalance;
+      const totalPortfolioValue = balanceData.totalPortfolioValue + avantisBalance;
 
       setState(prev => ({
         ...prev,
@@ -231,9 +230,9 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         dailyChange: balanceData.dailyChange,
         dailyChangePercentage: balanceData.dailyChangePercentage,
         lastDayValue: balanceData.lastDayValue,
-        hyperliquidBalance,
-        isHyperliquidConnected,
-        hasRealHyperliquidBalance: hasRealHyperliquidBalanceFlag,
+        avantisBalance,
+        isAvantisConnected,
+        hasRealAvantisBalance: hasRealAvantisBalanceFlag,
         error: null
       }));
     } catch (error) {

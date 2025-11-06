@@ -38,17 +38,15 @@ export function useTrading() {
   const [error, setError] = useState<string | null>(null);
 
   const makeRequest = useCallback(async (url: string, options: RequestInit = {}) => {
-    // TEMPORARY: Skip authentication for testing
-    // TODO: Re-enable authentication once basic functionality is working
-    // if (!token) {
-    //   throw new Error('Not authenticated');
-    // }
+    if (!token) {
+      throw new Error('Not authenticated. Please login with Base Account.');
+    }
 
     const response = await fetch(url, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
-        // 'Authorization': `Bearer ${token}`,
+        'Authorization': `Bearer ${token}`,
         ...options.headers,
       },
     });

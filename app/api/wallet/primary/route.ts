@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { UserWalletService } from '@/lib/services/UserWalletService'
+import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService'
 import { AuthService } from '@/lib/services/AuthService'
 
-const userWalletService = new UserWalletService()
+const walletService = new BaseAccountWalletService()
 const authService = new AuthService()
 
 // GET /api/wallet/primary - Get user's primary trading wallet
@@ -16,9 +16,18 @@ export async function GET(request: NextRequest) {
     const token = authHeader.substring(7)
     const payload = await authService.verifyToken(token)
     
-    const wallet = await userWalletService.getPrimaryTradingWallet(payload.phoneNumber)
+    if (!payload.fid) {
+      return NextResponse.json(
+        { error: 'Base Account (FID) required' },
+        { status: 400 }
+      )
+    }
     
-    return NextResponse.json({ wallet })
+    const wallet = await walletService.getWalletAddress(payload.fid, 'ethereum')
+    
+    return NextResponse.json({ 
+      wallet: wallet ? { address: wallet, chain: 'ethereum' } : null 
+    })
   } catch (error) {
     console.error('Error fetching primary wallet:', error)
     return NextResponse.json(

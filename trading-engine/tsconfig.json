@@ -15,11 +15,15 @@
     "sourceMap": true
   },
   "include": [
-    "**/*.ts"
+    "api/**/*.ts",
+    "session-manager.ts",
+    "trading-bot.ts",
+    "websocket/**/*.ts"
   ],
   "exclude": [
     "node_modules",
-    "dist"
+    "dist",
+    "hyperliquid/**/*"
   ],
   "ts-node": {
     "esm": false,

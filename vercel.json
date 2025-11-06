@@ -1,0 +1,28 @@
+{
+  "buildCommand": "pnpm build",
+  "devCommand": "pnpm dev",
+  "installCommand": "pnpm install",
+  "framework": "nextjs",
+  "rewrites": [
+    {
+      "source": "/.well-known/farcaster.json",
+      "destination": "/.well-known/farcaster.json"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/.well-known/(.*)",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        }
+      ]
+    }
+  ]
+}
+

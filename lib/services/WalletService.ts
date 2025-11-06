@@ -1,10 +1,10 @@
 import { EncryptionService } from './EncryptionService'
-import { DatabaseService } from './DatabaseService'
-import { AuthService } from './AuthService'
 import { IGenericWalletService, WalletInfo } from './wallets/IGenericWalletService'
 
 export interface CreateWalletRequest {
-  phoneNumber: string
+  phoneNumber?: string // Optional for Base Account users
+  userId?: string // For Base Account users (FID-based)
+  fid?: number // Farcaster ID for Base Account users
   chain: string
   mnemonic?: string
 }
@@ -23,14 +23,22 @@ export interface CreateWalletResponse {
 
 export class WalletService {
   private encryptionService: EncryptionService
-  private databaseService: DatabaseService
-  private authService: AuthService
+  private databaseService: any = null // Optional - only if database is used
+  private authService: any = null // Optional
   private walletServices: Map<string, IGenericWalletService>
 
   constructor() {
     this.encryptionService = new EncryptionService()
-    this.databaseService = new DatabaseService()
-    this.authService = new AuthService()
+    // Database is optional for Base mini-apps
+    if (process.env.USE_DATABASE === 'true') {
+      try {
+        // @ts-ignore - Optional dependency
+        const { DatabaseService } = require('./DatabaseService')
+        this.databaseService = new DatabaseService()
+      } catch (e) {
+        // Database not available - that's fine
+      }
+    }
     this.walletServices = new Map()
   }
 
@@ -80,7 +88,26 @@ export class WalletService {
 
   async createOrGetWallet(request: CreateWalletRequest): Promise<CreateWalletResponse> {
     try {
-      const { phoneNumber, chain, mnemonic } = request
+      const { phoneNumber, userId, fid, chain, mnemonic } = request
+
+      // For Base Account users (FID), use minimal storage instead of database
+      if (fid || userId) {
+        // This will be handled by BaseAccountWalletService
+        // This method is kept for backward compatibility
+        console.warn('createOrGetWallet called with FID/userId - use BaseAccountWalletService instead')
+        return {
+          success: false,
+          error: 'Use BaseAccountWalletService for Base Account users'
+        }
+      }
+
+      // Legacy phone-based wallet creation (deprecated)
+      if (!phoneNumber) {
+        return {
+          success: false,
+          error: 'Phone number or FID required'
+        }
+      }
 
       // Check if database service is available
       if (!this.databaseService) {
@@ -134,9 +161,11 @@ export class WalletService {
       const encryptedPrivateKey = encryptionResult.encrypted
       const iv = encryptionResult.iv
       
-      // Store wallet in database
+      // Store wallet in database (if phone number provided)
+      // Note: For Base Account users, wallets are stored via WalletStorageService
       const storedWallet = await this.databaseService.createWallet({
-        phoneNumber,
+        userId: phoneNumber, // Temporary - will be updated to use userId
+        phoneNumber: phoneNumber, // Legacy support
         chain: chain.toLowerCase(),
         address: walletInfo.address,
         privateKey: encryptedPrivateKey,
@@ -182,7 +211,7 @@ export class WalletService {
       const wallets = await this.databaseService.findWalletsByPhone(phoneNumber)
       
       // Return wallets without private keys for security
-      return wallets.map(wallet => ({
+      return wallets.map((wallet: any) => ({
         id: wallet.id,
         address: wallet.address,
         chain: wallet.chain,

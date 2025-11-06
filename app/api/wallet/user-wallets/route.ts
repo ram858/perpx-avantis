@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { UserWalletService } from '@/lib/services/UserWalletService'
+import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService'
 import { AuthService } from '@/lib/services/AuthService'
 
-const userWalletService = new UserWalletService()
+const walletService = new BaseAccountWalletService()
 const authService = new AuthService()
 
 // GET /api/wallet/user-wallets - Get user's wallets
@@ -16,7 +16,16 @@ export async function GET(request: NextRequest) {
     const token = authHeader.substring(7)
     const payload = await authService.verifyToken(token)
     
-    const wallets = await userWalletService.getAllUserWallets(payload.phoneNumber)
+    if (!payload.fid) {
+      return NextResponse.json(
+        { error: 'Base Account (FID) required' },
+        { status: 400 }
+      )
+    }
+    
+    // For Base Account, users typically have one wallet per chain
+    const wallet = await walletService.getWalletAddress(payload.fid, 'ethereum')
+    const wallets = wallet ? [{ address: wallet, chain: 'ethereum' }] : []
     
     return NextResponse.json({ wallets })
   } catch (error) {
@@ -39,9 +48,16 @@ export async function POST(request: NextRequest) {
     const token = authHeader.substring(7)
     const payload = await authService.verifyToken(token)
     
+    if (!payload.fid) {
+      return NextResponse.json(
+        { error: 'Base Account (FID) required' },
+        { status: 400 }
+      )
+    }
+    
     const { chain, mnemonic } = await request.json()
     
-    const wallet = await userWalletService.createWallet(payload.phoneNumber, chain, mnemonic)
+    const wallet = await walletService.getOrCreateWallet(payload.fid, chain || 'ethereum')
     
     if (!wallet) {
       return NextResponse.json(

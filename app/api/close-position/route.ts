@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { HyperliquidTradingService } from '@/lib/services/HyperliquidTradingService'
+import { AvantisTradingService } from '@/lib/services/AvantisTradingService'
 import { AuthService } from '@/lib/services/AuthService'
+import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService'
 
-const tradingService = new HyperliquidTradingService()
+const tradingService = new AvantisTradingService()
 const authService = new AuthService()
+const walletService = new BaseAccountWalletService()
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,27 +17,57 @@ export async function POST(request: NextRequest) {
 
     const token = authHeader.substring(7)
     const payload = await authService.verifyToken(token)
+
+    // FID is required for Base Account users
+    if (!payload.fid) {
+      return NextResponse.json(
+        { error: 'Base Account (FID) required' },
+        { status: 400 }
+      )
+    }
     
-    // Parse request body
-    const { symbol } = await request.json()
+    // Parse request body - Avantis uses pair_index instead of symbol
+    const { pair_index, symbol } = await request.json()
     
-    if (!symbol) {
-      return NextResponse.json({ error: 'Symbol is required' }, { status: 400 })
+    // pair_index is required for Avantis
+    if (!pair_index && !symbol) {
+      return NextResponse.json({ 
+        error: 'pair_index is required (Avantis uses pair indices, not symbols)' 
+      }, { status: 400 })
     }
 
-    console.log(`[ClosePosition] Closing position for ${symbol} for user ${payload.phoneNumber}`)
+    // Get user's wallet for private key using FID
+    const wallet = await walletService.getWalletWithKey(payload.fid, 'ethereum')
+    
+    if (!wallet || !wallet.privateKey) {
+      return NextResponse.json({ 
+        error: 'No wallet found with private key' 
+      }, { status: 404 })
+    }
+
+    // If symbol provided, we need to resolve it to pair_index
+    // For now, require pair_index directly
+    const pairIndex = pair_index || parseInt(symbol) // Fallback: try parsing symbol as number
+    
+    if (!pairIndex || isNaN(pairIndex)) {
+      return NextResponse.json({ 
+        error: 'Valid pair_index is required. Please provide the pair_index from the position data.' 
+      }, { status: 400 })
+    }
+
+    console.log(`[ClosePosition] Closing position with pair_index ${pairIndex} for FID ${payload.fid}`)
 
     // Use the trading service to close the position
-    const result = await tradingService.closePosition(symbol)
+    const result = await tradingService.closePosition(pairIndex)
     
     if (result.success) {
-      console.log(`[ClosePosition] Successfully closed position for ${symbol}`)
+      console.log(`[ClosePosition] Successfully closed position for pair_index ${pairIndex}`)
       return NextResponse.json({
         success: true,
         message: result.message
       })
     } else {
-      console.error(`[ClosePosition] Failed to close position for ${symbol}: ${result.message}`)
+      console.error(`[ClosePosition] Failed to close position for pair_index ${pairIndex}: ${result.message}`)
       return NextResponse.json({
         success: false,
         error: result.message

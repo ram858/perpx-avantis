@@ -62,7 +62,25 @@ export class UserWalletService {
   }
 
   /**
-   * Get user's primary Ethereum wallet with private key for trading
+   * Get user's primary Ethereum wallet with private key for trading (by userId)
+   */
+  async getPrimaryTradingWalletWithKeyByUserId(userId: string): Promise<UserWallet | null> {
+    try {
+      console.log(`[UserWalletService] Getting wallet with key for userId: ${userId}`)
+      
+      // Note: This method is deprecated for Base Account users - use BaseAccountWalletService instead
+      console.log(`[UserWalletService] getPrimaryTradingWalletWithKeyByUserId is deprecated - use BaseAccountWalletService for Base Account`)
+      return null
+      
+    } catch (error) {
+      console.error('Error getting primary trading wallet with key:', error)
+      return null
+    }
+  }
+
+  /**
+   * Get user's primary Ethereum wallet with private key for trading (legacy - by phoneNumber)
+   * @deprecated Use getPrimaryTradingWalletWithKeyByUserId instead
    */
   async getPrimaryTradingWalletWithKey(phoneNumber: string): Promise<UserWallet | null> {
     try {

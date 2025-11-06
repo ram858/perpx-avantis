@@ -1,8 +1,7 @@
 "use client"
 
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth/AuthContext'
+import { useBaseMiniApp } from '@/lib/hooks/useBaseMiniApp'
 
 interface ProtectedRouteProps {
   children: React.ReactNode
@@ -11,35 +10,23 @@ interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children, fallback }: ProtectedRouteProps): JSX.Element | null {
   const { isAuthenticated, isLoading } = useAuth()
-  const router = useRouter()
+  const { isBaseContext } = useBaseMiniApp()
 
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.push('/login')
-    }
-  }, [isAuthenticated, isLoading, router])
-
+  // Show loading state
   if (isLoading) {
     return (
       (fallback as JSX.Element) || (
         <div className="min-h-screen bg-[#0d0d0d] flex flex-col items-center justify-center px-6 relative overflow-hidden">
-          {/* Background gradient circles */}
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="w-80 h-80 rounded-full bg-gradient-to-br from-[#8759ff]/20 to-[#2c2146]/30 blur-xl animate-pulse"></div>
           </div>
-
-          {/* Main content */}
           <div className="relative z-10 flex flex-col items-center text-center space-y-8">
-            {/* Logo/Icon */}
             <div className="relative">
               <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#8759ff] to-[#A855F7] flex items-center justify-center animate-spin">
                 <div className="w-8 h-8 bg-white rounded-sm"></div>
               </div>
-              {/* Pulsing ring */}
               <div className="absolute inset-0 w-16 h-16 rounded-full border-2 border-[#8759ff]/30 animate-ping"></div>
             </div>
-
-            {/* PrepX Title */}
             <div className="space-y-2">
               <h1 className="text-2xl font-bold bg-gradient-to-r from-[#8759ff] to-[#A855F7] bg-clip-text text-transparent">
                 PrepX AI
@@ -52,8 +39,32 @@ export function ProtectedRoute({ children, fallback }: ProtectedRouteProps): JSX
     )
   }
 
+  // If not in Base context, show error
+  if (!isBaseContext) {
+    return (
+      <div className="min-h-screen bg-[#0d0d0d] flex flex-col items-center justify-center px-6">
+        <div className="max-w-md text-center space-y-4">
+          <h1 className="text-2xl font-bold text-white">Base App Required</h1>
+          <p className="text-gray-400">
+            This app is designed to run in the Base app. Please launch it from Base to continue.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // If not authenticated in Base context, show error
   if (!isAuthenticated) {
-    return null // Will redirect to login
+    return (
+      <div className="min-h-screen bg-[#0d0d0d] flex flex-col items-center justify-center px-6">
+        <div className="max-w-md text-center space-y-4">
+          <h1 className="text-2xl font-bold text-white">Authentication Failed</h1>
+          <p className="text-gray-400">
+            Unable to authenticate with Base Account. Please try again.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return <>{children}</>

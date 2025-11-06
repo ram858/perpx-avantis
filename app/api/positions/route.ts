@@ -1,26 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { UserWalletService } from '@/lib/services/UserWalletService'
+import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService'
 import { AuthService } from '@/lib/services/AuthService'
-import { getHyperliquidBalance } from '@/lib/wallet/hyperliquidBalance'
+import { AvantisClient } from '@/lib/services/AvantisClient'
 
-const userWalletService = new UserWalletService()
+const walletService = new BaseAccountWalletService()
 const authService = new AuthService()
 
 export async function GET(request: NextRequest) {
   try {
     console.log('[API] Positions endpoint called')
     
-    // TEMPORARY: Skip authentication for testing
-    // TODO: Re-enable authentication once basic functionality is working
+    // Verify authentication
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const token = authHeader.substring(7)
+    const payload = await authService.verifyToken(token)
     
-    // Mock user data for testing
-    const user = { phoneNumber: '9808110921' }
-    const wallet = {
-      address: '0xaa0bA0700Cfd1489d08C63C4bd177638Be4C86F6',
-      privateKey: '0xc2614e090f4a9e229c197256ef9c5b0647fadfc44cb1da5b2d5e6969b68ba61b'
+    // FID is required for Base Account users
+    if (!payload.fid) {
+      return NextResponse.json({
+        positions: [],
+        totalPnL: 0,
+        openPositions: 0,
+        error: 'Base Account (FID) required'
+      })
     }
     
-    console.log('[API] Getting positions for user:', user.phoneNumber)
+    // Get user's wallet using FID
+    // For Base Accounts, we may only have an address (no private key)
+    const wallet = await walletService.getWalletWithKey(payload.fid, 'ethereum')
+    
+    if (!wallet || !wallet.address) {
+      return NextResponse.json({
+        positions: [],
+        totalPnL: 0,
+        openPositions: 0,
+        error: 'No trading wallet found'
+      })
+    }
+    
+    // Check if this is a Base Account (no private key)
+    const isBaseAccount = !wallet.privateKey || wallet.privateKey.length === 0;
+    
+    console.log('[API] Getting positions for FID:', payload.fid)
     console.log('[API] Using wallet address:', wallet.address)
 
     // Try to get positions from trading engine first
@@ -28,7 +53,11 @@ export async function GET(request: NextRequest) {
     
     try {
       console.log(`[API] Attempting to fetch positions from trading engine: ${tradingEngineUrl}/api/positions`)
-      const tradingResponse = await fetch(`${tradingEngineUrl}/api/positions`, {
+      // For Base Accounts, pass address and isBaseAccount flag
+      const queryParams = isBaseAccount 
+        ? `?address=${wallet.address}&isBaseAccount=true`
+        : '';
+      const tradingResponse = await fetch(`${tradingEngineUrl}/api/positions${queryParams}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -52,37 +81,79 @@ export async function GET(request: NextRequest) {
       console.error('[API] Trading engine positions not available:', tradingError)
     }
 
-    // Fallback: Fetch positions directly from Hyperliquid
+    // Fallback: Fetch positions directly from Avantis
     try {
-      const balance = await getHyperliquidBalance(wallet.address)
+      const avantisApiUrl = process.env.AVANTIS_API_URL || 'http://localhost:8000'
       
-      // Convert Hyperliquid positions to our format
-      const positions = balance.positions.map(pos => ({
+      if (isBaseAccount && wallet.address) {
+        // For Base Accounts, try to query by address
+        try {
+          const { getAvantisBalanceByAddress } = await import('@/lib/wallet/avantisBalance');
+          const balanceData = await getAvantisBalanceByAddress(wallet.address);
+          
+          const formattedPositions = balanceData.positions.map(pos => ({
+            coin: pos.symbol,
+            pair_index: pos.pair_index,
+            size: Math.abs(pos.size).toString(),
+            side: pos.is_long ? 'long' : 'short',
+            entryPrice: pos.entryPrice,
+            markPrice: pos.currentPrice,
+            pnl: pos.pnl,
+            roe: pos.entryPrice > 0 ? (pos.pnl / (Math.abs(pos.size) * pos.entryPrice)) * 100 : 0,
+            positionValue: Math.abs(pos.size) * pos.currentPrice,
+            margin: (Math.abs(pos.size) / pos.leverage).toString(),
+            leverage: pos.leverage.toString()
+          }));
+
+          return NextResponse.json({
+            positions: formattedPositions,
+            totalPnL: balanceData.positions.reduce((sum, pos) => sum + pos.pnl, 0),
+            openPositions: balanceData.positions.length
+          });
+        } catch (addressError) {
+          console.error('[API] Failed to query by address, trying with private key:', addressError);
+          // Fall through to try with private key if available
+        }
+      }
+      
+      // For traditional wallets or if address query failed
+      if (wallet.privateKey) {
+        const avantisClient = new AvantisClient({ 
+          baseUrl: avantisApiUrl,
+          privateKey: wallet.privateKey 
+        })
+        
+        const positions = await avantisClient.getPositions()
+        const balance = await avantisClient.getBalance()
+      
+      // Convert Avantis positions to our format
+      const formattedPositions = positions.map(pos => ({
         coin: pos.symbol,
-        size: pos.size.toString(),
-        side: pos.size > 0 ? 'long' : 'short',
-        entryPrice: pos.entryPrice,
-        markPrice: pos.markPrice,
+        pair_index: pos.pair_index,
+        size: (pos.collateral * pos.leverage).toString(),
+        side: pos.is_long ? 'long' : 'short',
+        entryPrice: pos.entry_price,
+        markPrice: pos.current_price,
         pnl: pos.pnl,
-        roe: pos.pnl / Math.abs(pos.size * pos.entryPrice) * 100, // Calculate ROE
-        positionValue: Math.abs(pos.size * pos.markPrice),
-        margin: '0', // Not available from Hyperliquid API
-        leverage: '1' // Not available from Hyperliquid API
+        roe: pos.entry_price > 0 ? (pos.pnl / (pos.collateral * pos.leverage)) * 100 : 0,
+        positionValue: pos.collateral * pos.leverage,
+        margin: pos.collateral.toString(),
+        leverage: pos.leverage.toString()
       }))
 
       return NextResponse.json({
-        positions,
-        totalPnL: balance.totalValue,
+        positions: formattedPositions,
+        totalPnL: balance.total_collateral || 0,
         openPositions: positions.length
       })
-    } catch (hyperliquidError) {
-      console.error('[API] Hyperliquid fallback failed:', hyperliquidError)
-      // Return empty positions if Hyperliquid is not available
+    } catch (avantisError) {
+      console.error('[API] Avantis fallback failed:', avantisError)
+      // Return empty positions if Avantis is not available
       return NextResponse.json({
         positions: [],
         totalPnL: 0,
         openPositions: 0,
-        error: 'Trading engine and Hyperliquid not available'
+        error: 'Trading engine and Avantis not available'
       })
     }
 

@@ -95,7 +95,7 @@ export default function ChatPage() {
       setTradingPhase('active')
       setMessages([{
         type: "bot",
-        content: `📊 **Live Trading Dashboard**\n\nYou have active positions running on Hyperliquid. Here's your current trading status:`,
+        content: `📊 **Live Trading Dashboard**\n\nYou have active positions running on Avantis. Here's your current trading status:`,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       }])
       return
@@ -132,7 +132,7 @@ export default function ChatPage() {
         // Start real trading
         setMessages([{
           type: "bot",
-          content: `💰 Starting REAL TRADING with $${investmentNum} investment targeting $${profitNum} profit. This will use actual money on Hyperliquid!`,
+          content: `💰 Starting REAL TRADING with $${investmentNum} investment targeting $${profitNum} profit. This will use actual money on Avantis!`,
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         }])
         
@@ -810,7 +810,7 @@ export default function ChatPage() {
             </Card>
 
             {/* Show position cards when trading is active */}
-            {/* Open Positions - Show real positions from Hyperliquid */}
+            {/* Open Positions - Show real positions from Avantis */}
             {positionData && positionData.openPositions > 0 && (
               <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4 mx-2 sm:mx-4">
                 <div className="flex items-center justify-between mb-4">

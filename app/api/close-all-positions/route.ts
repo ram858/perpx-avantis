@@ -1,43 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { AuthService } from '@/lib/services/AuthService'
+import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService'
+import { AvantisTradingService } from '@/lib/services/AvantisTradingService'
+
+const authService = new AuthService()
+const walletService = new BaseAccountWalletService()
+const tradingService = new AvantisTradingService()
 
 export async function POST(request: NextRequest) {
   try {
     console.log('[API] Close all positions endpoint called')
 
-    // TEMPORARY: Skip authentication for testing
-    // TODO: Re-enable authentication once basic functionality is working
-
-    // Call the trading engine to close all positions
-    const tradingEngineUrl = process.env.TRADING_ENGINE_URL || 'http://localhost:3001'
-    
-    console.log(`[API] Calling trading engine to close all positions: ${tradingEngineUrl}/api/close-all-positions`)
-    
-    const response = await fetch(`${tradingEngineUrl}/api/close-all-positions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-
-    if (!response.ok) {
-      let errorData;
-      try {
-        errorData = await response.json()
-      } catch (parseError) {
-        const textResponse = await response.text()
-        console.error('[API] Non-JSON response from trading engine:', textResponse.substring(0, 200))
-        errorData = { error: `Trading engine error: ${response.status} ${response.statusText}` }
-      }
-      return NextResponse.json({
-        success: false,
-        error: errorData.error || 'Failed to close all positions'
-      }, { status: response.status })
+    // Verify authentication
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const result = await response.json()
-    console.log('[API] Trading engine response:', result)
+    const token = authHeader.substring(7)
+    const payload = await authService.verifyToken(token)
+
+    // FID is required for Base Account users
+    if (!payload.fid) {
+      return NextResponse.json(
+        { error: 'Base Account (FID) required' },
+        { status: 400 }
+      )
+    }
+
+    // Get user's wallet using FID
+    const wallet = await walletService.getWalletWithKey(payload.fid, 'ethereum')
     
-    return NextResponse.json(result)
+    if (!wallet || !wallet.privateKey) {
+      return NextResponse.json({ 
+        error: 'No wallet found with private key' 
+      }, { status: 404 })
+    }
+
+    // Use Avantis trading service to close all positions
+    const result = await tradingService.closeAllPositions(payload.fid)
+    
+    if (result.success) {
+      return NextResponse.json(result)
+    } else {
+      return NextResponse.json(result, { status: 400 })
+    }
+
 
   } catch (error) {
     console.error('[API] Error closing all positions:', error)

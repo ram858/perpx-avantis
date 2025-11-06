@@ -1,11 +1,12 @@
 "use client"
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { useRouter } from 'next/navigation'
+import { useBaseMiniApp } from '@/lib/hooks/useBaseMiniApp'
 
 interface User {
   id: string
-  phoneNumber: string
+  fid: number // Farcaster ID for Base Account
+  baseAccountAddress: string | null // User's Base Account address
   hasWallet: boolean
   createdAt: Date
 }
@@ -38,97 +39,73 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const router = useRouter()
+  const { isBaseContext, authenticate: authenticateBase, isReady: baseReady } = useBaseMiniApp()
 
   const isAuthenticated = !!user
 
   useEffect(() => {
-    // Check for existing authentication on mount
+    // Only authenticate if in Base context
     const checkAuth = async () => {
+      if (!isBaseContext) {
+        console.warn('⚠️ App is not running in Base app context. Base Account is required.')
+        setIsLoading(false)
+        return
+      }
+
+      // Wait for Base SDK to be ready
+      if (!baseReady) {
+        return
+      }
+
       try {
-        const token = localStorage.getItem('prepx_token')
-        const userData = localStorage.getItem('prepx_user')
-
-        if (token && userData) {
-          setToken(token)
-          // Check if it's a demo token (development mode)
-          if (token.startsWith('dev_token_')) {
-            console.log('Using demo token, skipping verification')
-            const user = JSON.parse(userData)
-            setUser(user)
-          } else {
-            // Verify real JWT token is still valid
-            try {
-              const response = await fetch('/api/auth/verify-token', {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Content-Type': 'application/json',
-                },
-              })
-
-              if (response.ok) {
-                const user = JSON.parse(userData)
-                console.log('✅ Authentication verified, user set:', user.phoneNumber)
-                setUser(user)
-              } else {
-                console.log('❌ Token verification failed, clearing storage')
-                // Token is invalid, clear storage
-                localStorage.removeItem('prepx_token')
-                localStorage.removeItem('prepx_user')
-                localStorage.removeItem('prepx_authenticated')
-                setToken(null)
-              }
-            } catch (fetchError) {
-              console.error('Network error during token verification:', fetchError)
-              // On network error, still set the user if we have valid data
-              const user = JSON.parse(userData)
-              console.log('⚠️ Network error, using cached user data:', user.phoneNumber)
-              setUser(user)
-            }
+        console.log('🔵 Base context detected, authenticating with Base Account...')
+        const baseAuth = await authenticateBase()
+        
+        if (baseAuth) {
+          // Base Account authentication successful
+          const baseUser: User = {
+            id: `fid_${baseAuth.fid}`,
+            fid: baseAuth.fid,
+            baseAccountAddress: baseAuth.address || null, // User's Base Account address
+            hasWallet: !!baseAuth.address, // Has wallet if we have an address
+            createdAt: new Date(),
           }
+          
+          setToken(baseAuth.token)
+          setUser(baseUser)
+          console.log('✅ Base Account authentication successful, FID:', baseAuth.fid, 'Address:', baseAuth.address)
         } else {
-          console.log('No authentication data found')
+          console.error('❌ Base Account authentication failed')
         }
       } catch (error) {
         console.error('Auth check failed:', error)
-        // Clear storage on error
-        localStorage.removeItem('prepx_token')
-        localStorage.removeItem('prepx_user')
-        localStorage.removeItem('prepx_authenticated')
         setToken(null)
+        setUser(null)
       } finally {
         setIsLoading(false)
       }
     }
 
     checkAuth()
-  }, [])
+  }, [isBaseContext, baseReady, authenticateBase])
 
   const login = (token: string, userData: User) => {
-    console.log('🔐 Login called, setting user:', userData.phoneNumber)
-    localStorage.setItem('prepx_token', token)
-    localStorage.setItem('prepx_user', JSON.stringify(userData))
-    localStorage.setItem('prepx_authenticated', 'true')
+    console.log('🔐 Login called, setting user FID:', userData.fid)
     setToken(token)
     setUser(userData)
   }
 
   const logout = () => {
-    localStorage.removeItem('prepx_token')
-    localStorage.removeItem('prepx_user')
-    localStorage.removeItem('prepx_authenticated')
-    localStorage.removeItem('prepx_phone')
     setToken(null)
     setUser(null)
-    router.push('/login')
+    // Note: In Base app, users typically can't "logout" - they're always authenticated
+    console.log('Logged out')
   }
 
   const updateUser = (userData: Partial<User>) => {
     if (user) {
       const updatedUser = { ...user, ...userData }
       setUser(updatedUser)
-      localStorage.setItem('prepx_user', JSON.stringify(updatedUser))
     }
   }
 
