@@ -126,26 +126,27 @@ export async function GET(request: NextRequest) {
         const positions = await avantisClient.getPositions()
         const balance = await avantisClient.getBalance()
       
-      // Convert Avantis positions to our format
-      const formattedPositions = positions.map(pos => ({
-        coin: pos.symbol,
-        pair_index: pos.pair_index,
-        size: (pos.collateral * pos.leverage).toString(),
-        side: pos.is_long ? 'long' : 'short',
-        entryPrice: pos.entry_price,
-        markPrice: pos.current_price,
-        pnl: pos.pnl,
-        roe: pos.entry_price > 0 ? (pos.pnl / (pos.collateral * pos.leverage)) * 100 : 0,
-        positionValue: pos.collateral * pos.leverage,
-        margin: pos.collateral.toString(),
-        leverage: pos.leverage.toString()
-      }))
+        // Convert Avantis positions to our format
+        const formattedPositions = positions.map(pos => ({
+          coin: pos.symbol,
+          pair_index: pos.pair_index,
+          size: (pos.collateral * pos.leverage).toString(),
+          side: pos.is_long ? 'long' : 'short',
+          entryPrice: pos.entry_price,
+          markPrice: pos.current_price,
+          pnl: pos.pnl,
+          roe: pos.entry_price > 0 ? (pos.pnl / (pos.collateral * pos.leverage)) * 100 : 0,
+          positionValue: pos.collateral * pos.leverage,
+          margin: pos.collateral.toString(),
+          leverage: pos.leverage.toString()
+        }))
 
-      return NextResponse.json({
-        positions: formattedPositions,
-        totalPnL: balance.total_collateral || 0,
-        openPositions: positions.length
-      })
+        return NextResponse.json({
+          positions: formattedPositions,
+          totalPnL: balance.total_collateral || 0,
+          openPositions: positions.length
+        })
+      }
     } catch (avantisError) {
       console.error('[API] Avantis fallback failed:', avantisError)
       // Return empty positions if Avantis is not available

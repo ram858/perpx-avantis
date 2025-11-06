@@ -36,7 +36,7 @@ export interface SessionStatus {
 }
 
 export class TradingSessionManager {
-  private tradingBot: WebTradingBot;
+  private tradingBot: InstanceType<typeof WebTradingBot>;
   private sessions: Map<string, {
     config: TradingConfig;
     status: SessionStatus;

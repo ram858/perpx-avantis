@@ -101,7 +101,7 @@ export function BaseAccountTradingOptions({ onFallbackWalletCreated }: BaseAccou
           <h4 className="text-sm font-medium text-white mb-2">Base Account (Manual Trading)</h4>
           <p className="text-sm text-[#9ca3af] mb-3">
             Use your Base Account for manual trading. Transactions will be signed via Base Account SDK.
-            You'll need to approve each transaction.
+            You&apos;ll need to approve each transaction.
           </p>
           <div className="flex items-center space-x-2">
             <div className="flex-1">

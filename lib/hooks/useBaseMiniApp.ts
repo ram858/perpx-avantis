@@ -59,13 +59,17 @@ export function useBaseMiniApp() {
 
   // Get Base Account address from provider
   const getBaseAccountAddress = useCallback(async (): Promise<string | null> => {
-    if (!isBaseContext || !sdk?.provider) {
+    if (!isBaseContext) {
       return null;
     }
 
     try {
       // Get the provider from Base Account SDK
-      const provider = sdk.provider;
+      // Type assertion needed as SDK types may not include provider
+      const provider = (sdk as any)?.provider;
+      if (!provider) {
+        return null;
+      }
       
       // Get accounts from provider (Base Account address)
       const accounts = await provider.request({ method: 'eth_accounts' });

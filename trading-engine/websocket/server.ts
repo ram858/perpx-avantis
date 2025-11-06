@@ -1,4 +1,4 @@
-import { WebSocketServer, WebSocket } from 'ws';
+import { WebSocketServer, WebSocket, type Data } from 'ws';
 import { TradingSessionManager } from '../session-manager.js';
 
 export interface WebSocketMessage {
@@ -34,7 +34,7 @@ export class TradingWebSocketServer {
       console.log(`[WEBSOCKET] Client connected from ${clientIP}`);
       
       // Set up message handling
-      ws.on('message', (message: WebSocket.Data) => {
+      ws.on('message', (message: Data) => {
         try {
           const data: WebSocketMessage = JSON.parse(message.toString());
           this.handleMessage(ws, data);
