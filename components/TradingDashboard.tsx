@@ -10,6 +10,7 @@ import { NavigationHeader } from './NavigationHeader';
 import { LoadingSkeleton, CardSkeleton } from './ui/loading-skeleton';
 import { useToast } from './ui/toast';
 import { BaseAccountTradingOptions } from './BaseAccountTradingOptions';
+import { BaseAccountTradingPanel } from './BaseAccountTradingPanel';
 import { useBaseMiniApp } from '@/lib/hooks/useBaseMiniApp';
 
 export function TradingDashboard() {
@@ -183,15 +184,39 @@ export function TradingDashboard() {
       <div className="px-4 sm:px-6 space-y-6 max-w-md mx-auto py-6">
         {/* Base Account Trading Options */}
         {isBaseContext && (
-          <BaseAccountTradingOptions
-            onFallbackWalletCreated={() => {
-              addToast({
-                type: 'success',
-                title: 'Fallback wallet created',
-                message: 'You can now use automated trading strategies with the fallback wallet.'
-              });
-            }}
-          />
+          <>
+            <BaseAccountTradingOptions
+              onFallbackWalletCreated={() => {
+                addToast({
+                  type: 'success',
+                  title: 'Fallback wallet created',
+                  message: 'You can now use automated trading strategies with the fallback wallet.'
+                });
+              }}
+            />
+            {/* Base Account Manual Trading Panel */}
+            {sessions.length > 0 && sessions[0]?.status === 'running' && (
+              <BaseAccountTradingPanel
+                sessionId={sessions[0].id}
+                onPositionOpened={() => {
+                  loadSessions();
+                  addToast({
+                    type: 'success',
+                    title: 'Position opened',
+                    message: 'Your position is being processed. Check positions in a moment.'
+                  });
+                }}
+                onPositionClosed={() => {
+                  loadSessions();
+                  addToast({
+                    type: 'success',
+                    title: 'Position closed',
+                    message: 'Your position is being closed. Check positions in a moment.'
+                  });
+                }}
+              />
+            )}
+          </>
         )}
 
                {/* Simplified wallet status - no complex connection guides needed */}

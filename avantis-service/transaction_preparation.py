@@ -81,17 +81,39 @@ async def prepare_open_position_transaction(
                     contract_address = contract['address']
                 
                 # Prepare transaction data
-                # This would encode the function call
-                # For now, return the parameters for frontend to encode
+                # Try to get encoded transaction data from SDK if available
+                # Otherwise, return parameters for frontend encoding
                 transaction_data = {
-                    'to': contract_address or '0x0000000000000000000000000000000000000000',  # Will be filled by actual contract
-                    'data': '0x',  # Frontend will encode function call
+                    'to': contract_address or '0x0000000000000000000000000000000000000000',
+                    'data': '0x',  # Will be encoded by SDK or frontend
                     'value': '0x0',
                     'from': address,
                 }
                 
-                # Store function parameters for encoding
-                transaction_data['function'] = function_names[0]  # Use first function name
+                # Try to encode using SDK if available
+                try:
+                    # Check if trader_client has encoding capabilities
+                    if hasattr(trader_client, 'encode_function_call'):
+                        encoded_data = await trader_client.encode_function_call(
+                            contract_name=contract_name,
+                            function_name=function_names[0],
+                            **function_params
+                        )
+                        if encoded_data:
+                            transaction_data['data'] = encoded_data
+                    elif hasattr(trader_client, 'encode_transaction'):
+                        encoded_data = await trader_client.encode_transaction(
+                            contract_name=contract_name,
+                            function_name=function_names[0],
+                            params=function_params
+                        )
+                        if encoded_data:
+                            transaction_data['data'] = encoded_data
+                except Exception as e:
+                    logger.debug(f"Could not encode transaction via SDK: {e}. Frontend will handle encoding.")
+                
+                # Store function parameters for frontend encoding if needed
+                transaction_data['function'] = function_names[0]
                 transaction_data['contract'] = contract_name
                 transaction_data['params'] = function_params
                 
@@ -166,10 +188,31 @@ async def prepare_close_position_transaction(
                 
                 transaction_data = {
                     'to': contract_address or '0x0000000000000000000000000000000000000000',
-                    'data': '0x',  # Frontend will encode function call
+                    'data': '0x',  # Will be encoded by SDK or frontend
                     'value': '0x0',
                     'from': address,
                 }
+                
+                # Try to encode using SDK if available
+                try:
+                    if hasattr(trader_client, 'encode_function_call'):
+                        encoded_data = await trader_client.encode_function_call(
+                            contract_name=contract_name,
+                            function_name=function_names[0],
+                            pairIndex=pair_index
+                        )
+                        if encoded_data:
+                            transaction_data['data'] = encoded_data
+                    elif hasattr(trader_client, 'encode_transaction'):
+                        encoded_data = await trader_client.encode_transaction(
+                            contract_name=contract_name,
+                            function_name=function_names[0],
+                            params={'pairIndex': pair_index}
+                        )
+                        if encoded_data:
+                            transaction_data['data'] = encoded_data
+                except Exception as e:
+                    logger.debug(f"Could not encode transaction via SDK: {e}. Frontend will handle encoding.")
                 
                 transaction_data['function'] = function_names[0]
                 transaction_data['contract'] = contract_name

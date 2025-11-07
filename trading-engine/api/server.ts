@@ -88,7 +88,7 @@ app.post('/api/trading/start', async (req, res) => {
       maxBudget: parseFloat(maxBudget),
       profitGoal: parseFloat(profitGoal),
       maxPerSession: parseInt(maxPerSession),
-      userPhoneNumber,
+      userPhoneNumber: userPhoneNumber || undefined, // Optional for Base Accounts
       walletAddress,
       isBaseAccount: Boolean(isBaseAccount)
     });
