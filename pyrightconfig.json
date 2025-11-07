@@ -1,0 +1,28 @@
+{
+  "include": [
+    "avantis-service"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/venv"
+  ],
+  "executionEnvironments": [
+    {
+      "root": "avantis-service",
+      "pythonVersion": "3.9",
+      "pythonPlatform": "Darwin",
+      "venvPath": "avantis-service",
+      "venv": "venv",
+      "extraPaths": [
+        "avantis-service/venv/lib/python3.9/site-packages"
+      ]
+    }
+  ],
+  "typeCheckingMode": "basic",
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "pythonVersion": "3.9",
+  "pythonPlatform": "Darwin"
+}
+

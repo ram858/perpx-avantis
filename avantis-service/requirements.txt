@@ -5,7 +5,7 @@ pydantic==2.9.2
 pydantic-settings==2.5.2
 
 # Avantis SDK
-avantis-trader-sdk>=1.0.0
+avantis-trader-sdk>=0.8.10
 
 # Web3 and Ethereum
 web3>=6.15.0

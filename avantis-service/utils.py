@@ -1,7 +1,7 @@
 """Utility functions for error handling and retries."""
 import asyncio
 import logging
-from typing import Callable, TypeVar, Any
+from typing import Callable, TypeVar, Any, Optional, Union, Coroutine, Awaitable
 from functools import wraps
 from config import settings
 
@@ -44,8 +44,8 @@ def is_network_error(error: Exception) -> bool:
 
 
 def retry_on_network_error(
-    max_retries: int = None,
-    delay: float = None,
+    max_retries: Optional[int] = None,
+    delay: Optional[float] = None,
     backoff: float = 2.0
 ) -> Callable:
     """
@@ -59,18 +59,22 @@ def retry_on_network_error(
     Returns:
         Decorated function
     """
-    max_retries = max_retries or settings.max_retries
-    delay = delay or settings.retry_delay
+    max_retries_val = max_retries if max_retries is not None else settings.max_retries
+    delay_val = delay if delay is not None else settings.retry_delay
     
-    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+    def decorator(func: Callable[..., Union[T, Awaitable[T]]]) -> Callable[..., Union[T, Awaitable[T]]]:
         @wraps(func)
-        async def async_wrapper(*args, **kwargs) -> T:
-            last_error = None
-            current_delay = delay
+        async def async_wrapper(*args: Any, **kwargs: Any) -> T:
+            last_error: Optional[Exception] = None
+            current_delay = delay_val
             
-            for attempt in range(max_retries + 1):
+            for attempt in range(max_retries_val + 1):
                 try:
-                    return await func(*args, **kwargs)
+                    result = func(*args, **kwargs)
+                    if asyncio.iscoroutine(result):
+                        return await result
+                    else:
+                        return result  # type: ignore[return-value]
                 except Exception as e:
                     last_error = e
                     
@@ -78,49 +82,60 @@ def retry_on_network_error(
                         # Not a network error, don't retry
                         raise
                     
-                    if attempt < max_retries:
+                    if attempt < max_retries_val:
                         logger.warning(
-                            f"Network error on attempt {attempt + 1}/{max_retries + 1}: {e}. "
+                            f"Network error on attempt {attempt + 1}/{max_retries_val + 1}: {e}. "
                             f"Retrying in {current_delay}s..."
                         )
                         await asyncio.sleep(current_delay)
                         current_delay *= backoff
                     else:
-                        logger.error(f"Max retries ({max_retries}) exceeded for {func.__name__}")
+                        logger.error(f"Max retries ({max_retries_val}) exceeded for {func.__name__}")
                         raise
+            
+            # This should never be reached, but type checker needs it
+            if last_error:
+                raise last_error
+            raise RuntimeError("Unexpected error in retry decorator")
         
         @wraps(func)
-        def sync_wrapper(*args, **kwargs) -> T:
-            last_error = None
-            current_delay = delay
+        def sync_wrapper(*args: Any, **kwargs: Any) -> T:
+            last_error: Optional[Exception] = None
+            current_delay = delay_val
             
-            for attempt in range(max_retries + 1):
+            for attempt in range(max_retries_val + 1):
                 try:
-                    return func(*args, **kwargs)
+                    result = func(*args, **kwargs)
+                    return result  # type: ignore[return-value]
                 except Exception as e:
                     last_error = e
                     
                     if not is_network_error(e):
                         raise
                     
-                    if attempt < max_retries:
+                    if attempt < max_retries_val:
                         logger.warning(
-                            f"Network error on attempt {attempt + 1}/{max_retries + 1}: {e}. "
+                            f"Network error on attempt {attempt + 1}/{max_retries_val + 1}: {e}. "
                             f"Retrying in {current_delay}s..."
                         )
                         import time
                         time.sleep(current_delay)
                         current_delay *= backoff
                     else:
-                        logger.error(f"Max retries ({max_retries}) exceeded for {func.__name__}")
+                        logger.error(f"Max retries ({max_retries_val}) exceeded for {func.__name__}")
                         raise
+            
+            # This should never be reached, but type checker needs it
+            if last_error:
+                raise last_error
+            raise RuntimeError("Unexpected error in retry decorator")
         
         # Return appropriate wrapper based on function type
         import inspect
         if inspect.iscoroutinefunction(func):
-            return async_wrapper
+            return async_wrapper  # type: ignore[return-value]
         else:
-            return sync_wrapper
+            return sync_wrapper  # type: ignore[return-value]
     
     return decorator
 

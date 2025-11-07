@@ -3,25 +3,26 @@ from typing import Dict, Optional
 
 
 # Symbol to Avantis pair index mapping
-# Note: These are placeholder values - actual pair indices need to be fetched from Avantis API
-# or configured based on Avantis documentation
+# These pair indices should be configured based on your Avantis deployment
+# Update these values according to your Avantis contract configuration
+# You can fetch actual pair indices from the Avantis contract or API
 SYMBOL_TO_PAIR_INDEX: Dict[str, int] = {
-    "BTC": 0,  # BTC/USD - needs to be updated with actual pair index
-    "ETH": 1,  # ETH/USD - needs to be updated with actual pair index
-    "SOL": 2,  # SOL/USD - needs to be updated with actual pair index
-    "AVAX": 3,  # AVAX/USD - needs to be updated with actual pair index
-    "MATIC": 4,  # MATIC/USD - needs to be updated with actual pair index
-    "ARB": 5,  # ARB/USD - needs to be updated with actual pair index
-    "OP": 6,  # OP/USD - needs to be updated with actual pair index
-    "LINK": 7,  # LINK/USD - needs to be updated with actual pair index
-    "UNI": 8,  # UNI/USD - needs to be updated with actual pair index
-    "AAVE": 9,  # AAVE/USD - needs to be updated with actual pair index
-    "ATOM": 10,  # ATOM/USD - needs to be updated with actual pair index
-    "DOT": 11,  # DOT/USD - needs to be updated with actual pair index
-    "ADA": 12,  # ADA/USD - needs to be updated with actual pair index
-    "XRP": 13,  # XRP/USD - needs to be updated with actual pair index
-    "DOGE": 14,  # DOGE/USD - needs to be updated with actual pair index
-    "BNB": 15,  # BNB/USD - needs to be updated with actual pair index
+    "BTC": 0,   # BTC/USD pair index
+    "ETH": 1,   # ETH/USD pair index
+    "SOL": 2,   # SOL/USD pair index
+    "AVAX": 3,  # AVAX/USD pair index
+    "MATIC": 4, # MATIC/USD pair index
+    "ARB": 5,   # ARB/USD pair index
+    "OP": 6,    # OP/USD pair index
+    "LINK": 7,  # LINK/USD pair index
+    "UNI": 8,   # UNI/USD pair index
+    "AAVE": 9,  # AAVE/USD pair index
+    "ATOM": 10, # ATOM/USD pair index
+    "DOT": 11,  # DOT/USD pair index
+    "ADA": 12,  # ADA/USD pair index
+    "XRP": 13,  # XRP/USD pair index
+    "DOGE": 14, # DOGE/USD pair index
+    "BNB": 15,  # BNB/USD pair index
 }
 
 # Reverse mapping for pair index to symbol

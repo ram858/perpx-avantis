@@ -16,7 +16,7 @@ The code structure assumes the Avantis SDK has the following interface:
 **You will need to adjust these method calls based on the actual Avantis SDK API.**
 
 ### Symbol Registry
-The symbol registry in `symbols/symbol_registry.py` contains placeholder pair indices (0-15). 
+The symbol registry in `symbols/symbol_registry.py` contains pair indices (0-15) that should be configured based on your Avantis deployment. 
 
 **You need to:**
 1. Fetch actual pair indices from Avantis API or documentation

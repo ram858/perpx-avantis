@@ -14,8 +14,11 @@ class Settings(BaseSettings):
     
     # Avantis configuration
     avantis_network: str = "base-testnet"  # base-testnet or base-mainnet
-    avantis_private_key: Optional[str] = None
+    # Note: No global private key - each user provides their own via API (Base Accounts use address only)
     avantis_rpc_url: Optional[str] = None
+    
+    # Avantis trading contract address (configure based on your deployment)
+    avantis_trading_contract_address: Optional[str] = None
     
     # USDC token address (Base network)
     usdc_token_address: str = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"  # Base mainnet

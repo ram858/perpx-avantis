@@ -29,7 +29,15 @@ app.get('/api/health', (req, res) => {
 // Start trading session
 app.post('/api/trading/start', async (req, res) => {
   try {
-    const { maxBudget, profitGoal, maxPerSession, hyperliquidApiWallet, userPhoneNumber, walletAddress } = req.body;
+    const { 
+      maxBudget, 
+      profitGoal, 
+      maxPerSession, 
+      hyperliquidApiWallet, 
+      userPhoneNumber, 
+      walletAddress,
+      isBaseAccount = false // Flag for Base Account sessions
+    } = req.body;
 
     // Validate input
     if (!maxBudget || !profitGoal || !maxPerSession) {
@@ -38,16 +46,25 @@ app.post('/api/trading/start', async (req, res) => {
       });
     }
 
-    // Validate wallet data
-    if (!hyperliquidApiWallet || !userPhoneNumber || !walletAddress) {
-      return res.status(400).json({ 
-        error: 'Missing wallet data: hyperliquidApiWallet, userPhoneNumber, walletAddress are required' 
-      });
+    // For Base Account sessions, walletAddress is required but no private key
+    if (isBaseAccount) {
+      if (!walletAddress) {
+        return res.status(400).json({ 
+          error: 'walletAddress is required for Base Account sessions' 
+        });
+      }
+      console.log(`[API] Starting Base Account session for wallet ${walletAddress}`);
+    } else {
+      // For traditional wallets, both private key and wallet address are required
+      if (!hyperliquidApiWallet || !userPhoneNumber || !walletAddress) {
+        return res.status(400).json({ 
+          error: 'Missing wallet data: hyperliquidApiWallet, userPhoneNumber, walletAddress are required for traditional wallets' 
+        });
+      }
+      // Set the Hyperliquid private key for this session
+      process.env.HYPERLIQUID_PK = hyperliquidApiWallet;
+      console.log(`[API] Set HYPERLIQUID_PK for user ${userPhoneNumber} with wallet ${walletAddress}`);
     }
-
-    // Set the Hyperliquid private key for this session
-    process.env.HYPERLIQUID_PK = hyperliquidApiWallet;
-    console.log(`[API] Set HYPERLIQUID_PK for user ${userPhoneNumber} with wallet ${walletAddress}`);
 
     if (maxBudget < 10 || maxBudget > 10000000) {
       return res.status(400).json({ 
@@ -72,15 +89,16 @@ app.post('/api/trading/start', async (req, res) => {
       profitGoal: parseFloat(profitGoal),
       maxPerSession: parseInt(maxPerSession),
       userPhoneNumber,
-      walletAddress
+      walletAddress,
+      isBaseAccount: Boolean(isBaseAccount)
     });
 
-    console.log(`[API] Started trading session ${sessionId} for user ${userPhoneNumber}`);
+    console.log(`[API] Started trading session ${sessionId} for ${isBaseAccount ? 'Base Account' : 'traditional wallet'}`);
     res.json({ 
       sessionId, 
       status: 'started',
       config: { maxBudget, profitGoal, maxPerSession },
-      user: { phoneNumber: userPhoneNumber, walletAddress }
+      user: { phoneNumber: userPhoneNumber, walletAddress, isBaseAccount }
     });
   } catch (error) {
     console.error('[API] Error starting trading session:', error);
@@ -141,45 +159,6 @@ app.get('/api/trading/sessions', (req, res) => {
   }
 });
 
-// Close all positions
-app.post('/api/close-all-positions', async (req, res) => {
-  try {
-    console.log('[API] Close all positions endpoint called');
-    
-    // Import the closeAllPositions function
-    const { closeAllPositions } = await import('../hyperliquid/hyperliquid');
-    
-    console.log('[API] Calling closeAllPositions...');
-    const result = await closeAllPositions();
-    
-    if (result.success) {
-      console.log(`[API] Successfully closed ${result.closedCount} positions`);
-      res.json({
-        success: true,
-        message: result.message || `Successfully closed ${result.closedCount} positions`,
-        closedCount: result.closedCount,
-        errorCount: result.errorCount,
-        totalPositions: result.totalPositions
-      });
-    } else {
-      console.error(`[API] Failed to close positions: ${result.error}`);
-      res.status(400).json({
-        success: false,
-        error: result.error || 'Failed to close all positions',
-        closedCount: result.closedCount || 0,
-        errorCount: result.errorCount || 0,
-        totalPositions: result.totalPositions || 0
-      });
-    }
-  } catch (error) {
-    console.error('[API] Error closing all positions:', error);
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred'
-    });
-  }
-});
-
 // Stop trading session
 app.post('/api/trading/stop/:sessionId', (req, res) => {
   try {
@@ -204,44 +183,77 @@ app.post('/api/trading/stop/:sessionId', (req, res) => {
   }
 });
 
-// Close all positions
+// Close all positions (for traditional wallets with private key)
 app.post('/api/close-all-positions', async (req, res) => {
   try {
-    const { privateKey, phoneNumber } = req.body;
+    const { privateKey, phoneNumber, sessionId } = req.body;
+    
+    // Check if this is a Base Account session
+    if (sessionId) {
+      const isBaseAccount = sessionManager.isSessionBaseAccount(sessionId);
+      if (isBaseAccount) {
+        return res.status(400).json({
+          error: 'Base Account sessions cannot use this endpoint. Use /api/trading/prepare-transaction with action="close" for each position.'
+        });
+      }
+    }
     
     if (!privateKey) {
       return res.status(400).json({ 
-        error: 'Private key is required' 
+        error: 'Private key is required for traditional wallets' 
       });
     }
 
     console.log(`[API] Closing all positions for user ${phoneNumber || 'unknown'}`);
     
-    // Import the closeAllPositions function from the hyperliquid module
-    const { closeAllPositions } = await import('../hyperliquid/hyperliquid');
-    
-    // Call the closeAllPositions function
-    const result = await closeAllPositions();
-    
-    if (result.success) {
-      console.log(`[API] Successfully closed all positions`);
-      res.json({ 
-        success: true, 
-        message: 'All positions closed successfully',
+    // For Avantis: Call Avantis service
+    const avantisApiUrl = process.env.AVANTIS_API_URL || 'http://localhost:8000';
+    try {
+      const response = await fetch(`${avantisApiUrl}/api/close-all-positions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          private_key: privateKey,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+        throw new Error(errorData.detail || `Avantis API error: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      res.json({
+        success: true,
+        message: `Successfully closed ${result.closed_count || 0} positions`,
         details: result
       });
-    } else {
-      console.error(`[API] Failed to close all positions: ${result.error}`);
-      res.status(400).json({ 
-        success: false,
-        error: result.error || 'Failed to close all positions'
-      });
+    } catch (avantisError) {
+      console.error('[API] Error calling Avantis service:', avantisError);
+      // Fallback to Hyperliquid if Avantis fails (for backward compatibility)
+      const { closeAllPositions } = await import('../hyperliquid/hyperliquid');
+      const result = await closeAllPositions();
+      
+      if (result.success) {
+        res.json({ 
+          success: true, 
+          message: 'All positions closed successfully',
+          details: result
+        });
+      } else {
+        res.status(400).json({ 
+          success: false,
+          error: result.error || 'Failed to close all positions'
+        });
+      }
     }
   } catch (error) {
     console.error('[API] Error closing all positions:', error);
     res.status(500).json({ 
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred' 
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
     });
   }
 });
@@ -284,6 +296,8 @@ app.post('/api/trading/prepare-transaction', async (req, res) => {
       leverage,
       is_long,
       pair_index, // For close action
+      tp, // Take profit (optional)
+      sl, // Stop loss (optional)
     } = req.body;
 
     // Validate input
@@ -311,56 +325,86 @@ app.post('/api/trading/prepare-transaction', async (req, res) => {
       return res.status(400).json({ error: 'Wallet address not found for session' });
     }
 
-    // Prepare transaction parameters based on action
-    let transactionParams: any = {};
+    // Get Avantis API URL from environment
+    const avantisApiUrl = process.env.AVANTIS_API_URL || 'http://localhost:8000';
+    
+    // Call Avantis service to prepare transaction
+    let avantisResponse;
+    try {
+      if (action === 'open') {
+        if (!symbol || !collateral || !leverage || is_long === undefined) {
+          return res.status(400).json({
+            error: 'Missing required parameters for open action: symbol, collateral, leverage, is_long'
+          });
+        }
 
-    if (action === 'open') {
-      if (!symbol || !collateral || !leverage || is_long === undefined) {
-        return res.status(400).json({
-          error: 'Missing required parameters for open action: symbol, collateral, leverage, is_long'
+        // Call Avantis service prepare endpoint
+        const response = await fetch(`${avantisApiUrl}/api/prepare/open-position`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            symbol,
+            collateral: parseFloat(collateral),
+            leverage: parseInt(leverage),
+            is_long: Boolean(is_long),
+            address: walletAddress,
+            tp: tp ? parseFloat(tp) : undefined,
+            sl: sl ? parseFloat(sl) : undefined,
+          }),
         });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+          throw new Error(errorData.detail || `Avantis API error: ${response.statusText}`);
+        }
+
+        avantisResponse = await response.json();
+      } else if (action === 'close') {
+        if (!pair_index) {
+          return res.status(400).json({
+            error: 'Missing required parameter for close action: pair_index'
+          });
+        }
+
+        // Call Avantis service prepare endpoint
+        const response = await fetch(`${avantisApiUrl}/api/prepare/close-position`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            pair_index: parseInt(pair_index),
+            address: walletAddress,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+          throw new Error(errorData.detail || `Avantis API error: ${response.statusText}`);
+        }
+
+        avantisResponse = await response.json();
+      } else {
+        return res.status(400).json({ error: 'Invalid action. Must be "open" or "close"' });
       }
 
-      transactionParams = {
-        action: 'open',
-        symbol,
-        collateral: parseFloat(collateral),
-        leverage: parseInt(leverage),
-        is_long: Boolean(is_long),
-        walletAddress,
-      };
-
-    } else if (action === 'close') {
-      if (!pair_index) {
-        return res.status(400).json({
-          error: 'Missing required parameter for close action: pair_index'
-        });
-      }
-
-      transactionParams = {
-        action: 'close',
-        pair_index: parseInt(pair_index),
-        walletAddress,
-      };
-    } else {
-      return res.status(400).json({ error: 'Invalid action. Must be "open" or "close"' });
+      // Return transaction data from Avantis service
+      res.json({
+        success: true,
+        transaction: avantisResponse.transaction,
+        params: avantisResponse.params,
+        address: avantisResponse.address,
+        note: avantisResponse.note || 'Sign this transaction via Base Account SDK on the frontend',
+      });
+    } catch (avantisError) {
+      console.error('[API] Error calling Avantis service:', avantisError);
+      return res.status(502).json({
+        error: 'Failed to prepare transaction with Avantis service',
+        details: avantisError instanceof Error ? avantisError.message : 'Unknown error'
+      });
     }
-
-    // Return transaction parameters for frontend to sign
-    // Note: Actual transaction data would come from Avantis SDK
-    res.json({
-      success: true,
-      transaction: {
-        to: '0x...', // Avantis contract address (to be filled by Avantis SDK)
-        data: '0x', // Transaction data (to be filled by Avantis SDK)
-        value: '0x0',
-        gas: '0x0', // To be estimated
-        gasPrice: '0x0', // To be estimated
-      },
-      params: transactionParams,
-      walletAddress,
-      note: 'Sign this transaction via Base Account SDK on the frontend',
-    });
   } catch (error) {
     console.error('[API] Error preparing transaction:', error);
     res.status(500).json({

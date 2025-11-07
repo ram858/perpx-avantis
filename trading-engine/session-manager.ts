@@ -94,6 +94,16 @@ export class TradingSessionManager {
   }
 
   private startSessionMonitoring(sessionId: string) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+
+    // For Base Account sessions, query Avantis API instead of bot status
+    if (session.isBaseAccount && session.walletAddress) {
+      this.monitorBaseAccountSession(sessionId, session.walletAddress);
+      return;
+    }
+
+    // For traditional wallet sessions, monitor bot status
     const monitorInterval = setInterval(() => {
       const botStatus = this.tradingBot.getStatus();
       const session = this.sessions.get(sessionId);
@@ -122,7 +132,59 @@ export class TradingSessionManager {
           this.sessions.delete(sessionId);
         }, 30000);
       }
-    }, 1000); // Check every second
+    }, 5000); // Check every 5 seconds (reduced from 1 second for performance)
+  }
+
+  private monitorBaseAccountSession(sessionId: string, walletAddress: string) {
+    const avantisApiUrl = process.env.AVANTIS_API_URL || 'http://localhost:8000';
+    let lastUpdate = Date.now();
+    
+    // Update every 10 seconds for Base Account sessions (less frequent for performance)
+    const monitorInterval = setInterval(async () => {
+      const session = this.sessions.get(sessionId);
+      if (!session) {
+        clearInterval(monitorInterval);
+        return;
+      }
+
+      try {
+        // Fetch positions and PnL from Avantis service
+        const [positionsResponse, pnlResponse] = await Promise.all([
+          fetch(`${avantisApiUrl}/api/positions?address=${walletAddress}`).catch(() => null),
+          fetch(`${avantisApiUrl}/api/total-pnl?address=${walletAddress}`).catch(() => null),
+        ]);
+
+        let pnl = 0;
+        let openPositions = 0;
+
+        if (positionsResponse?.ok) {
+          const positionsData = await positionsResponse.json();
+          openPositions = positionsData.count || positionsData.positions?.length || 0;
+        }
+
+        if (pnlResponse?.ok) {
+          const pnlData = await pnlResponse.json();
+          pnl = pnlData.total_pnl || 0;
+        }
+
+        // Update session status
+        session.status = {
+          ...session.status,
+          pnl,
+          openPositions,
+          lastUpdate: new Date()
+        };
+
+        this.broadcastUpdate(sessionId);
+        lastUpdate = Date.now();
+      } catch (error) {
+        console.error(`[SESSION_MANAGER] Error monitoring Base Account session ${sessionId}:`, error);
+        // Don't clear interval on error, just log it
+      }
+    }, 10000); // Update every 10 seconds for Base Accounts
+
+    // Store interval ID for cleanup
+    (session as any).monitorInterval = monitorInterval;
   }
 
 
@@ -216,7 +278,17 @@ export class TradingSessionManager {
     const session = this.sessions.get(sessionId);
     if (session) {
       console.log(`[SESSION_MANAGER] Stopping session ${sessionId}`);
-      this.tradingBot.stopTrading();
+      
+      // Clear monitoring interval if it exists
+      if ((session as any).monitorInterval) {
+        clearInterval((session as any).monitorInterval);
+      }
+      
+      // Stop bot only for non-Base Account sessions
+      if (!session.isBaseAccount) {
+        this.tradingBot.stopTrading();
+      }
+      
       this.updateSessionStatus(sessionId, { status: 'stopped', lastUpdate: new Date() });
       return true;
     }
