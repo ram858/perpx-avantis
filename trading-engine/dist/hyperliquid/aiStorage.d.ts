@@ -1,0 +1,45 @@
+export interface StoredPosition {
+    breakevenLogged: any;
+    symbol: string;
+    entryPrice: number;
+    txHash: string;
+    timestamp: number;
+    signalScore: number;
+    marketRegime: string;
+    tp: number;
+    sl: number;
+    rsi: number;
+    macdHist: number;
+    emaSlope: number;
+    atrPct: number;
+    leverage: number;
+    atr: number;
+    adx: number;
+    adxSlope?: number;
+    volumePct?: number;
+    breakevenActivated?: boolean;
+    trailingTPPct?: number;
+    perPositionBudget?: number;
+    entryTimestamp?: number;
+    divergenceScore?: number;
+    tradeType?: 'standard' | 'override' | 'anticipation';
+    note?: string;
+    phase?: 'init' | 'trail';
+    highestFav?: number;
+    lowestFav?: number;
+    slPrice?: number;
+    triggeredBy?: string;
+    entryReason?: string;
+    side?: 'LONG' | 'SHORT';
+    rrr?: number;
+    fallbackTP?: number;
+    fallbackSL?: number;
+    fallbackRRR?: number;
+    regime?: any;
+}
+export declare function loadAIPOS(): StoredPosition[];
+export declare function saveAIPOS(data: StoredPosition[]): void;
+export declare function getAIPOS(symbol: string): StoredPosition | undefined;
+export declare function removeAIPOS(symbol: string, entryPrice?: number, tolerance?: number): Promise<void>;
+export declare function recordAIPOS(symbol: string, entry: number, txHash: string, signalScore: number, marketRegime: string, tp: number, sl: number, rsi: number, macdHist: number, emaSlope: number, atrPct: number, leverage: number, atr: number, adx: number, adxSlope?: number, volumePct?: number, perPositionBudget?: number, breakevenActivated?: boolean, trailingTPPct?: number, divergenceScore?: number, tradeType?: 'standard' | 'override' | 'anticipation', note?: string, phase?: 'init' | 'trail', highestFav?: number, lowestFav?: number, slPrice?: number, triggeredByOverride?: string, entryReasonOverride?: string, extraTP?: number, extraSL?: number, extraRRR?: number, side?: 'LONG' | 'SHORT'): void;
+//# sourceMappingURL=aiStorage.d.ts.map

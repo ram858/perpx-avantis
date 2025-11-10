@@ -158,13 +158,22 @@ export class TradingSessionManager {
         let openPositions = 0;
 
         if (positionsResponse?.ok) {
-          const positionsData = await positionsResponse.json();
-          openPositions = positionsData.count || positionsData.positions?.length || 0;
+          const positionsData = await positionsResponse.json() as {
+            count?: number;
+            positions?: Array<unknown>;
+          };
+          if (typeof positionsData.count === 'number') {
+            openPositions = positionsData.count;
+          } else if (Array.isArray(positionsData.positions)) {
+            openPositions = positionsData.positions.length;
+          }
         }
 
         if (pnlResponse?.ok) {
-          const pnlData = await pnlResponse.json();
-          pnl = pnlData.total_pnl || 0;
+          const pnlData = await pnlResponse.json() as { total_pnl?: number };
+          if (typeof pnlData.total_pnl === 'number') {
+            pnl = pnlData.total_pnl;
+          }
         }
 
         // Update session status
@@ -184,7 +193,10 @@ export class TradingSessionManager {
     }, 10000); // Update every 10 seconds for Base Accounts
 
     // Store interval ID for cleanup
-    (session as any).monitorInterval = monitorInterval;
+    const currentSession = this.sessions.get(sessionId);
+    if (currentSession) {
+      (currentSession as any).monitorInterval = monitorInterval;
+    }
   }
 
 

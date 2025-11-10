@@ -220,11 +220,13 @@ app.post('/api/close-all-positions', async (req, res) => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+        const errorData = await response
+          .json()
+          .catch(() => ({ detail: response.statusText })) as { detail?: string };
         throw new Error(errorData.detail || `Avantis API error: ${response.statusText}`);
       }
 
-      const result = await response.json();
+      const result = await response.json() as { closed_count?: number; [key: string]: unknown };
       res.json({
         success: true,
         message: `Successfully closed ${result.closed_count || 0} positions`,
@@ -329,7 +331,14 @@ app.post('/api/trading/prepare-transaction', async (req, res) => {
     const avantisApiUrl = process.env.AVANTIS_API_URL || 'http://localhost:8000';
     
     // Call Avantis service to prepare transaction
-    let avantisResponse;
+    type AvantisPrepareResponse = {
+      transaction: unknown;
+      params: unknown;
+      address?: string;
+      note?: string;
+    };
+
+    let avantisResponse: AvantisPrepareResponse | null = null;
     try {
       if (action === 'open') {
         if (!symbol || !collateral || !leverage || is_long === undefined) {
@@ -356,11 +365,13 @@ app.post('/api/trading/prepare-transaction', async (req, res) => {
         });
 
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+          const errorData = await response
+            .json()
+            .catch(() => ({ detail: response.statusText })) as { detail?: string };
           throw new Error(errorData.detail || `Avantis API error: ${response.statusText}`);
         }
 
-        avantisResponse = await response.json();
+        avantisResponse = await response.json() as AvantisPrepareResponse;
       } else if (action === 'close') {
         if (!pair_index) {
           return res.status(400).json({
@@ -381,16 +392,22 @@ app.post('/api/trading/prepare-transaction', async (req, res) => {
         });
 
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+          const errorData = await response
+            .json()
+            .catch(() => ({ detail: response.statusText })) as { detail?: string };
           throw new Error(errorData.detail || `Avantis API error: ${response.statusText}`);
         }
 
-        avantisResponse = await response.json();
+        avantisResponse = await response.json() as AvantisPrepareResponse;
       } else {
         return res.status(400).json({ error: 'Invalid action. Must be "open" or "close"' });
       }
 
       // Return transaction data from Avantis service
+      if (!avantisResponse) {
+        throw new Error('Empty response from Avantis service');
+      }
+
       res.json({
         success: true,
         transaction: avantisResponse.transaction,
