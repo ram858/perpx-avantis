@@ -54,7 +54,10 @@ export class WalletStorageService {
         try {
           // Use Vercel KV (server-side only) - dynamic import to avoid build errors
           // @ts-ignore - Optional dependency, may not be installed
-          const kvModule = await import('@vercel/kv').catch(() => null);
+          const kvModule = await import(
+            /* webpackIgnore: true */
+            '@vercel/kv'
+          ).catch(() => null);
           if (kvModule) {
             const { kv } = kvModule;
             await kv.set(key, JSON.stringify(storedWallet));
@@ -92,7 +95,10 @@ export class WalletStorageService {
         try {
           // Use Vercel KV (server-side only) - dynamic import to avoid build errors
           // @ts-ignore - Optional dependency, may not be installed
-          const kvModule = await import('@vercel/kv').catch(() => null);
+          const kvModule = await import(
+            /* webpackIgnore: true */
+            '@vercel/kv'
+          ).catch(() => null);
           if (kvModule) {
             const { kv } = kvModule;
             // @ts-ignore - Type may not be available
@@ -168,7 +174,10 @@ export class WalletStorageService {
         try {
           // Use Vercel KV (server-side only) - dynamic import to avoid build errors
           // @ts-ignore - Optional dependency, may not be installed
-          const kvModule = await import('@vercel/kv').catch(() => null);
+          const kvModule = await import(
+            /* webpackIgnore: true */
+            '@vercel/kv'
+          ).catch(() => null);
           if (kvModule) {
             const { kv } = kvModule;
             await kv.del(key);

@@ -281,7 +281,7 @@ export function BaseAccountTradingPanel({
 
       <div className="mt-4 pt-4 border-t border-[#444]">
         <p className="text-xs text-gray-500">
-          💡 Transactions will be signed via Base Account SDK. You'll need to approve each transaction.
+          💡 Transactions will be signed via Base Account SDK. You&apos;ll need to approve each transaction.
         </p>
       </div>
     </Card>
