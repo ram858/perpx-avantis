@@ -14,6 +14,8 @@ export interface BaseAccountAuth {
 export function useBaseMiniApp() {
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [isBaseContext, setIsBaseContext] = useState(false);
+  const [contextChecked, setContextChecked] = useState(false);
   const [auth, setAuth] = useState<BaseAccountAuth>({
     token: null,
     fid: null,
@@ -22,44 +24,68 @@ export function useBaseMiniApp() {
     error: null,
   });
 
-  // Check if we're in Base app context
-  const isBaseContext = typeof window !== 'undefined' && sdk && (window as any).farcaster;
-
   useEffect(() => {
     let mounted = true;
 
     async function initializeSDK() {
+      if (typeof window === 'undefined') {
+        return;
+      }
+
       try {
+        // Attempt to detect if we are inside a Farcaster/Base mini app context
+        if (sdk?.context?.get) {
+          await sdk.context.get();
+          if (mounted) {
+            setIsBaseContext(true);
+          }
+        } else if ((window as any)?.farcaster) {
+          // Fallback detection
+          if (mounted) {
+            setIsBaseContext(true);
+          }
+        }
+
         // Wait for the app to be fully loaded before calling ready()
-        // This hides the loading splash screen and displays the app
-        await sdk.actions.ready();
-        
+        if (sdk?.actions?.ready && mounted) {
+          await sdk.actions.ready();
+        }
+
         if (mounted) {
           setIsReady(true);
+          setError(null);
         }
       } catch (err) {
+        const isNotMiniAppError =
+          err instanceof Error &&
+          /mini app|context/i.test(err.message) &&
+          /not/.test(err.message);
+
         if (mounted) {
-          setError(err instanceof Error ? err : new Error('Failed to initialize Base Mini App SDK'));
+          if (!isNotMiniAppError) {
+            setError(err instanceof Error ? err : new Error('Failed to initialize Base Mini App SDK'));
+          } else {
+            setError(null);
+          }
+          setIsBaseContext(false);
+          setIsReady(true);
         }
+      }
+      if (mounted) {
+        setContextChecked(true);
       }
     }
 
-    // Only initialize if we're in a Base app context
-    if (isBaseContext) {
-      initializeSDK();
-    } else {
-      // In regular browser, mark as ready immediately
-      setIsReady(true);
-    }
+    initializeSDK();
 
     return () => {
       mounted = false;
     };
-  }, [isBaseContext]);
+  }, []);
 
   // Get Base Account address from provider
   const getBaseAccountAddress = useCallback(async (): Promise<string | null> => {
-    if (!isBaseContext) {
+    if (!contextChecked || !isBaseContext) {
       return null;
     }
 
@@ -89,11 +115,11 @@ export function useBaseMiniApp() {
       console.error('[useBaseMiniApp] Error getting Base Account address:', error);
       return null;
     }
-  }, [isBaseContext, sdk]);
+  }, [contextChecked, isBaseContext]);
 
   // Authenticate with Base Account (Quick Auth)
   const authenticate = useCallback(async () => {
-    if (!isBaseContext || !sdk?.quickAuth) {
+    if (!contextChecked || !isBaseContext || !sdk?.quickAuth) {
       return null;
     }
 
@@ -141,13 +167,13 @@ export function useBaseMiniApp() {
       }));
       return null;
     }
-  }, [isBaseContext, getBaseAccountAddress]);
+  }, [contextChecked, isBaseContext, getBaseAccountAddress]);
 
   return {
     isReady,
     error,
     sdk: isReady ? sdk : null,
-    isBaseContext: !!isBaseContext,
+    isBaseContext,
     auth,
     authenticate,
     getBaseAccountAddress,

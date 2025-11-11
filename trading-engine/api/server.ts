@@ -8,7 +8,7 @@ const port = process.env.API_PORT || 3001;
 // Middleware
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://yourdomain.com'] 
+    ? ['https://avantis.superapp.gg'] 
     : ['http://localhost:3000', 'http://localhost:3001'],
   credentials: true
 }));
@@ -36,7 +36,7 @@ app.post('/api/trading/start', async (req, res) => {
       hyperliquidApiWallet, 
       userPhoneNumber, 
       walletAddress,
-      isBaseAccount = false // Flag for Base Account sessions
+      isBaseAccount = true // Flag for Base Account sessions
     } = req.body;
 
     // Validate input
