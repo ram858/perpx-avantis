@@ -11,6 +11,9 @@ export interface BaseAccountAuth {
   error: Error | null;
 }
 
+let readyPromise: Promise<void> | null = null;
+let readyCalled = false;
+
 export function useBaseMiniApp() {
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -60,7 +63,18 @@ export function useBaseMiniApp() {
         }
 
         // Wait for the app to be fully loaded before calling ready()
-        if (mounted && detectedBaseContext && sdk?.actions?.ready) {
+        if (sdk?.actions?.ready && !readyCalled) {
+          readyCalled = true;
+          readyPromise = sdk.actions.ready().catch(err => {
+            readyCalled = false;
+            readyPromise = null;
+            throw err;
+          });
+        }
+
+        if (readyPromise) {
+          await readyPromise;
+        } else if (sdk?.actions?.ready) {
           await sdk.actions.ready();
         }
 

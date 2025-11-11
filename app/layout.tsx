@@ -12,10 +12,21 @@ import { BaseMiniAppProvider } from "@/components/BaseMiniAppProvider"
 import { Suspense } from "react"
 import "./globals.css"
 
-export const metadata: Metadata = {
-  title: "PrepX - AI Trading Bot",
+const DEFAULT_APP_URL = "https://avantis.superapp.gg"
+const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? DEFAULT_APP_URL).replace(/\/$/, "")
+
+const miniApp = {
+  name: "PrepX AI Trading",
   description:
     "Advanced AI-powered trading bot for cryptocurrency markets. Automated trading with intelligent risk management and real-time analytics.",
+  version: "next",
+  heroImageUrl: `${appUrl}/trading-illustration.svg`,
+  homeUrl: appUrl,
+}
+
+const baseMetadata: Metadata = {
+  title: "PrepX - AI Trading Bot",
+  description: miniApp.description,
   generator: "PrepX",
   keywords: ["AI trading", "cryptocurrency", "trading bot", "automated trading", "crypto trading"],
   authors: [{ name: "PrepX Team" }],
@@ -33,8 +44,28 @@ export const metadata: Metadata = {
     title: "PrepX - AI Trading Bot",
     description: "Advanced AI-powered trading bot for cryptocurrency markets",
   },
-  // Note: fc:miniapp metadata should be added to HTML head via next/head or custom script
-  // This is handled by the Base SDK and manifest file
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const fcMiniAppContent = JSON.stringify({
+    version: miniApp.version,
+    imageUrl: miniApp.heroImageUrl,
+    button: {
+      title: `Join the ${miniApp.name}`,
+      action: {
+        type: "launch_frame",
+        name: `Launch ${miniApp.name}`,
+        url: miniApp.homeUrl,
+      },
+    },
+  })
+
+  return {
+    ...baseMetadata,
+    other: {
+      "fc:miniapp": fcMiniAppContent,
+    },
+  }
 }
 
 export const viewport: Viewport = {
