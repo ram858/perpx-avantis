@@ -34,16 +34,20 @@ export function useBaseMiniApp() {
 
       try {
         // Attempt to detect if we are inside a Farcaster/Base mini app context
-        if (sdk?.context?.get) {
-          await sdk.context.get();
-          if (mounted) {
-            setIsBaseContext(true);
-          }
+        let detectedBaseContext = false;
+
+        if (sdk?.isInMiniApp) {
+          detectedBaseContext = await sdk.isInMiniApp().catch(() => false);
+        } else if (sdk?.context) {
+          await sdk.context;
+          detectedBaseContext = true;
         } else if ((window as any)?.farcaster) {
           // Fallback detection
-          if (mounted) {
-            setIsBaseContext(true);
-          }
+          detectedBaseContext = true;
+        }
+
+        if (mounted && detectedBaseContext) {
+          setIsBaseContext(true);
         }
 
         // Wait for the app to be fully loaded before calling ready()
