@@ -14,6 +14,7 @@
 - `NEXT_PUBLIC_APP_URL` - App URL for Base Account domain verification
 - `NEXT_PUBLIC_AVANTIS_API_URL` (optional) - If you want client-side access
 - `NEXT_PUBLIC_AVANTIS_NETWORK` (optional) - Network identifier
+- `NEXT_PUBLIC_ENABLE_WEB_MODE` (optional, default=`true`) - Set to `false` to require the Base app context
 
 ### ✅ 2. Code Issues Fixed
 

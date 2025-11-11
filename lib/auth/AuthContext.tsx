@@ -40,6 +40,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [token, setToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const { isBaseContext, authenticate: authenticateBase, isReady: baseReady } = useBaseMiniApp()
+  const isWebFallbackEnabled = process.env.NEXT_PUBLIC_ENABLE_WEB_MODE !== "false"
 
   const isAuthenticated = !!user
 
@@ -47,7 +48,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Only authenticate if in Base context
     const checkAuth = async () => {
       if (!isBaseContext) {
-        console.warn('⚠️ App is not running in Base app context. Base Account is required.')
+        if (isWebFallbackEnabled) {
+          console.warn('⚠️ Running in web preview mode without Base app context.')
+          setToken(previous => (previous === null ? previous : null))
+          setUser(previous => {
+            if (previous && previous.id === 'web_demo_user') {
+              return previous
+            }
+
+            return {
+              id: 'web_demo_user',
+              fid: 0,
+              baseAccountAddress: null,
+              hasWallet: false,
+              createdAt: new Date(),
+            }
+          })
+        } else {
+          console.warn('⚠️ App is not running in Base app context. Base Account is required.')
+          setToken(previous => (previous === null ? previous : null))
+          setUser(previous => (previous === null ? previous : null))
+        }
         setIsLoading(false)
         return
       }
@@ -87,7 +108,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
 
     checkAuth()
-  }, [isBaseContext, baseReady, authenticateBase])
+  }, [isBaseContext, baseReady, authenticateBase, isWebFallbackEnabled])
 
   const login = (token: string, userData: User) => {
     console.log('🔐 Login called, setting user FID:', userData.fid)

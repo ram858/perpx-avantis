@@ -1,32 +1,32 @@
 {
   "accountAssociation": {
-    "header": "",
-    "payload": "",
-    "signature": ""
+    "header": "eyJmaWQiOjE0NTcyMzYsInR5cGUiOiJjdXN0b2R5Iiwia2V5IjoiMHgyMUE2NmMxMTdmNDU5NTQwODZiMzMxNGVjQjEwREJFMjA0OUMzRkZhIn0",
+    "payload": "eyJkb21haW4iOiJhdmFudGlzLnN1cGVyYXBwLmdnIn0",
+    "signature": "rRXP0L4okJHwNjWB6Id95Dq2KTRpXwls2fLdPqAiiA5o5J1v6kIblfFP3nDKl5u35XxvXU50O4WeB+/bNdc9Oxw="
   },
   "baseBuilder": {
-    "ownerAddress": "0x"
+    "ownerAddress": "0x79f1105b12c0141126DF967A102BA2A1F31328bf"
   },
   "miniapp": {
     "version": "1",
-    "name": "PrepX AI Trading",
-    "homeUrl": "https://your-app.vercel.app",
-    "iconUrl": "https://your-app.vercel.app/placeholder-logo.png",
-    "splashImageUrl": "https://your-app.vercel.app/trading-illustration.svg",
-    "splashBackgroundColor": "#0d0d0d",
-    "webhookUrl": "https://your-app.vercel.app/api/webhook",
-    "subtitle": "AI-Powered Trading Bot",
-    "description": "Advanced AI-powered trading bot for cryptocurrency markets with intelligent risk management and real-time analytics.",
-    "screenshotUrls": [
-      "https://your-app.vercel.app/trading-illustration.svg"
-    ],
+    "name": "PrepX",
+    "homeUrl": "https://avantis.superapp.gg/",
+    "iconUrl": "https://avantis.superapp.gg/trading-bot-icon.svg",
+    "splashImageUrl": "https://avantis.superapp.gg/trading-bot-icon.svg",
+    "splashBackgroundColor": "#0D0D0D",
+    "subtitle": "AI-powered trading automation",
+    "description": "PrepX automates crypto trading with managed strategies on Base.",
     "primaryCategory": "finance",
-    "tags": ["trading", "crypto", "ai", "avantis", "defi"],
-    "heroImageUrl": "https://your-app.vercel.app/trading-illustration.svg",
-    "tagline": "Trade smarter with AI",
-    "ogTitle": "PrepX - AI Trading Bot",
-    "ogDescription": "Advanced AI-powered trading bot for cryptocurrency markets with intelligent risk management.",
-    "ogImageUrl": "https://your-app.vercel.app/trading-illustration.svg",
+    "tags": [
+      "finance",
+      "trading",
+      "crypto"
+    ],
+    "heroImageUrl": "https://avantis.superapp.gg/trading-illustration.svg",
+    "tagline": "Automated trading on Base",
+    "ogTitle": "PrepX",
+    "ogDescription": "Launch PrepX to automate crypto trading on Base.",
+    "ogImageUrl": "https://avantis.superapp.gg/trading-illustration.svg",
     "noindex": false
   }
 }

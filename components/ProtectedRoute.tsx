@@ -11,6 +11,7 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children, fallback }: ProtectedRouteProps): JSX.Element | null {
   const { isAuthenticated, isLoading } = useAuth()
   const { isBaseContext } = useBaseMiniApp()
+  const isWebFallbackEnabled = process.env.NEXT_PUBLIC_ENABLE_WEB_MODE !== "false"
 
   // Show loading state
   if (isLoading) {
@@ -36,6 +37,20 @@ export function ProtectedRoute({ children, fallback }: ProtectedRouteProps): JSX
           </div>
         </div>
       )
+    )
+  }
+
+  // Allow read-only web access when Base context isn't available
+  if (!isBaseContext && isWebFallbackEnabled) {
+    return (
+      <>
+        <div className="bg-[#1a1a1a] border-b border-[#2f2f2f] text-[#d1d5db] px-4 py-3 text-sm">
+          <p className="max-w-3xl mx-auto text-center">
+            You are viewing the PrepX web preview. Connect through the Base app to unlock trading and Base Account features.
+          </p>
+        </div>
+        {children}
+      </>
     )
   }
 
