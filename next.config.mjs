@@ -1,4 +1,17 @@
 /** @type {import('next').NextConfig} */
+const allowedFrameAncestors = [
+  "'self'",
+  "https://*.warpcast.com",
+  "https://warpcast.com",
+  "https://*.farcaster.xyz",
+  "https://farcaster.xyz",
+  "https://*.base.org",
+  "https://base.org",
+  "https://base.app",
+  "https://*.base.app",
+  "https://base.dev",
+];
+
 const nextConfig = {
   // Optimize for Base Mini App
   reactStrictMode: true,
@@ -41,6 +54,26 @@ const nextConfig = {
   // Experimental features
   experimental: {
     optimizeCss: true,
+  },
+
+  async headers() {
+    const frameAncestors = allowedFrameAncestors.join(" ");
+
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "X-Frame-Options",
+            value: "ALLOWALL",
+          },
+          {
+            key: "Content-Security-Policy",
+            value: `frame-ancestors ${frameAncestors};`,
+          },
+        ],
+      },
+    ];
   },
 };
 
