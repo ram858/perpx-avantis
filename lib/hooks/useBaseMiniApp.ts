@@ -33,13 +33,22 @@ export function useBaseMiniApp() {
       }
 
       try {
+        // Ensure the SDK context is resolved before using any actions
+        let hasContext = false;
+
+        if (sdk?.context) {
+          hasContext = await Promise.resolve(sdk.context).then(
+            () => true,
+            () => false
+          );
+        }
+
         // Attempt to detect if we are inside a Farcaster/Base mini app context
         let detectedBaseContext = false;
 
         if (sdk?.isInMiniApp) {
           detectedBaseContext = await sdk.isInMiniApp().catch(() => false);
-        } else if (sdk?.context) {
-          await sdk.context;
+        } else if (hasContext) {
           detectedBaseContext = true;
         } else if ((window as any)?.farcaster) {
           // Fallback detection
@@ -51,7 +60,7 @@ export function useBaseMiniApp() {
         }
 
         // Wait for the app to be fully loaded before calling ready()
-        if (sdk?.actions?.ready && mounted) {
+        if (mounted && detectedBaseContext && sdk?.actions?.ready) {
           await sdk.actions.ready();
         }
 
