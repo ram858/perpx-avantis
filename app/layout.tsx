@@ -20,7 +20,7 @@ const miniApp = {
   description:
     "Advanced AI-powered trading bot for cryptocurrency markets. Automated trading with intelligent risk management and real-time analytics.",
   version: "next",
-  heroImageUrl: `${appUrl}/trading-illustration.svg`,
+  heroImageUrl: `${appUrl}/trading-illustration.png`,
   homeUrl: appUrl,
 }
 
