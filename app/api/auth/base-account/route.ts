@@ -45,7 +45,14 @@ export async function GET(request: NextRequest) {
 
       // Get Base Account address from token payload if available
       // Note: Base Account address might be in the token payload or need to be fetched separately
-      const address = (payload as any).address || null;
+      let address = (payload as any).address || null;
+
+      // Also check if address is provided in query params (from frontend)
+      const url = new URL(request.url);
+      const addressParam = url.searchParams.get('address');
+      if (addressParam && !address) {
+        address = addressParam;
+      }
 
       // If we have an address, store it as the user's Base Account address
       if (address) {
@@ -56,6 +63,8 @@ export async function GET(request: NextRequest) {
           console.error(`[API] Failed to store Base Account address:`, error);
           // Continue anyway - address might already be stored
         }
+      } else {
+        console.warn(`[API] No Base Account address found for FID ${fid} - user will need fallback wallet`);
       }
 
       // Generate our own JWT token for API requests

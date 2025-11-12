@@ -207,7 +207,9 @@ export function useBaseMiniApp() {
         const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
         console.log('[useBaseMiniApp] Verifying token with backend...');
         
-        const response = await sdk.quickAuth.fetch(`${baseUrl}/api/auth/base-account`, {
+        // Send Base Account address as query parameter if we have it
+        const addressParam = address ? `?address=${encodeURIComponent(address)}` : '';
+        const response = await sdk.quickAuth.fetch(`${baseUrl}/api/auth/base-account${addressParam}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
 
