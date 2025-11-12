@@ -16,8 +16,9 @@ export function useTradingProfits() {
   const fetchTradingProfits = async () => {
     setIsLoading(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${apiUrl}/api/status`);
+      // Use API route instead of direct trading engine connection
+      // This avoids CORS and connection issues in production
+      const response = await fetch('/api/status');
       
       if (response.ok) {
         const data = await response.json();

@@ -46,9 +46,9 @@ export function useBaseAccountTrading() {
     setError(null);
 
     try {
-      // Step 1: Prepare transaction via trading engine
-      const tradingEngineUrl = process.env.NEXT_PUBLIC_TRADING_ENGINE_URL || 'http://localhost:3001';
-      const prepareResponse = await fetch(`${tradingEngineUrl}/api/trading/prepare-transaction`, {
+      // Step 1: Prepare transaction via API route (which proxies to trading engine)
+      // This avoids CORS and connection issues in production
+      const prepareResponse = await fetch('/api/trading/prepare-transaction', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
