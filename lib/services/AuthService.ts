@@ -20,7 +20,11 @@ export class AuthService {
   }
 
   constructor() {
-    this.jwtSecret = process.env.JWT_SECRET || 'your-secret-key'
+    // JWT_SECRET is required - throw error if missing
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET environment variable is required. Please set it in your .env file.');
+    }
+    this.jwtSecret = process.env.JWT_SECRET
     this.jwtExpirationTime = process.env.JWT_EXPIRATION_TIME || '7d'
   }
 

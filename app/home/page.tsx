@@ -15,7 +15,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 
 // Memoized components for better performance
-const WalletSetupCard = ({ isLoading, error }: { isLoading: boolean; error: string | null }) => (
+const WalletSetupCard = ({ isLoading, error, onRetry }: { isLoading: boolean; error: string | null; onRetry?: () => void }) => (
   <Card className="bg-[#1a1a1a] border-[#262626] p-4 sm:p-6 rounded-2xl text-center">
     <div className="space-y-4">
       <div className="w-12 h-12 bg-[#7c3aed] rounded-full flex items-center justify-center mx-auto">
@@ -28,7 +28,7 @@ const WalletSetupCard = ({ isLoading, error }: { isLoading: boolean; error: stri
       <div>
         <h2 className="text-white font-semibold text-lg mb-2">Setting Up Your Wallet</h2>
         <p className="text-[#9ca3af] text-sm mb-4">
-          Creating your personal trading wallet...
+          {error ? 'Failed to create wallet' : 'Creating your personal trading wallet...'}
         </p>
       </div>
       {isLoading && (
@@ -38,13 +38,25 @@ const WalletSetupCard = ({ isLoading, error }: { isLoading: boolean; error: stri
         </div>
       )}
       {error && (
-        <div className="bg-red-900/20 border border-red-600/30 rounded-lg p-3 mt-3">
-          <p className="text-red-400 text-sm">{error}</p>
+        <div className="space-y-3">
+          <div className="bg-red-900/20 border border-red-600/30 rounded-lg p-3">
+            <p className="text-red-400 text-sm">{error}</p>
+          </div>
+          {onRetry && (
+            <button
+              onClick={onRetry}
+              className="px-4 py-2 bg-[#7c3aed] hover:bg-[#6d28d9] text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
-      <p className="text-[#6b7280] text-xs">
-        Your wallet will be ready in a moment
-      </p>
+      {!error && !isLoading && (
+        <p className="text-[#6b7280] text-xs">
+          Your wallet will be ready in a moment
+        </p>
+      )}
     </div>
   </Card>
 )
@@ -643,7 +655,11 @@ export default function HomePage() {
         <div className="px-4 sm:px-6 space-y-6 max-w-md mx-auto">
           {/* Portfolio Balance Card */}
           {!isConnected ? (
-            <WalletSetupCard isLoading={isLoading} error={error} />
+            <WalletSetupCard 
+              isLoading={isLoading} 
+              error={error} 
+              onRetry={() => createWallet('ethereum')}
+            />
           ) : (
             <PortfolioBalanceCard
               totalPortfolioValue={totalPortfolioValue}

@@ -78,40 +78,114 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     error: null
   });
 
+  // Define refreshBalances first to avoid circular dependency
+  const refreshBalances = useCallback(async (walletOverride?: UserWallet | null) => {
+    const walletToUse = walletOverride || state.primaryWallet;
+    
+    if (!walletToUse?.address) {
+      console.log('[IntegratedWallet] No primary wallet address, skipping balance refresh');
+      return;
+    }
+
+    try {
+      console.log(`[IntegratedWallet] Fetching real balances for: ${walletToUse.address}`);
+      
+      // Fetch real blockchain balances
+      const balanceData: RealBalanceData = await realBalanceService.getAllBalances(walletToUse.address);
+      
+      // Convert real balance data to the expected format
+      const holdings: TokenBalance[] = balanceData.holdings.map(realToken => ({
+        token: {
+          address: realToken.token.address,
+          symbol: realToken.token.symbol,
+          name: realToken.token.name,
+          decimals: realToken.token.decimals,
+          price: realToken.priceUSD
+        },
+        balance: realToken.balance,
+        balanceFormatted: realToken.balanceFormatted,
+        valueUSD: realToken.valueUSD
+      }));
+
+      console.log(`[IntegratedWallet] Real balance fetched: $${balanceData.totalPortfolioValue.toFixed(2)}`);
+
+      // Check Avantis connection and fetch balance
+      let avantisBalance = 0;
+      let isAvantisConnected = false;
+      let hasRealAvantisBalanceFlag = false;
+      
+      // Use stored wallet private key for Avantis
+      const avantisPrivateKey = walletToUse.privateKey;
+      
+      if (avantisPrivateKey) {
+        try {
+          // Check if wallet has real balance on Avantis
+          const avantisStatus = await hasRealAvantisBalance(avantisPrivateKey);
+          avantisBalance = avantisStatus.balance;
+          isAvantisConnected = avantisStatus.isConnected;
+          hasRealAvantisBalanceFlag = avantisStatus.hasBalance;
+        } catch (error) {
+          console.error('[IntegratedWallet] Error fetching Avantis data:', error);
+          // If we can't fetch data, wallet is not connected to Avantis
+          isAvantisConnected = false;
+          hasRealAvantisBalanceFlag = false;
+        }
+      }
+
+      const totalPortfolioValue = balanceData.totalPortfolioValue + avantisBalance;
+
+      setState(prev => ({
+        ...prev,
+        ethBalance: balanceData.ethBalance,
+        ethBalanceFormatted: `${balanceData.ethBalanceFormatted} ETH`,
+        holdings,
+        totalPortfolioValue,
+        dailyChange: balanceData.dailyChange,
+        dailyChangePercentage: balanceData.dailyChangePercentage,
+        lastDayValue: balanceData.lastDayValue,
+        avantisBalance,
+        isAvantisConnected,
+        hasRealAvantisBalance: hasRealAvantisBalanceFlag,
+        error: null
+      }));
+    } catch (error) {
+      console.error('[IntegratedWallet] Error refreshing real balances:', error);
+      setState(prev => ({
+        ...prev,
+        error: 'Failed to refresh balances'
+      }));
+    }
+  }, [state.primaryWallet, metaMaskAccount, isMetaMaskConnected]);
+
   const refreshWallets = useCallback(async () => {
-    // TEMPORARY: Skip authentication for testing
-    // TODO: Re-enable authentication once basic functionality is working
-    // if (!user?.phoneNumber || !token) return;
+    if (!user?.fid || !token) {
+      console.log('[IntegratedWallet] Skipping wallet refresh - no user or token');
+      return;
+    }
 
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      // TEMPORARY: Mock primary wallet for testing
-      // TODO: Re-enable authentication once basic functionality is working
-      const primaryWallet = {
-        id: 'mock-wallet-id',
-        address: '0xaa0bA0700Cfd1489d08C63C4bd177638Be4C86F6',
-        privateKey: '0xc2614e090f4a9e229c197256ef9c5b0647fadfc44cb1da5b2d5e6969b68ba61b',
-        chain: 'ethereum',
-        isPrimary: true,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
+      // Fetch wallets from API
+      const wallets = await clientWalletService.getAllUserWallets();
       
-      // Get all user wallets
-      const allWallets = [primaryWallet];
+      // Get primary wallet (first Ethereum wallet, or first wallet if no Ethereum)
+      const primaryWallet = wallets.find(w => w.chain === 'ethereum') || wallets[0] || null;
 
       setState(prev => ({
         ...prev,
         isConnected: !!primaryWallet,
         primaryWallet,
-        allWallets,
+        allWallets: wallets,
         isLoading: false
       }));
 
       // Refresh balances if we have a primary wallet
+      // Pass the wallet directly to avoid state timing issues
       if (primaryWallet) {
-        await refreshBalances();
+        await refreshBalances(primaryWallet);
+      } else {
+        console.log('[IntegratedWallet] No primary wallet found, balances will not be refreshed');
       }
     } catch (error) {
       console.error('Error refreshing wallets:', error);
@@ -121,7 +195,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         error: error instanceof Error ? error.message : 'Failed to load wallets'
       }));
     }
-  }, [user?.fid, token]);
+  }, [user?.fid, token, refreshBalances]);
 
   // Load user wallets on mount
   useEffect(() => {
@@ -164,92 +238,27 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         primaryWallet: wallet,
         isConnected: true
       }));
-      await refreshBalances();
+      // Pass wallet directly to avoid state timing issues
+      await refreshBalances(wallet);
     }
-  }, [state.allWallets]);
-
-  const refreshBalances = useCallback(async () => {
-    if (!state.primaryWallet?.address) {
-      console.log('[IntegratedWallet] No primary wallet address, skipping balance refresh');
-      return;
-    }
-
-    try {
-      console.log(`[IntegratedWallet] Fetching real balances for: ${state.primaryWallet.address}`);
-      
-      // Fetch real blockchain balances
-      const balanceData: RealBalanceData = await realBalanceService.getAllBalances(state.primaryWallet.address);
-      
-      // Convert real balance data to the expected format
-      const holdings: TokenBalance[] = balanceData.holdings.map(realToken => ({
-        token: {
-          address: realToken.token.address,
-          symbol: realToken.token.symbol,
-          name: realToken.token.name,
-          decimals: realToken.token.decimals,
-          price: realToken.priceUSD
-        },
-        balance: realToken.balance,
-        balanceFormatted: realToken.balanceFormatted,
-        valueUSD: realToken.valueUSD
-      }));
-
-      console.log(`[IntegratedWallet] Real balance fetched: $${balanceData.totalPortfolioValue.toFixed(2)}`);
-
-      // Check Avantis connection and fetch balance
-      let avantisBalance = 0;
-      let isAvantisConnected = false;
-      let hasRealAvantisBalanceFlag = false;
-      
-      // Use stored wallet private key for Avantis
-      const avantisPrivateKey = state.primaryWallet.privateKey;
-      
-      if (avantisPrivateKey) {
-        try {
-          // Check if wallet has real balance on Avantis
-          const avantisStatus = await hasRealAvantisBalance(avantisPrivateKey);
-          avantisBalance = avantisStatus.balance;
-          isAvantisConnected = avantisStatus.isConnected;
-          hasRealAvantisBalanceFlag = avantisStatus.hasBalance;
-        } catch (error) {
-          console.error('[IntegratedWallet] Error fetching Avantis data:', error);
-          // If we can't fetch data, wallet is not connected to Avantis
-          isAvantisConnected = false;
-          hasRealAvantisBalanceFlag = false;
-        }
-      }
-
-      const totalPortfolioValue = balanceData.totalPortfolioValue + avantisBalance;
-
-      setState(prev => ({
-        ...prev,
-        ethBalance: balanceData.ethBalance,
-        ethBalanceFormatted: `${balanceData.ethBalanceFormatted} ETH`,
-        holdings,
-        totalPortfolioValue,
-        dailyChange: balanceData.dailyChange,
-        dailyChangePercentage: balanceData.dailyChangePercentage,
-        lastDayValue: balanceData.lastDayValue,
-        avantisBalance,
-        isAvantisConnected,
-        hasRealAvantisBalance: hasRealAvantisBalanceFlag,
-        error: null
-      }));
-    } catch (error) {
-      console.error('[IntegratedWallet] Error refreshing real balances:', error);
-      setState(prev => ({
-        ...prev,
-        error: 'Failed to refresh balances'
-      }));
-    }
-  }, [state.primaryWallet, metaMaskAccount, isMetaMaskConnected]);
+  }, [state.allWallets, refreshBalances]);
 
   // Refresh balances when MetaMask connection changes
   useEffect(() => {
+    let mounted = true;
+    
     if (state.primaryWallet && (isMetaMaskConnected || metaMaskAccount)) {
       console.log('[IntegratedWallet] MetaMask connection changed, refreshing balances...');
-      refreshBalances();
+      refreshBalances().catch(err => {
+        if (mounted) {
+          console.error('[IntegratedWallet] Error refreshing balances:', err);
+        }
+      });
     }
+    
+    return () => {
+      mounted = false;
+    };
   }, [isMetaMaskConnected, metaMaskAccount, state.primaryWallet, refreshBalances]);
 
   const getWalletForChain = useCallback((chain: string): UserWallet | null => {

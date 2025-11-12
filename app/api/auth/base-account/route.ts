@@ -32,6 +32,14 @@ export async function GET(request: NextRequest) {
       const payload = await client.verifyJwt({ token: baseToken, domain });
       const fid = payload.sub;
 
+      // Validate FID
+      if (!fid || typeof fid !== 'number' || fid <= 0) {
+        return NextResponse.json(
+          { error: 'Invalid FID in token', fid: null },
+          { status: 401 }
+        );
+      }
+
       // Create or get user by FID (no database needed - just for internal tracking)
       const user = await authService.createUserByFid(fid);
 

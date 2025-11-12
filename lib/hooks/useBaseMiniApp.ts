@@ -118,8 +118,18 @@ export function useBaseMiniApp() {
 
     try {
       // Get the provider from Base Account SDK
-      // Type assertion needed as SDK types may not include provider
-      const provider = (sdk as any)?.provider;
+      // Use recommended method: sdk.wallet.getEthereumProvider()
+      // Fallback to sdk.provider for backward compatibility
+      let provider: any = null;
+      
+      if (sdk.wallet?.getEthereumProvider) {
+        // getEthereumProvider() returns a Promise, so we need to await it
+        provider = await sdk.wallet.getEthereumProvider();
+      } else {
+        // Fallback to direct provider access
+        provider = (sdk as any)?.provider;
+      }
+      
       if (!provider) {
         return null;
       }
