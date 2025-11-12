@@ -35,27 +35,42 @@ export class ClientWalletService {
     this.getAuthToken = getAuthToken
   }
 
-  private async makeRequest(endpoint: string, options: RequestInit = {}): Promise<any> {
+  private async makeRequest(endpoint: string, options: RequestInit = {}, timeout: number = 30000): Promise<any> {
     const token = this.getAuthToken()
     if (!token) {
       throw new Error('No authentication token available')
     }
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        ...options.headers,
-      },
-    })
+    // Create abort controller for timeout
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), timeout)
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      throw new Error(errorData.error || `HTTP ${response.status}`)
+    try {
+      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          ...options.headers,
+        },
+      })
+
+      clearTimeout(timeoutId)
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `HTTP ${response.status}`)
+      }
+
+      return response.json()
+    } catch (error) {
+      clearTimeout(timeoutId)
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Request timeout - please try again')
+      }
+      throw error
     }
-
-    return response.json()
   }
 
   async getAllUserWallets(): Promise<UserWallet[]> {
@@ -75,10 +90,11 @@ export class ClientWalletService {
 
   async createWallet(request: CreateWalletRequest): Promise<CreateWalletResponse> {
     try {
+      // Use longer timeout for wallet creation (60 seconds)
       const response = await this.makeRequest('/user-wallets', {
         method: 'POST',
         body: JSON.stringify(request),
-      })
+      }, 60000)
       
       return {
         success: true,

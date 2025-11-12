@@ -51,11 +51,13 @@ export async function generateMetadata(): Promise<Metadata> {
     version: miniApp.version,
     imageUrl: miniApp.heroImageUrl,
     button: {
-      title: `Join the ${miniApp.name}`,
+      title: "Open App",
       action: {
         type: "launch_frame",
-        name: `Launch ${miniApp.name}`,
         url: miniApp.homeUrl,
+        name: miniApp.name,
+        splashImageUrl: `${appUrl}/trading-illustration.png`,
+        splashBackgroundColor: "#0D0D0D",
       },
     },
   })

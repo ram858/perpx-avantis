@@ -595,21 +595,24 @@ export default function HomePage() {
   const { totalProfits } = useTradingProfits()
 
   // Auto-create wallet if user doesn't have one - optimized with useCallback
-  const createWalletIfNeeded = useCallback(() => {
+  useEffect(() => {
     // Only create wallet if:
     // 1. User is logged in
     // 2. Not currently loading
     // 3. No primary wallet is connected
     // 4. No wallets exist for this user
-    if (user?.fid && !isLoading && !primaryWallet && allWallets && allWallets.length === 0) {
-      console.log('Auto-creating wallet for FID:', user.fid)
-      createWallet('ethereum')
+    // 5. Not already creating a wallet (prevent multiple simultaneous calls)
+    if (user?.fid && !isLoading && !primaryWallet && allWallets && allWallets.length === 0 && !error) {
+      console.log('[HomePage] Auto-creating wallet for FID:', user.fid)
+      // Add a small delay to ensure auth is fully complete
+      const timer = setTimeout(() => {
+        createWallet('ethereum').catch(err => {
+          console.error('[HomePage] Wallet creation error:', err)
+        })
+      }, 500)
+      return () => clearTimeout(timer)
     }
-  }, [user?.fid, isLoading, primaryWallet, allWallets, createWallet])
-
-  useEffect(() => {
-    createWalletIfNeeded()
-  }, [createWalletIfNeeded])
+  }, [user?.fid, isLoading, primaryWallet, allWallets, createWallet, error])
 
   // Memoized holdings calculation - only recalculate when dependencies change
   const realHoldings = useMemo(() => {

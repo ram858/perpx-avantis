@@ -11,8 +11,8 @@
     "version": "1",
     "name": "PrepX",
     "homeUrl": "https://avantis.superapp.gg/",
-    "iconUrl": "https://avantis.superapp.gg/trading-bot-icon.png",
-    "splashImageUrl": "https://avantis.superapp.gg/trading-bot-icon.png",
+    "iconUrl": "https://avantis.superapp.gg/trading-illustration.png",
+    "splashImageUrl": "https://avantis.superapp.gg/trading-illustration.png",
     "splashBackgroundColor": "#0D0D0D",
     "subtitle": "AI-powered trading automation",
     "description": "PrepX automates crypto trading with managed strategies on Base.",
@@ -26,7 +26,7 @@
     "tagline": "Automated trading on Base",
     "ogTitle": "PrepX",
     "ogDescription": "Launch PrepX to automate crypto trading on Base.",
-    "ogImageUrl": "https://avantis.superapp.gg/trading-illustration.svg",
+    "ogImageUrl": "https://avantis.superapp.gg/trading-illustration.png",
     "noindex": false
   }
 }
