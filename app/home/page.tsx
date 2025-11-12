@@ -377,7 +377,6 @@ const WalletInfoCard = ({
   avantisBalance: number
 }) => {
   const [copiedAddress, setCopiedAddress] = useState(false)
-  const [copiedPrivateKey, setCopiedPrivateKey] = useState(false)
 
   const copyWalletAddress = useCallback(async () => {
     if (primaryWallet?.address) {
@@ -390,18 +389,6 @@ const WalletInfoCard = ({
       }
     }
   }, [primaryWallet?.address])
-
-  const copyPrivateKey = useCallback(async () => {
-    if (primaryWallet?.privateKey) {
-      try {
-        await navigator.clipboard.writeText(primaryWallet.privateKey)
-        setCopiedPrivateKey(true)
-        setTimeout(() => setCopiedPrivateKey(false), 2000)
-      } catch (err) {
-        console.error('Failed to copy private key:', err)
-      }
-    }
-  }, [primaryWallet?.privateKey])
 
   return (
     <Card className="bg-[#1a1a1a] border-[#262626] p-4 sm:p-6 rounded-2xl">
@@ -434,41 +421,6 @@ const WalletInfoCard = ({
                 }`}
               >
                 {copiedAddress ? (
-                  <>
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
-                    <span>Copied!</span>
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
-                      <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
-                    </svg>
-                    <span>Copy</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-          
-          {/* Private Key Section */}
-          <div className="flex items-center justify-between">
-            <span className="text-[#9ca3af] text-sm">Private Key:</span>
-            <div className="flex items-center space-x-2">
-              <code className="text-white text-sm font-mono bg-[#374151] px-2 py-1 rounded">
-                {primaryWallet?.privateKey?.slice(0, 6)}...{primaryWallet?.privateKey?.slice(-4)}
-              </code>
-              <button
-                onClick={copyPrivateKey}
-                className={`text-sm transition-all duration-200 flex items-center space-x-1 ${
-                  copiedPrivateKey 
-                    ? 'text-green-400 hover:text-green-300' 
-                    : 'text-[#7c3aed] hover:text-[#6d28d9]'
-                }`}
-              >
-                {copiedPrivateKey ? (
                   <>
                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -615,26 +567,32 @@ export default function HomePage() {
   }, [user?.fid, isLoading, primaryWallet, allWallets, createWallet, error])
 
   // Memoized holdings calculation - only recalculate when dependencies change
+  // Deduplicate ETH holdings to avoid showing ETH twice
   const realHoldings = useMemo(() => {
     if (!isConnected) return []
 
+    // Filter out ETH from holdings array to avoid duplicates
+    const otherHoldings = holdings.filter(holding => 
+      holding.token.symbol.toUpperCase() !== 'ETH'
+    )
+
     return [
-      // Real ETH holding from wallet
+      // Real ETH holding from wallet (only one ETH entry)
       {
         token: {
           symbol: 'ETH',
           name: 'Ethereum',
           address: '0x0000000000000000000000000000000000000000',
           decimals: 18,
-          price: 2500 // Mock price
+          price: 0 // Price will be fetched from RealBalanceService
         },
         balance: ethBalanceFormatted,
         valueUSD: totalPortfolioValue,
         color: '#627eea',
         link: "/detail/ethereum",
       },
-      // Add other holdings from the wallet
-      ...holdings.map(holding => ({
+      // Add other holdings from the wallet (excluding ETH)
+      ...otherHoldings.map(holding => ({
         token: {
           ...holding.token,
           price: holding.token.price || 0

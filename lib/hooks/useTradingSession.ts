@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useTrading } from './useTrading';
 import { usePositions } from './usePositions';
+import { useTradingFee } from './useTradingFee';
 
 export interface TradingSessionState {
   id: string;
@@ -26,6 +27,7 @@ export interface TradingSessionState {
 export function useTradingSession() {
   const { startTrading: startTradingAPI, stopTrading: stopTradingAPI, getTradingSession } = useTrading();
   const { positionData, fetchPositions } = usePositions();
+  const { payTradingFee, isPayingFee } = useTradingFee();
   
   const [tradingSession, setTradingSession] = useState<TradingSessionState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -70,6 +72,17 @@ export function useTradingSession() {
     setError(null);
 
     try {
+      // Pay trading fee first ($0.03)
+      console.log('[useTradingSession] Paying trading fee...');
+      const feeResult = await payTradingFee();
+      
+      if (!feeResult.success) {
+        throw new Error(feeResult.error || 'Failed to pay trading fee');
+      }
+      
+      console.log(`[useTradingSession] Fee paid successfully: ${feeResult.amount} ${feeResult.currency} (tx: ${feeResult.transactionHash})`);
+
+      // Now start trading
       const session = await startTradingAPI({
         totalBudget: config.maxBudget || config.investmentAmount || 50,
         profitGoal: config.profitGoal || config.targetProfit || 10,
@@ -156,7 +169,7 @@ export function useTradingSession() {
 
   return {
     tradingSession,
-    isLoading,
+    isLoading: isLoading || isPayingFee,
     error,
     startTrading,
     stopTrading,

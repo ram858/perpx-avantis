@@ -132,7 +132,7 @@ export default function ChatPage() {
         // Start real trading
         setMessages([{
           type: "bot",
-          content: `💰 Starting REAL TRADING with $${investmentNum} investment targeting $${profitNum} profit. This will use actual money on Avantis!`,
+          content: `💰 Starting REAL TRADING with $${investmentNum} investment targeting $${profitNum} profit. This will use actual money on Avantis!\n\n💳 Processing $0.03 trading fee...`,
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         }])
         
@@ -140,6 +140,12 @@ export default function ChatPage() {
           profitGoal: profitNum,
           maxBudget: investmentNum,
           maxPerSession: 5
+        }).then(() => {
+          setMessages(prev => [...prev, {
+            type: "bot",
+            content: `✅ Trading fee paid successfully! Starting trading session...`,
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          }])
         }).catch(error => {
           setMessages(prev => [...prev, {
             type: "bot",

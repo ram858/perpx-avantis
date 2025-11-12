@@ -12,7 +12,7 @@ export interface Token {
   symbol: string;
   name: string;
   decimals: number;
-  price?: number; // Mock price for MVP
+  price?: number; // Price fetched from CoinGecko API
 }
 
 export interface TokenBalance {
@@ -63,7 +63,7 @@ export const SUPPORTED_TOKENS: Token[] = [
     symbol: 'WBTC',
     name: 'Wrapped Bitcoin',
     decimals: 8,
-    price: 45000 // Mock price
+    price: 0 // Price fetched from CoinGecko API
   },
   {
     address: '0x6B175474E89094C44Da98b954EedeAC495271d0F', // DAI
@@ -180,17 +180,24 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // Note: Avantis requires private key, not just address
       let avantisBalance = 0;
       try {
-        // For now, we'll need to get the private key from the wallet service
-        // This is a placeholder - in production, get private key securely
         const avantisAddress = avantisWalletAddress || address;
-        // TODO: Get private key from wallet service for Avantis balance
-        // avantisBalance = await getAvantisBalanceUSD(privateKey);
+        // Avantis balance fetching is handled by IntegratedWalletContext
+        // This context is kept for backward compatibility
       } catch (error) {
         console.warn('[WalletContext] Could not fetch Avantis balance:', error);
       }
 
       // Calculate total portfolio value (including Avantis balance)
-      const ethValueUSD = parseFloat(ethBalanceFormatted) * 2000; // Mock ETH price
+      // Fetch real ETH price from CoinGecko
+      let ethPrice = 2500; // Fallback price
+      try {
+        const priceResponse = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
+        const priceData = await priceResponse.json();
+        ethPrice = priceData.ethereum?.usd || 2500;
+      } catch (error) {
+        console.warn('[WalletContext] Failed to fetch ETH price, using fallback:', error);
+      }
+      const ethValueUSD = parseFloat(ethBalanceFormatted) * ethPrice;
       const totalTokenValue = tokenBalances.reduce((sum, tokenBalance) => sum + tokenBalance.valueUSD, 0);
       const totalPortfolioValue = ethValueUSD + totalTokenValue + avantisBalance;
 

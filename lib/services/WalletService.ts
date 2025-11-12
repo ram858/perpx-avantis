@@ -261,8 +261,9 @@ export class WalletService {
 
   async getWalletPrivateKey(walletId: string, phoneNumber: string): Promise<string | null> {
     try {
-      // TODO: Implement database query and decryption
-      console.log(`Getting private key for wallet ${walletId} (not implemented yet)`)
+      // This method is deprecated - use BaseAccountWalletService instead
+      // Legacy method kept for backward compatibility
+      console.warn(`[WalletService] getWalletPrivateKey is deprecated. Use BaseAccountWalletService instead.`)
       return null
     } catch (error) {
       console.error('Error getting wallet private key:', error)

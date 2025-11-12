@@ -25,11 +25,13 @@ export default function SimulationPage() {
   const { isConnected: isWalletConnected } = useIntegratedWallet();
   
   // WebSocket connection for real-time trading data
+  // Use environment variable for WebSocket URL
+  const wsUrl = process.env.NEXT_PUBLIC_WS_URL || '';
   const { 
     isConnected: isWebSocketConnected, 
     error: webSocketError,
     sendMessage: sendWebSocketMessage 
-  } = useWebSocket('ws://localhost:3002');
+  } = useWebSocket(wsUrl);
 
   const handleStartSimulation = async () => {
     const profit = parseFloat(targetProfit);
@@ -92,7 +94,7 @@ export default function SimulationPage() {
                 </div>
                 {!isWebSocketConnected && (
                   <div className="text-xs text-red-300 mt-1">
-                    Server: ws://localhost:3002
+                    Server: {wsUrl || 'Not configured'}
                   </div>
                 )}
               </div>

@@ -32,9 +32,11 @@ export function usePositions() {
   const maxRetries = 3;
 
       const fetchPositions = useCallback(async (force = false) => {
-        // TEMPORARY: Skip authentication for testing
-        // TODO: Re-enable authentication once basic functionality is working
-        // if (!token) return;
+        // Authentication is handled by the API endpoint
+        if (!token) {
+          console.warn('[usePositions] No token available, skipping fetch');
+          return;
+        }
 
         // Prevent concurrent fetches
         if (fetchInProgressRef.current && !force) {
