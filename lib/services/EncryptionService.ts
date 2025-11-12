@@ -7,7 +7,12 @@ export class EncryptionService {
 
   constructor() {
     this.algorithm = process.env.ENCRYPTION_ALGORITHM || 'aes-256-gcm'
-    this.secret = process.env.ENCRYPTION_SECRET || 'your-32-character-secret-key-here'
+    if (!process.env.ENCRYPTION_SECRET) {
+      throw new Error(
+        'ENCRYPTION_SECRET environment variable is required. Set a 32-character secret in your server environment.'
+      )
+    }
+    this.secret = process.env.ENCRYPTION_SECRET
     this.ivLength = parseInt(process.env.IV_LENGTH || '16')
   }
 
