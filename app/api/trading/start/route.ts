@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     let isBaseAccount = false;
     
     // First, try to get Base Account address (if stored)
-    const baseAccountAddress = await walletService.getWalletAddress(payload.fid, 'ethereum');
+    const baseAccountAddress = await walletService.getBaseAccountAddress(payload.fid);
     
     if (baseAccountAddress) {
       // Use Base Account address
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     } else {
       // Fallback: Create a trading wallet for automated trading
       // This is a workaround - ideally all trading should use Base Account
-      const wallet = await walletService.getOrCreateWallet(payload.fid, 'ethereum');
+      const wallet = await walletService.ensureTradingWallet(payload.fid);
       
       if (!wallet || !wallet.privateKey) {
         return NextResponse.json(

@@ -23,10 +23,10 @@ export async function GET(request: NextRequest) {
       )
     }
     
-    const wallet = await walletService.getWalletAddress(payload.fid, 'ethereum')
+    const wallet = await walletService.getBaseAccountAddress(payload.fid)
     
     return NextResponse.json({ 
-      wallet: wallet ? { address: wallet, chain: 'ethereum' } : null 
+      wallet: wallet ? { address: wallet, chain: 'base', walletType: 'base-account' } : null 
     })
   } catch (error) {
     console.error('Error fetching primary wallet:', error)

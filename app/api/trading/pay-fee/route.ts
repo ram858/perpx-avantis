@@ -4,6 +4,7 @@ import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletServic
 import { RealBalanceService } from '@/lib/services/RealBalanceService';
 import { ethers } from 'ethers';
 import { getAvantisBalanceUSD } from '@/lib/wallet/avantisBalance';
+import { getNetworkConfig } from '@/lib/config/network';
 
 const authService = new AuthService();
 const walletService = new BaseAccountWalletService();
@@ -11,8 +12,9 @@ const balanceService = new RealBalanceService();
 
 const FEE_PERCENTAGE = 0.01; // 1% of total wallet balance
 const FEE_RECIPIENT = '0xeb56286910d3Cf36Ba26958Be0BbC91D60B28799';
-const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'; // Base mainnet USDC
-const USDC_DECIMALS = 6;
+const NETWORK_CONFIG = getNetworkConfig();
+const USDC_ADDRESS = NETWORK_CONFIG.usdcAddress;
+const USDC_DECIMALS = NETWORK_CONFIG.usdcDecimals;
 
 /**
  * Get current ETH price
@@ -91,7 +93,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Get user's wallet address
-    const walletAddress = await walletService.getWalletAddress(payload.fid, 'ethereum');
+    const baseWalletAddress = await walletService.getBaseAccountAddress(payload.fid);
+    const tradingWallet = await walletService.ensureTradingWallet(payload.fid);
+
+    const walletAddress = baseWalletAddress || tradingWallet?.address || null;
+
     if (!walletAddress) {
       return NextResponse.json(
         { error: 'No wallet found for user' },
@@ -100,7 +106,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get wallet with private key (for fallback wallets)
-    const wallet = await walletService.getWalletWithKey(payload.fid, 'ethereum');
+    const wallet = tradingWallet || (await walletService.getWalletWithKey(payload.fid, 'ethereum'));
     const isBaseAccount = !wallet?.privateKey || wallet.privateKey.length === 0;
 
     // Calculate total wallet balance (ETH + tokens + Avantis)

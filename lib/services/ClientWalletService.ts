@@ -1,5 +1,12 @@
 import { UserWallet } from './UserWalletService'
 
+export type WalletType = 'base-account' | 'trading' | 'legacy'
+
+export interface ClientUserWallet extends UserWallet {
+  walletType?: WalletType
+  updatedAt?: Date
+}
+
 export interface Token {
   address: string;
   symbol: string;
@@ -22,7 +29,7 @@ export interface CreateWalletRequest {
 
 export interface CreateWalletResponse {
   success: boolean;
-  wallet?: UserWallet;
+  wallet?: ClientUserWallet;
   error?: string;
 }
 
@@ -73,14 +80,31 @@ export class ClientWalletService {
     }
   }
 
-  async getAllUserWallets(): Promise<UserWallet[]> {
+  async getAllUserWallets(): Promise<ClientUserWallet[]> {
     const response = await this.makeRequest('/user-wallets')
-    return response.wallets || []
+    const wallets = (response.wallets || []) as any[]
+
+    return wallets.map(wallet => ({
+      id: wallet.id,
+      address: wallet.address,
+      chain: wallet.chain,
+      createdAt: wallet.createdAt ? new Date(wallet.createdAt) : new Date(),
+      walletType: wallet.walletType,
+      updatedAt: wallet.updatedAt ? new Date(wallet.updatedAt) : undefined
+    }))
   }
 
-  async getPrimaryTradingWallet(): Promise<UserWallet | null> {
+  async getPrimaryTradingWallet(): Promise<ClientUserWallet | null> {
     const response = await this.makeRequest('/primary')
-    return response.wallet || null
+    const wallet = response.wallet
+    if (!wallet) return null
+    return {
+      id: wallet.id,
+      address: wallet.address,
+      chain: wallet.chain,
+      createdAt: wallet.createdAt ? new Date(wallet.createdAt) : new Date(),
+      walletType: wallet.walletType
+    }
   }
 
   async getPrimaryTradingWalletWithKey(): Promise<UserWallet | null> {
@@ -96,9 +120,18 @@ export class ClientWalletService {
         body: JSON.stringify(request),
       }, 60000)
       
+      const wallet = response.wallet
       return {
         success: true,
-        wallet: response.wallet
+        wallet: wallet
+          ? {
+              id: wallet.id,
+              address: wallet.address,
+              chain: wallet.chain,
+              createdAt: wallet.createdAt ? new Date(wallet.createdAt) : new Date(),
+              walletType: wallet.walletType
+            }
+          : undefined
       }
     } catch (error) {
       return {
@@ -108,7 +141,7 @@ export class ClientWalletService {
     }
   }
 
-  async getWalletForChain(chain: string): Promise<UserWallet | null> {
+  async getWalletForChain(chain: string): Promise<ClientUserWallet | null> {
     const wallets = await this.getAllUserWallets()
     return wallets.find(wallet => wallet.chain === chain) || null
   }

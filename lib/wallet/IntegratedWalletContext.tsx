@@ -1,8 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { UserWallet } from '../services/UserWalletService';
-import { ClientWalletService } from '../services/ClientWalletService';
+import { ClientWalletService, ClientUserWallet } from '../services/ClientWalletService';
 import { RealBalanceService, RealBalanceData } from '../services/RealBalanceService';
 import { useAuth } from '../auth/AuthContext';
 import { useMetaMask } from '../hooks/useMetaMask';
@@ -26,8 +25,11 @@ export interface TokenBalance {
 
 export interface IntegratedWalletState {
   isConnected: boolean;
-  primaryWallet: UserWallet | null;
-  allWallets: UserWallet[];
+  primaryWallet: ClientUserWallet | null;
+  tradingWallet: ClientUserWallet | null;
+  baseAccountAddress: string | null;
+  tradingWalletAddress: string | null;
+  allWallets: ClientUserWallet[];
   ethBalance: string;
   ethBalanceFormatted: string;
   holdings: TokenBalance[];
@@ -44,10 +46,10 @@ export interface IntegratedWalletState {
 
 export interface IntegratedWalletContextType extends IntegratedWalletState {
   refreshWallets: () => Promise<void>;
-  createWallet: (chain: string, mnemonic?: string) => Promise<UserWallet | null>;
+  createWallet: (chain: string, mnemonic?: string) => Promise<ClientUserWallet | null>;
   switchToWallet: (walletId: string) => Promise<void>;
   refreshBalances: () => Promise<void>;
-  getWalletForChain: (chain: string) => UserWallet | null;
+  getWalletForChain: (chain: string) => ClientUserWallet | null;
 }
 
 const IntegratedWalletContext = createContext<IntegratedWalletContextType | undefined>(undefined);
@@ -63,6 +65,9 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
   const [state, setState] = useState<IntegratedWalletState>({
     isConnected: false,
     primaryWallet: null,
+    tradingWallet: null,
+    baseAccountAddress: null,
+    tradingWalletAddress: null,
     allWallets: [],
     ethBalance: '0',
     ethBalanceFormatted: '0.00 ETH',
@@ -79,19 +84,25 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
   });
 
   // Define refreshBalances first to avoid circular dependency
-  const refreshBalances = useCallback(async (walletOverride?: UserWallet | null) => {
+  const refreshBalances = useCallback(async (walletOverride?: ClientUserWallet | null) => {
     const walletToUse = walletOverride || state.primaryWallet;
-    
-    if (!walletToUse?.address) {
-      console.log('[IntegratedWallet] No primary wallet address, skipping balance refresh');
+    const addressToUse =
+      walletToUse?.address ||
+      walletOverride?.address ||
+      state.baseAccountAddress ||
+      user?.baseAccountAddress ||
+      null;
+
+    if (!addressToUse) {
+      console.log('[IntegratedWallet] No wallet address available, skipping balance refresh');
       return;
     }
 
     try {
-      console.log(`[IntegratedWallet] Fetching real balances for: ${walletToUse.address}`);
+      console.log(`[IntegratedWallet] Fetching real balances for: ${addressToUse}`);
       
       // Fetch real blockchain balances
-      const balanceData: RealBalanceData = await realBalanceService.getAllBalances(walletToUse.address);
+      const balanceData: RealBalanceData = await realBalanceService.getAllBalances(addressToUse);
       
       // Convert real balance data to the expected format
       const holdings: TokenBalance[] = balanceData.holdings.map(realToken => ({
@@ -115,7 +126,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       let hasRealAvantisBalanceFlag = false;
       
       // Use stored wallet private key for Avantis
-      const avantisPrivateKey = walletToUse.privateKey;
+      const avantisPrivateKey = state.tradingWallet?.privateKey;
       
       if (avantisPrivateKey) {
         try {
@@ -155,7 +166,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         error: 'Failed to refresh balances'
       }));
     }
-  }, [state.primaryWallet, metaMaskAccount, isMetaMaskConnected]);
+  }, [state.primaryWallet, state.baseAccountAddress, state.tradingWallet, user?.baseAccountAddress, metaMaskAccount, isMetaMaskConnected]);
 
   const refreshWallets = useCallback(async () => {
     if (!user?.fid || !token) {
@@ -168,22 +179,44 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     try {
       // Fetch wallets from API
       const wallets = await clientWalletService.getAllUserWallets();
-      
-      // Get primary wallet (first Ethereum wallet, or first wallet if no Ethereum)
-      const primaryWallet = wallets.find(w => w.chain === 'ethereum') || wallets[0] || null;
+
+      const baseWalletFromApi = wallets.find(w => w.walletType === 'base-account');
+      const tradingWallet = wallets.find(w => w.walletType === 'trading') || null;
+
+      const baseWallet = baseWalletFromApi || (user.baseAccountAddress
+        ? {
+            id: `fid_${user.fid}_base-account`,
+            address: user.baseAccountAddress,
+            chain: 'base',
+            createdAt: new Date(),
+            walletType: 'base-account'
+          } as ClientUserWallet
+        : null);
+
+      const combinedWallets =
+        baseWallet && !baseWalletFromApi
+          ? [...wallets, baseWallet]
+          : wallets;
+
+      const primaryWallet = baseWallet || tradingWallet || wallets[0] || null;
 
       setState(prev => ({
         ...prev,
         isConnected: !!primaryWallet,
+        baseAccountAddress: baseWallet?.address || user.baseAccountAddress || null,
+        tradingWalletAddress: tradingWallet?.address || null,
         primaryWallet,
-        allWallets: wallets,
+        tradingWallet,
+        allWallets: combinedWallets,
         isLoading: false
       }));
 
       // Refresh balances if we have a primary wallet
       // Pass the wallet directly to avoid state timing issues
-      if (primaryWallet) {
-        await refreshBalances(primaryWallet);
+      const walletForBalances = baseWallet || primaryWallet;
+
+      if (walletForBalances) {
+        await refreshBalances(walletForBalances);
       } else {
         console.log('[IntegratedWallet] No primary wallet found, balances will not be refreshed');
       }
@@ -204,7 +237,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     }
   }, [user?.fid, token, refreshWallets]);
 
-  const createWallet = useCallback(async (chain: string, mnemonic?: string): Promise<UserWallet | null> => {
+  const createWallet = useCallback(async (chain: string, mnemonic?: string): Promise<ClientUserWallet | null> => {
     if (!user?.fid || !token) return null;
 
     setState(prev => ({ ...prev, isLoading: true, error: null }));
@@ -215,7 +248,10 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       if (result.success && result.wallet) {
         // Refresh wallets list
         await refreshWallets();
-        return result.wallet;
+        return {
+          ...result.wallet,
+          walletType: (chain || 'ethereum').toLowerCase() === 'ethereum' ? 'trading' : result.wallet.walletType
+        } as ClientUserWallet;
       } else {
         throw new Error(result.error || 'Failed to create wallet');
       }
@@ -261,7 +297,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     };
   }, [isMetaMaskConnected, metaMaskAccount, state.primaryWallet, refreshBalances]);
 
-  const getWalletForChain = useCallback((chain: string): UserWallet | null => {
+  const getWalletForChain = useCallback((chain: string): ClientUserWallet | null => {
     return state.allWallets.find(wallet => wallet.chain === chain) || null;
   }, [state.allWallets]);
 

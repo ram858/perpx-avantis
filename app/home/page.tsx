@@ -13,6 +13,7 @@ import { useState, useEffect, useMemo, useCallback } from "react"
 import { NavigationHeader } from "@/components/NavigationHeader"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { useBaseAccountTransactions } from "@/lib/services/BaseAccountTransactionService"
 
 // Memoized components for better performance
 const WalletSetupCard = ({ isLoading, error, onRetry }: { isLoading: boolean; error: string | null; onRetry?: () => void }) => (
@@ -40,7 +41,7 @@ const WalletSetupCard = ({ isLoading, error, onRetry }: { isLoading: boolean; er
       {error && (
         <div className="space-y-3">
           <div className="bg-red-900/20 border border-red-600/30 rounded-lg p-3">
-            <p className="text-red-400 text-sm">{error}</p>
+          <p className="text-red-400 text-sm">{error}</p>
           </div>
           {onRetry && (
             <button
@@ -53,9 +54,9 @@ const WalletSetupCard = ({ isLoading, error, onRetry }: { isLoading: boolean; er
         </div>
       )}
       {!error && !isLoading && (
-        <p className="text-[#6b7280] text-xs">
-          Your wallet will be ready in a moment
-        </p>
+      <p className="text-[#6b7280] text-xs">
+        Your wallet will be ready in a moment
+      </p>
       )}
     </div>
   </Card>
@@ -180,19 +181,53 @@ const TradingCard = ({
   investmentAmount,
   setInvestmentAmount, 
   primaryWallet, 
-  avantisBalance 
+  baseAccountAddress,
+  tradingWalletAddress,
+  avantisBalance,
+  onDeposit,
+  isDepositing,
+  depositError,
+  recentDepositHash,
+  isBaseContextAvailable,
 }: {
   targetProfit: string
   setTargetProfit: (value: string) => void
   investmentAmount: string
   setInvestmentAmount: (value: string) => void
   primaryWallet: { address: string; privateKey?: string; chain: string } | null
+  baseAccountAddress: string | null
+  tradingWalletAddress: string | null
   avantisBalance: number
+  onDeposit: (params: { amount: string; asset: 'USDC' | 'ETH' }) => Promise<void>
+  isDepositing: boolean
+  depositError: string | null
+  recentDepositHash: string | null
+  isBaseContextAvailable: boolean
 }) => {
   const [isTrading, setIsTrading] = useState(false)
   const { positionData, isLoading: positionsLoading } = usePositions()
+  const [depositAsset, setDepositAsset] = useState<'USDC' | 'ETH'>('USDC')
+  const [depositAmount, setDepositAmount] = useState('')
+  const [hasSuccessfulDeposit, setHasSuccessfulDeposit] = useState(false)
+
+  const explorerBaseUrl = process.env.NEXT_PUBLIC_AVANTIS_NETWORK === 'base-testnet'
+    ? 'https://sepolia.basescan.org'
+    : 'https://basescan.org'
 
   const router = useRouter()
+
+  useEffect(() => {
+    if (recentDepositHash) {
+      setHasSuccessfulDeposit(true)
+      setDepositAmount('')
+    }
+  }, [recentDepositHash])
+
+  useEffect(() => {
+    if (depositError) {
+      setHasSuccessfulDeposit(false)
+    }
+  }, [depositError])
 
   // Check if there are active positions
   const hasActivePositions = positionData && positionData.openPositions > 0
@@ -300,18 +335,99 @@ const TradingCard = ({
           <div className="mt-4 p-4 bg-yellow-900/20 border border-yellow-500 rounded-xl">
             <h4 className="text-yellow-400 font-semibold mb-2">💰 Add Funds to Start Trading</h4>
             <p className="text-yellow-300 text-sm mb-3">
-              Your trading balance is $0.00. Add funds to your wallet to start trading.
+              Your trading balance is $0.00. Deposit funds from your Base wallet into your PrepX trading vault to start trading.
             </p>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setDepositAsset('USDC')}
+                  className={`px-3 py-1 text-sm rounded-lg border transition-colors ${
+                    depositAsset === 'USDC' ? 'bg-yellow-500 text-black border-yellow-400' : 'border-yellow-600 text-yellow-300 hover:bg-yellow-800/40'
+                  }`}
+                >
+                  USDC
+                </button>
+                <button
+                  onClick={() => setDepositAsset('ETH')}
+                  className={`px-3 py-1 text-sm rounded-lg border transition-colors ${
+                    depositAsset === 'ETH' ? 'bg-yellow-500 text-black border-yellow-400' : 'border-yellow-600 text-yellow-300 hover:bg-yellow-800/40'
+                  }`}
+                >
+                  ETH
+                </button>
+              </div>
+              <div>
+                <label className="block text-xs text-yellow-200 mb-1">
+                  Amount ({depositAsset})
+                </label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  className="bg-[#2a2a2a] border-yellow-700 text-yellow-50 text-sm"
+                  placeholder={depositAsset === 'USDC' ? 'Enter USDC amount' : 'Enter ETH amount'}
+                />
+                <p className="text-[10px] text-yellow-300 mt-1">
+                  Base wallet: {baseAccountAddress ? `${baseAccountAddress.slice(0, 6)}...${baseAccountAddress.slice(-4)}` : '—'}
+                </p>
+                {tradingWalletAddress && (
+                  <p className="text-[10px] text-yellow-300">
+                    Trading vault: {tradingWalletAddress.slice(0, 6)}...{tradingWalletAddress.slice(-4)}
+                  </p>
+                )}
+              </div>
+
             <Button
-                  onClick={() => {
-                    const isTestnet = process.env.NEXT_PUBLIC_AVANTIS_NETWORK === 'base-testnet';
-                    const url = isTestnet ? 'https://testnet.avantis.finance' : 'https://avantis.finance';
-                    window.open(url, '_blank');
-                  }}
-              className="bg-yellow-600 hover:bg-yellow-700 text-white text-sm"
-            >
-                  🚀 Add Funds ({process.env.NEXT_PUBLIC_AVANTIS_NETWORK === 'base-testnet' ? 'Testnet' : 'Mainnet'})
+                disabled={
+                  isDepositing ||
+                  !depositAmount ||
+                  Number(depositAmount) <= 0 ||
+                  !isBaseContextAvailable
+                }
+                onClick={async () => {
+                  if (!depositAmount) return
+                  try {
+                    await onDeposit({ amount: depositAmount, asset: depositAsset })
+                    setHasSuccessfulDeposit(true)
+                  } catch (error) {
+                    setHasSuccessfulDeposit(false)
+                  }
+                }}
+                className="bg-yellow-500 hover:bg-yellow-600 text-black font-semibold text-sm"
+              >
+                {isDepositing ? '🚀 Processing...' : `⚡ Deposit ${depositAsset}`}
             </Button>
+
+              {hasSuccessfulDeposit && (
+                <div className="text-green-400 text-xs space-y-1">
+                  <p>
+                    Deposit initiated! Funds will appear once the transaction confirms.
+                  </p>
+                  {recentDepositHash && (
+                    <a
+                      className="underline hover:text-green-200"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      href={`${explorerBaseUrl}/tx/${recentDepositHash}`}
+                    >
+                      View transaction on BaseScan
+                    </a>
+                  )}
+                </div>
+              )}
+              {!isBaseContextAvailable && (
+                <p className="text-yellow-300 text-xs">
+                  Deposits require the Base mini app context. Please open PrepX inside the Base/Farcaster app.
+                </p>
+              )}
+              {depositError && (
+                <p className="text-red-400 text-xs">
+                  {depositError}
+                </p>
+              )}
+            </div>
           </div>
         )}
         
@@ -370,11 +486,13 @@ const TradingCard = ({
 const WalletInfoCard = ({ 
   primaryWallet, 
   ethBalanceFormatted, 
-  avantisBalance
+  avantisBalance,
+  tradingWalletAddress,
 }: {
   primaryWallet: { address: string; privateKey?: string; chain: string } | null
   ethBalanceFormatted: string
   avantisBalance: number
+  tradingWalletAddress?: string | null
 }) => {
   const [copiedAddress, setCopiedAddress] = useState(false)
 
@@ -444,6 +562,15 @@ const WalletInfoCard = ({
             <span className="text-[#9ca3af] text-sm">Chain:</span>
             <span className="text-white text-sm capitalize">{primaryWallet?.chain}</span>
           </div>
+          
+          {tradingWalletAddress && (
+            <div className="flex items-center justify-between">
+              <span className="text-[#9ca3af] text-sm">Trading Vault:</span>
+              <span className="text-white text-sm font-mono">
+                {tradingWalletAddress.slice(0, 6)}...{tradingWalletAddress.slice(-4)}
+              </span>
+            </div>
+          )}
           
           <div className="flex items-center justify-between">
             <span className="text-[#9ca3af] text-sm">ETH Balance:</span>
@@ -521,14 +648,20 @@ const HoldingsSection = ({ holdings }: { holdings: Array<{
 }
 
 export default function HomePage() {
-  const { user } = useAuth()
+  const { user, token } = useAuth()
   const [isBalanceVisible, setIsBalanceVisible] = useState(true)
   const [targetProfit, setTargetProfit] = useState("10")
   const [investmentAmount, setInvestmentAmount] = useState("50")
+  const [isDepositing, setIsDepositing] = useState(false)
+  const [depositError, setDepositError] = useState<string | null>(null)
+  const [recentDepositHash, setRecentDepositHash] = useState<string | null>(null)
 
   // Optimized hook usage - only essential hooks
   const {
     primaryWallet,
+    tradingWallet,
+    baseAccountAddress,
+    tradingWalletAddress,
     allWallets,
     totalPortfolioValue,
     ethBalanceFormatted,
@@ -540,11 +673,14 @@ export default function HomePage() {
     avantisBalance,
     error,
     createWallet,
-    refreshBalances
+    refreshBalances,
+    refreshWallets
   } = useIntegratedWallet()
 
   const { isLoading: isTradingLoading, error: tradingError } = useTrading()
   const { totalProfits } = useTradingProfits()
+
+  const { signAndSendTransaction, waitForTransaction, isAvailable: isBaseTxAvailable } = useBaseAccountTransactions()
 
   // Auto-create wallet if user doesn't have one - optimized with useCallback
   useEffect(() => {
@@ -565,6 +701,90 @@ export default function HomePage() {
       return () => clearTimeout(timer)
     }
   }, [user?.fid, isLoading, primaryWallet, allWallets, createWallet, error])
+
+  const handleDeposit = useCallback(
+    async ({ amount, asset }: { amount: string; asset: 'USDC' | 'ETH' }) => {
+      if (!token) {
+        const message = 'Authentication required. Please reconnect your wallet.'
+        setDepositError(message)
+        throw new Error(message)
+      }
+
+      const fromAddress = primaryWallet?.address || baseAccountAddress
+      if (!fromAddress) {
+        const message = 'No Base wallet connected.'
+        setDepositError(message)
+        throw new Error(message)
+      }
+
+      if (!isBaseTxAvailable) {
+        const message = 'Base mini app context unavailable. Open the app inside Farcaster/Base.'
+        setDepositError(message)
+        throw new Error(message)
+      }
+
+      setIsDepositing(true)
+      setDepositError(null)
+      setRecentDepositHash(null)
+
+      try {
+        const response = await fetch('/api/wallet/deposit', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            asset,
+            amount,
+            baseAddress: fromAddress
+          })
+        })
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          const message = data.error || 'Failed to prepare deposit transaction'
+          setDepositError(message)
+          throw new Error(message)
+        }
+
+        const txRequest = {
+          from: fromAddress,
+          to: data.transaction.to,
+          value: data.transaction.value,
+          data: data.transaction.data,
+          gas: data.transaction.gas
+        }
+
+        const txHash = await signAndSendTransaction(txRequest)
+        setRecentDepositHash(txHash)
+
+        // Wait briefly for confirmation (non-blocking)
+        waitForTransaction(txHash, 1).catch(() => {})
+
+        await refreshBalances()
+        await refreshWallets()
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Deposit failed'
+        setDepositError(message)
+        setRecentDepositHash(null)
+        throw error
+      } finally {
+        setIsDepositing(false)
+      }
+    },
+    [
+      token,
+      primaryWallet?.address,
+      baseAccountAddress,
+      signAndSendTransaction,
+      waitForTransaction,
+      isBaseTxAvailable,
+      refreshBalances,
+      refreshWallets
+    ]
+  )
 
   // Memoized holdings calculation - only recalculate when dependencies change
   // Deduplicate ETH holdings to avoid showing ETH twice
@@ -643,7 +863,14 @@ export default function HomePage() {
               investmentAmount={investmentAmount}
               setInvestmentAmount={setInvestmentAmount}
               primaryWallet={primaryWallet}
+              baseAccountAddress={baseAccountAddress || primaryWallet.address}
+              tradingWalletAddress={tradingWalletAddress || tradingWallet?.address || null}
               avantisBalance={avantisBalance}
+              onDeposit={handleDeposit}
+              isDepositing={isDepositing}
+              depositError={depositError}
+              recentDepositHash={recentDepositHash}
+              isBaseContextAvailable={isBaseTxAvailable}
             />
           )}
 
@@ -653,6 +880,7 @@ export default function HomePage() {
               primaryWallet={primaryWallet}
               ethBalanceFormatted={ethBalanceFormatted}
               avantisBalance={avantisBalance}
+              tradingWalletAddress={tradingWalletAddress || tradingWallet?.address || null}
             />
           )}
 

@@ -6,6 +6,7 @@
 import { useBaseMiniApp } from '@/lib/hooks/useBaseMiniApp';
 
 export interface TransactionRequest {
+  from?: string;
   to: string;
   value?: string;
   data?: string;

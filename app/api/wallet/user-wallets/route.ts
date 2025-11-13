@@ -23,33 +23,43 @@ export async function GET(request: NextRequest) {
       )
     }
     
-    // Get wallet address for Ethereum (primary chain)
-    // Use getWalletAddress to only retrieve, not create
-    const walletAddress = await walletService.getWalletAddress(payload.fid, 'ethereum')
-    
-    // If wallet exists, get full wallet details
     type WalletResponse = {
       id: string;
       address: string;
       chain: string;
       createdAt: Date;
       updatedAt: Date;
+      walletType: 'base-account' | 'trading' | 'legacy';
     };
-    
-    let wallets: WalletResponse[] = []
-    if (walletAddress) {
-      const wallet = await walletService.getOrCreateWallet(payload.fid, 'ethereum')
-      if (wallet) {
-        wallets = [{
-          id: wallet.id,
-          address: wallet.address,
-          chain: wallet.chain,
-          createdAt: wallet.createdAt,
-          updatedAt: wallet.createdAt
-        }]
-      }
+
+    const wallets: WalletResponse[] = []
+
+    // Base Account wallet (smart wallet)
+    const baseAddress = await walletService.getBaseAccountAddress(payload.fid)
+    if (baseAddress) {
+      wallets.push({
+        id: `fid_${payload.fid}_base-account`,
+        address: baseAddress,
+        chain: 'base',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        walletType: 'base-account'
+      })
     }
-    
+
+    // Trading wallet (fallback EOA with private key)
+    const tradingWallet = await walletService.getWalletWithKey(payload.fid, 'ethereum')
+    if (tradingWallet) {
+      wallets.push({
+        id: tradingWallet.id,
+        address: tradingWallet.address,
+        chain: 'ethereum',
+        createdAt: tradingWallet.createdAt,
+        updatedAt: tradingWallet.createdAt,
+        walletType: tradingWallet.privateKey ? 'trading' : 'legacy'
+      })
+    }
+
     return NextResponse.json({ wallets })
   } catch (error) {
     console.error('Error fetching user wallets:', error)
@@ -90,14 +100,9 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Try to get existing wallet first
-    let wallet = await walletService.getOrCreateWallet(payload.fid, chainType)
-    
-    // If no wallet exists, create a fallback trading wallet
-    // This handles cases where Base Account address wasn't stored during auth
-    if (!wallet) {
-      console.log(`[API] No wallet found for FID ${payload.fid}, creating fallback trading wallet...`)
-      wallet = await walletService.createTradingWallet(payload.fid, chainType)
+    if (chainType === 'ethereum') {
+      // Ensure trading wallet exists (create if needed)
+      const wallet = await walletService.ensureTradingWallet(payload.fid)
       
       if (!wallet) {
         console.error(`[API] Failed to create fallback trading wallet for FID ${payload.fid}`)
@@ -106,18 +111,39 @@ export async function POST(request: NextRequest) {
           { status: 500 }
         )
       }
-      
-      console.log(`[API] Created fallback trading wallet for FID ${payload.fid}: ${wallet.address}`)
+
+      console.log(`[API] Trading wallet ready for FID ${payload.fid}: ${wallet.address}`)
+
+      return NextResponse.json({ 
+        wallet: {
+          id: wallet.id,
+          address: wallet.address,
+          chain: wallet.chain,
+          createdAt: wallet.createdAt,
+          walletType: 'trading'
+        }
+      })
     }
-    
-    return NextResponse.json({ 
-      wallet: {
-        id: wallet.id,
-        address: wallet.address,
-        chain: wallet.chain,
-        createdAt: wallet.createdAt
-      }
-    })
+
+    if (chainType === 'base-account') {
+      const baseAddress = await walletService.getBaseAccountAddress(payload.fid)
+      return NextResponse.json({
+        wallet: baseAddress
+          ? {
+              id: `fid_${payload.fid}_base-account`,
+              address: baseAddress,
+              chain: 'base',
+              createdAt: new Date(),
+              walletType: 'base-account'
+            }
+          : null
+      })
+    }
+
+    return NextResponse.json(
+      { error: `Unsupported chain "${chainType}" for wallet creation.` },
+      { status: 400 }
+    )
   } catch (error) {
     console.error('Error creating wallet:', error)
     return NextResponse.json(

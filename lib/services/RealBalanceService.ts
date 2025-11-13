@@ -1,10 +1,12 @@
 import { ethers } from 'ethers'
+import { getNetworkConfig, getSupportedTokens, ZERO_ADDRESS } from '@/lib/config/network'
 
 export interface RealToken {
   address: string
   symbol: string
   name: string
   decimals: number
+  isNative?: boolean
 }
 
 export interface RealTokenBalance {
@@ -26,64 +28,48 @@ export interface RealBalanceData {
   lastDayValue: number
 }
 
-// Real token contracts for Ethereum mainnet
-export const REAL_TOKENS: RealToken[] = [
-  {
-    address: '0x0000000000000000000000000000000000000000', // ETH
-    symbol: 'ETH',
-    name: 'Ethereum',
-    decimals: 18
-  },
-  {
-    address: '0xA0b86a33E6441b8C4C8C0C4C0C4C0C4C0C4C0C4C', // USDC (example address - will be filtered out)
-    symbol: 'USDC',
-    name: 'USD Coin',
-    decimals: 6
-  },
-  {
-    address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', // USDT
-    symbol: 'USDT',
-    name: 'Tether USD',
-    decimals: 6
-  }
-]
-
 // ERC-20 ABI for balance reading
 const ERC20_ABI = [
-  "function balanceOf(address owner) view returns (uint256)",
-  "function decimals() view returns (uint8)",
-  "function symbol() view returns (string)",
-  "function name() view returns (string)"
+  'function balanceOf(address owner) view returns (uint256)',
+  'function decimals() view returns (uint8)',
+  'function symbol() view returns (string)',
+  'function name() view returns (string)'
 ]
 
 export class RealBalanceService {
   private provider: ethers.JsonRpcProvider
+  private tokens: RealToken[]
+  private nativeSymbol: string
 
   constructor() {
-    // Use a public Ethereum RPC endpoint
-    this.provider = new ethers.JsonRpcProvider(
-      process.env.NEXT_PUBLIC_ETH_RPC_URL || 
-      'https://eth.llamarpc.com' // Free public RPC
-    )
+    const network = getNetworkConfig()
+    this.provider = new ethers.JsonRpcProvider(network.rpcUrl)
+    this.nativeSymbol = network.nativeSymbol
+    this.tokens = getSupportedTokens().map(token => ({
+      address: token.address,
+      symbol: token.symbol,
+      name: token.name,
+      decimals: token.decimals,
+      isNative: token.isNative
+    }))
   }
 
-  async getEthPrice(): Promise<number> {
+  async getNativePrice(): Promise<number> {
     try {
-      // Use multiple fallback APIs for ETH price
       const apis = [
         'https://api.coinbase.com/v2/exchange-rates?currency=ETH',
         'https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT',
         'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd'
       ]
-      
+
       for (const api of apis) {
         try {
-          const response = await fetch(api, { 
+          const response = await fetch(api, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
-            signal: AbortSignal.timeout(5000) // 5 second timeout
+            signal: AbortSignal.timeout(5000)
           })
           const data = await response.json()
-          
+
           if (api.includes('coinbase')) {
             return parseFloat(data.data.rates.USD) || 2500
           } else if (api.includes('binance')) {
@@ -96,35 +82,33 @@ export class RealBalanceService {
           continue
         }
       }
-      
-      return 2500 // Final fallback
+
+      return 2500
     } catch (error) {
-      console.error('Error fetching ETH price:', error)
-      return 2500 // Fallback price
+      console.error('Error fetching native token price:', error)
+      return 2500
     }
   }
 
   async getTokenPrice(symbol: string): Promise<number> {
     try {
-      // For stablecoins, return 1 USD
       if (symbol === 'USDC' || symbol === 'USDT' || symbol === 'DAI') {
         return 1
       }
-      
-      // For other tokens, try to fetch price with fallbacks
+
       const apis = [
         `https://api.binance.com/api/v3/ticker/price?symbol=${symbol}USDT`,
         `https://api.coingecko.com/api/v3/simple/price?ids=${symbol.toLowerCase()}&vs_currencies=usd`
       ]
-      
+
       for (const api of apis) {
         try {
-          const response = await fetch(api, { 
+          const response = await fetch(api, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
             signal: AbortSignal.timeout(5000)
           })
           const data = await response.json()
-          
+
           if (api.includes('binance')) {
             return parseFloat(data.price) || 0
           } else if (api.includes('coingecko')) {
@@ -135,7 +119,7 @@ export class RealBalanceService {
           continue
         }
       }
-      
+
       return 0
     } catch (error) {
       console.error(`Error fetching ${symbol} price:`, error)
@@ -143,12 +127,12 @@ export class RealBalanceService {
     }
   }
 
-  async getEthBalance(address: string): Promise<{ balance: string; balanceFormatted: string; valueUSD: number }> {
+  async getNativeBalance(address: string): Promise<{ balance: string; balanceFormatted: string; valueUSD: number }> {
     try {
       const balance = await this.provider.getBalance(address)
       const balanceFormatted = ethers.formatEther(balance)
-      const ethPrice = await this.getEthPrice()
-      const valueUSD = parseFloat(balanceFormatted) * ethPrice
+      const nativePrice = await this.getNativePrice()
+      const valueUSD = parseFloat(balanceFormatted) * nativePrice
 
       return {
         balance: balance.toString(),
@@ -156,7 +140,7 @@ export class RealBalanceService {
         valueUSD
       }
     } catch (error) {
-      console.error('Error fetching ETH balance:', error)
+      console.error('Error fetching native balance:', error)
       return {
         balance: '0',
         balanceFormatted: '0.0',
@@ -167,33 +151,19 @@ export class RealBalanceService {
 
   async getTokenBalance(address: string, token: RealToken): Promise<RealTokenBalance> {
     try {
-      if (token.address === '0x0000000000000000000000000000000000000000') {
-        // ETH balance
-        const ethData = await this.getEthBalance(address)
-        const priceUSD = await this.getEthPrice()
-        
+      if (token.isNative || token.address === ZERO_ADDRESS) {
+        const nativeData = await this.getNativeBalance(address)
+        const priceUSD = await this.getNativePrice()
+
         return {
           token,
-          balance: ethData.balance,
-          balanceFormatted: `${ethData.balanceFormatted} ETH`,
-          valueUSD: ethData.valueUSD,
+          balance: nativeData.balance,
+          balanceFormatted: `${nativeData.balanceFormatted} ${token.symbol}`,
+          valueUSD: nativeData.valueUSD,
           priceUSD
         }
       }
 
-      // Skip invalid addresses (like the example USDC address)
-      if (token.address === '0xA0b86a33E6441b8C4C8C0C4C0C4C0C4C0C4C0C4C') {
-        console.log(`Skipping invalid token address: ${token.symbol}`)
-        return {
-          token,
-          balance: '0',
-          balanceFormatted: `0.0000 ${token.symbol}`,
-          valueUSD: 0,
-          priceUSD: 0
-        }
-      }
-
-      // ERC-20 token balance
       const contract = new ethers.Contract(token.address, ERC20_ABI, this.provider)
       const balance = await contract.balanceOf(address)
       const balanceFormatted = ethers.formatUnits(balance, token.decimals)
@@ -223,21 +193,17 @@ export class RealBalanceService {
     try {
       console.log(`[RealBalanceService] Fetching balances for: ${address}`)
 
-      // Get ETH balance
-      const ethData = await this.getEthBalance(address)
-      const ethPrice = await this.getEthPrice()
-
-      // Get token balances
       const tokenBalances = await Promise.all(
-        REAL_TOKENS.map(token => this.getTokenBalance(address, token))
+        this.tokens.map(token => this.getTokenBalance(address, token))
       )
 
-      // Calculate total portfolio value
-      const totalPortfolioValue = tokenBalances.reduce((sum, tokenBalance) => 
-        sum + tokenBalance.valueUSD, 0
+      const nativeBalance = tokenBalances.find(balance => balance.token.isNative) || null
+
+      const totalPortfolioValue = tokenBalances.reduce(
+        (sum, tokenBalance) => sum + tokenBalance.valueUSD,
+        0
       )
 
-      // For now, set daily change to 0 (would need historical data for real calculation)
       const dailyChange = 0
       const dailyChangePercentage = 0
       const lastDayValue = totalPortfolioValue
@@ -245,9 +211,11 @@ export class RealBalanceService {
       console.log(`[RealBalanceService] Total portfolio value: $${totalPortfolioValue.toFixed(2)}`)
 
       return {
-        ethBalance: ethData.balance,
-        ethBalanceFormatted: ethData.balanceFormatted,
-        ethPriceUSD: ethPrice,
+        ethBalance: nativeBalance?.balance || '0',
+        ethBalanceFormatted: nativeBalance
+          ? nativeBalance.balanceFormatted.replace(` ${this.nativeSymbol}`, '')
+          : '0.0',
+        ethPriceUSD: nativeBalance?.priceUSD || (await this.getNativePrice()),
         totalPortfolioValue,
         holdings: tokenBalances,
         dailyChange,
@@ -256,8 +224,7 @@ export class RealBalanceService {
       }
     } catch (error) {
       console.error('[RealBalanceService] Error fetching balances:', error)
-      
-      // Return zero balances on error
+
       return {
         ethBalance: '0',
         ethBalanceFormatted: '0.0',
