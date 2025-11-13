@@ -760,11 +760,22 @@ export default function HomePage() {
         const txHash = await signAndSendTransaction(txRequest)
         setRecentDepositHash(txHash)
 
-        // Wait briefly for confirmation (non-blocking)
-        waitForTransaction(txHash, 1).catch(() => {})
+        // Wait for transaction confirmation before refreshing balances
+        try {
+          await waitForTransaction(txHash, 2) // Wait up to 2 confirmations
+          console.log('[HomePage] Deposit transaction confirmed, refreshing balances...')
+        } catch (waitError) {
+          console.warn('[HomePage] Transaction wait timeout, refreshing anyway:', waitError)
+        }
 
+        // Refresh balances after confirmation
         await refreshBalances()
         await refreshWallets()
+        
+        // Also refresh after a short delay to catch any late confirmations
+        setTimeout(() => {
+          refreshBalances().catch(err => console.warn('[HomePage] Delayed balance refresh failed:', err))
+        }, 5000)
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Deposit failed'
         setDepositError(message)
@@ -791,27 +802,34 @@ export default function HomePage() {
   const realHoldings = useMemo(() => {
     if (!isConnected) return []
 
-    // Filter out ETH from holdings array to avoid duplicates
-    const otherHoldings = holdings.filter(holding => 
-      holding.token.symbol.toUpperCase() !== 'ETH'
+    const nativeSymbol = holdings.find(holding => holding.token.isNative)?.token.symbol || 'ETH'
+    const nativeHolding = holdings.find(
+      holding => holding.token.symbol.toUpperCase() === nativeSymbol.toUpperCase()
     )
 
-    return [
-      // Real ETH holding from wallet (only one ETH entry)
-      {
+    const otherHoldings = holdings.filter(
+      holding => holding.token.symbol.toUpperCase() !== nativeSymbol.toUpperCase()
+    )
+
+    const formattedHoldings = []
+
+    if (nativeHolding) {
+      formattedHoldings.push({
         token: {
-          symbol: 'ETH',
-          name: 'Ethereum',
-          address: '0x0000000000000000000000000000000000000000',
-          decimals: 18,
-          price: 0 // Price will be fetched from RealBalanceService
+          symbol: nativeHolding.token.symbol,
+          name: nativeHolding.token.name,
+          address: nativeHolding.token.address,
+          decimals: nativeHolding.token.decimals,
+          price: nativeHolding.token.price || 0
         },
-        balance: ethBalanceFormatted,
-        valueUSD: totalPortfolioValue,
+        balance: nativeHolding.balanceFormatted,
+        valueUSD: nativeHolding.valueUSD,
         color: '#627eea',
-        link: "/detail/ethereum",
-      },
-      // Add other holdings from the wallet (excluding ETH)
+        link: `/detail/${nativeHolding.token.symbol.toLowerCase()}`,
+      })
+    }
+
+    formattedHoldings.push(
       ...otherHoldings.map(holding => ({
         token: {
           ...holding.token,
@@ -822,8 +840,10 @@ export default function HomePage() {
         color: holding.token.symbol === 'WBTC' ? '#f7931a' : '#f4b731',
         link: `/detail/${holding.token.symbol.toLowerCase()}`,
       }))
-    ]
-  }, [isConnected, ethBalanceFormatted, totalPortfolioValue, holdings])
+    )
+
+    return formattedHoldings
+  }, [isConnected, holdings])
 
   return (
     <ProtectedRoute>

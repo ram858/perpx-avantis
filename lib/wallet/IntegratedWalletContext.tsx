@@ -1,11 +1,11 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { ClientWalletService, ClientUserWallet } from '../services/ClientWalletService';
-import { RealBalanceService, RealBalanceData } from '../services/RealBalanceService';
+import { RealBalanceData } from '../services/RealBalanceService';
 import { useAuth } from '../auth/AuthContext';
 import { useMetaMask } from '../hooks/useMetaMask';
-import { hasRealAvantisBalance } from './avantisBalance';
+import { getNetworkConfig } from '../config/network';
 
 // Types
 export interface Token {
@@ -14,6 +14,7 @@ export interface Token {
   name: string;
   decimals: number;
   price?: number;
+  isNative?: boolean;
 }
 
 export interface TokenBalance {
@@ -54,13 +55,12 @@ export interface IntegratedWalletContextType extends IntegratedWalletState {
 
 const IntegratedWalletContext = createContext<IntegratedWalletContextType | undefined>(undefined);
 
-// Real balance service instance
-const realBalanceService = new RealBalanceService();
-
 export function IntegratedWalletProvider({ children }: { children: React.ReactNode }) {
   const { user, token } = useAuth();
   const clientWalletService = new ClientWalletService(() => token || '');
   const { isConnected: isMetaMaskConnected, account: metaMaskAccount } = useMetaMask();
+  const networkConfig = useMemo(() => getNetworkConfig(), []);
+  const nativeSymbol = networkConfig.nativeSymbol || 'ETH';
   
   const [state, setState] = useState<IntegratedWalletState>({
     isConnected: false,
@@ -83,8 +83,30 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     error: null
   });
 
+  const fetchBalanceData = useCallback(async (address: string): Promise<RealBalanceData> => {
+    if (!token) {
+      throw new Error('Not authenticated');
+    }
+
+    const url = `/api/wallet/balances?address=${encodeURIComponent(address)}`;
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      cache: 'no-store'
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Failed to fetch balance data');
+    }
+
+    const result = await response.json();
+    return result.balance as RealBalanceData;
+  }, [token]);
+
   // Define refreshBalances first to avoid circular dependency
-  const refreshBalances = useCallback(async (walletOverride?: ClientUserWallet | null) => {
+  const refreshBalances = useCallback(async (walletOverride?: ClientUserWallet | null, tradingOverride?: ClientUserWallet | null) => {
     const walletToUse = walletOverride || state.primaryWallet;
     const addressToUse =
       walletToUse?.address ||
@@ -93,17 +115,16 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       user?.baseAccountAddress ||
       null;
 
-    if (!addressToUse) {
+    if (!addressToUse || !token) {
       console.log('[IntegratedWallet] No wallet address available, skipping balance refresh');
       return;
     }
 
     try {
       console.log(`[IntegratedWallet] Fetching real balances for: ${addressToUse}`);
-      
-      // Fetch real blockchain balances
-      const balanceData: RealBalanceData = await realBalanceService.getAllBalances(addressToUse);
-      
+
+      const balanceData = await fetchBalanceData(addressToUse);
+
       // Convert real balance data to the expected format
       const holdings: TokenBalance[] = balanceData.holdings.map(realToken => ({
         token: {
@@ -111,7 +132,8 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
           symbol: realToken.token.symbol,
           name: realToken.token.name,
           decimals: realToken.token.decimals,
-          price: realToken.priceUSD
+          price: realToken.priceUSD,
+          isNative: realToken.token.isNative
         },
         balance: realToken.balance,
         balanceFormatted: realToken.balanceFormatted,
@@ -120,43 +142,119 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
 
       console.log(`[IntegratedWallet] Real balance fetched: $${balanceData.totalPortfolioValue.toFixed(2)}`);
 
-      // Check Avantis connection and fetch balance
+      // Determine trading wallet balance (PrepX vault) separately
+      const tradingAddress =
+        tradingOverride?.address ||
+        state.tradingWallet?.address ||
+        state.tradingWalletAddress ||
+        (walletOverride?.walletType === 'trading' ? walletOverride.address : null);
+
       let avantisBalance = 0;
-      let isAvantisConnected = false;
-      let hasRealAvantisBalanceFlag = false;
+      let tradingVaultHoldings: TokenBalance[] = [];
       
-      // Use stored wallet private key for Avantis
-      const avantisPrivateKey = state.tradingWallet?.privateKey;
-      
-      if (avantisPrivateKey) {
+      if (tradingAddress && tradingAddress.toLowerCase() !== addressToUse.toLowerCase()) {
         try {
-          // Check if wallet has real balance on Avantis
-          const avantisStatus = await hasRealAvantisBalance(avantisPrivateKey);
-          avantisBalance = avantisStatus.balance;
-          isAvantisConnected = avantisStatus.isConnected;
-          hasRealAvantisBalanceFlag = avantisStatus.hasBalance;
-        } catch (error) {
-          console.error('[IntegratedWallet] Error fetching Avantis data:', error);
-          // If we can't fetch data, wallet is not connected to Avantis
-          isAvantisConnected = false;
-          hasRealAvantisBalanceFlag = false;
+          console.log(`[IntegratedWallet] Fetching trading vault balances for: ${tradingAddress}`);
+          const tradingBalanceData = await fetchBalanceData(tradingAddress);
+          avantisBalance = tradingBalanceData.totalPortfolioValue;
+          
+          // Merge trading vault holdings into main holdings (mark them as vault holdings)
+          tradingVaultHoldings = tradingBalanceData.holdings
+            .filter(vaultHolding => parseFloat(vaultHolding.balance) > 0) // Only show non-zero balances
+            .map(realToken => ({
+              token: {
+                ...realToken.token,
+                name: `${realToken.token.name} (Trading Vault)`, // Mark as vault holdings
+                price: realToken.priceUSD
+              },
+              balance: realToken.balance,
+              balanceFormatted: realToken.balanceFormatted,
+              valueUSD: realToken.valueUSD
+            }));
+          
+          console.log(`[IntegratedWallet] Trading vault balance: $${avantisBalance.toFixed(2)} (${tradingVaultHoldings.length} holdings)`);
+        } catch (vaultError) {
+          console.warn('[IntegratedWallet] Unable to fetch trading vault balance:', vaultError);
         }
       }
 
+      // Combine Base Account holdings with Trading Vault holdings
+      // Deduplicate by token address to avoid showing same token twice
+      const combinedHoldingsMap = new Map<string, TokenBalance>();
+      
+      // Add Base Account holdings first
+      holdings.forEach(holding => {
+        const key = holding.token.address.toLowerCase();
+        combinedHoldingsMap.set(key, holding);
+      });
+      
+      // Add/merge Trading Vault holdings
+      tradingVaultHoldings.forEach(vaultHolding => {
+        const key = vaultHolding.token.address.toLowerCase();
+        const existing = combinedHoldingsMap.get(key);
+        
+        if (existing) {
+          // Merge: combine balances
+          // Parse formatted strings (e.g., "20.0000 USDC" -> 20.0)
+          const parseFormatted = (str: string): number => {
+            const match = str.match(/^([\d.]+)/);
+            return match ? parseFloat(match[1]) : 0;
+          };
+          
+          const existingNum = parseFormatted(existing.balanceFormatted);
+          const vaultNum = parseFormatted(vaultHolding.balanceFormatted);
+          const totalNum = existingNum + vaultNum;
+          
+          // Re-format with same symbol and appropriate decimals
+          const symbol = existing.token.symbol;
+          const decimals = symbol === 'USDC' ? 4 : 6; // USDC uses 4, ETH uses 6
+          const formatted = `${totalNum.toFixed(decimals)} ${symbol}`;
+          
+          // Combine raw balances (add BigInt values)
+          const existingBalanceBig = BigInt(existing.balance || '0');
+          const vaultBalanceBig = BigInt(vaultHolding.balance || '0');
+          const totalBalanceBig = existingBalanceBig + vaultBalanceBig;
+          
+          combinedHoldingsMap.set(key, {
+            ...existing,
+            balance: totalBalanceBig.toString(),
+            balanceFormatted: formatted,
+            valueUSD: existing.valueUSD + vaultHolding.valueUSD,
+            token: {
+              ...existing.token,
+              name: existing.token.name // Keep original name, balance includes vault
+            }
+          });
+        } else {
+          // New holding from vault
+          combinedHoldingsMap.set(key, vaultHolding);
+        }
+      });
+
+      const combinedHoldings = Array.from(combinedHoldingsMap.values());
       const totalPortfolioValue = balanceData.totalPortfolioValue + avantisBalance;
+
+      const nativeHolding = holdings.find(
+        holding => holding.token.symbol.toUpperCase() === nativeSymbol.toUpperCase()
+      );
+
+      // Find native holding from combined holdings
+      const combinedNativeHolding = combinedHoldings.find(
+        holding => holding.token.symbol.toUpperCase() === nativeSymbol.toUpperCase()
+      );
 
       setState(prev => ({
         ...prev,
         ethBalance: balanceData.ethBalance,
-        ethBalanceFormatted: `${balanceData.ethBalanceFormatted} ETH`,
-        holdings,
+        ethBalanceFormatted: combinedNativeHolding?.balanceFormatted || nativeHolding?.balanceFormatted || `${balanceData.ethBalanceFormatted} ${nativeSymbol}`,
+        holdings: combinedHoldings,
         totalPortfolioValue,
         dailyChange: balanceData.dailyChange,
         dailyChangePercentage: balanceData.dailyChangePercentage,
         lastDayValue: balanceData.lastDayValue,
         avantisBalance,
-        isAvantisConnected,
-        hasRealAvantisBalance: hasRealAvantisBalanceFlag,
+        isAvantisConnected: avantisBalance > 0,
+        hasRealAvantisBalance: avantisBalance > 0,
         error: null
       }));
     } catch (error) {
@@ -166,7 +264,18 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         error: 'Failed to refresh balances'
       }));
     }
-  }, [state.primaryWallet, state.baseAccountAddress, state.tradingWallet, user?.baseAccountAddress, metaMaskAccount, isMetaMaskConnected]);
+  }, [
+    state.primaryWallet,
+    state.baseAccountAddress,
+    state.tradingWallet,
+    state.tradingWalletAddress,
+    user?.baseAccountAddress,
+    metaMaskAccount,
+    isMetaMaskConnected,
+    token,
+    fetchBalanceData,
+    nativeSymbol
+  ]);
 
   const refreshWallets = useCallback(async () => {
     if (!user?.fid || !token) {
@@ -216,7 +325,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       const walletForBalances = baseWallet || primaryWallet;
 
       if (walletForBalances) {
-        await refreshBalances(walletForBalances);
+        await refreshBalances(walletForBalances, tradingWallet);
       } else {
         console.log('[IntegratedWallet] No primary wallet found, balances will not be refreshed');
       }
