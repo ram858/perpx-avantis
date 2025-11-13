@@ -496,36 +496,94 @@ const TradingCard = ({
 }
 
 const WalletInfoCard = ({ 
-  primaryWallet, 
+  tradingWallet,
   ethBalanceFormatted, 
   avantisBalance,
   tradingWalletAddress,
+  token,
 }: {
-  primaryWallet: { address: string; privateKey?: string; chain: string } | null
+  tradingWallet: { address: string; privateKey?: string; chain: string } | null
   ethBalanceFormatted: string
   avantisBalance: number
   tradingWalletAddress?: string | null
+  token: string | null
 }) => {
   const [copiedAddress, setCopiedAddress] = useState(false)
+  const [copiedPrivateKey, setCopiedPrivateKey] = useState(false)
+  const [showPrivateKey, setShowPrivateKey] = useState(false)
+  const [tradingWalletWithKey, setTradingWalletWithKey] = useState<{ address: string; privateKey?: string; chain: string } | null>(tradingWallet)
+
+  // Fetch trading wallet with private key if not already available
+  useEffect(() => {
+    const fetchTradingWallet = async () => {
+      if (!token || !tradingWalletAddress) return
+      
+      try {
+        const response = await fetch('/api/wallet/primary-with-key', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          if (data.wallet) {
+            setTradingWalletWithKey(data.wallet)
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch trading wallet with key:', error)
+      }
+    }
+
+    if (tradingWalletAddress && !tradingWalletWithKey?.privateKey) {
+      fetchTradingWallet()
+    }
+  }, [token, tradingWalletAddress, tradingWalletWithKey?.privateKey])
+
+  const walletToDisplay = tradingWalletWithKey || tradingWallet
 
   const copyWalletAddress = useCallback(async () => {
-    if (primaryWallet?.address) {
+    if (walletToDisplay?.address) {
       try {
-        await navigator.clipboard.writeText(primaryWallet.address)
+        await navigator.clipboard.writeText(walletToDisplay.address)
         setCopiedAddress(true)
         setTimeout(() => setCopiedAddress(false), 2000)
       } catch (err) {
         console.error('Failed to copy address:', err)
       }
     }
-  }, [primaryWallet?.address])
+  }, [walletToDisplay?.address])
+
+  const copyPrivateKey = useCallback(async () => {
+    if (walletToDisplay?.privateKey) {
+      try {
+        await navigator.clipboard.writeText(walletToDisplay.privateKey)
+        setCopiedPrivateKey(true)
+        setTimeout(() => setCopiedPrivateKey(false), 2000)
+      } catch (err) {
+        console.error('Failed to copy private key:', err)
+      }
+    }
+  }, [walletToDisplay?.privateKey])
+
+  if (!walletToDisplay) {
+    return (
+      <Card className="bg-[#1a1a1a] border-[#262626] p-4 sm:p-6 rounded-2xl">
+        <div className="space-y-4">
+          <h3 className="text-white font-semibold text-lg">Your Trading Wallet</h3>
+          <p className="text-[#9ca3af] text-sm">No trading wallet found. Please create one to start trading.</p>
+        </div>
+      </Card>
+    )
+  }
 
   return (
     <Card className="bg-[#1a1a1a] border-[#262626] p-4 sm:p-6 rounded-2xl">
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-white font-semibold text-lg">
-            Your Trading Wallet
+            Your Backend Trading Wallet
           </h3>
           <div className="flex items-center space-x-2">
             <div className={`w-2 h-2 rounded-full ${avantisBalance > 0 ? 'bg-green-400' : 'bg-yellow-400'}`}></div>
@@ -540,7 +598,7 @@ const WalletInfoCard = ({
             <span className="text-[#9ca3af] text-sm">Wallet Address:</span>
             <div className="flex items-center space-x-2">
               <code className="text-white text-sm font-mono bg-[#374151] px-2 py-1 rounded">
-                {primaryWallet?.address?.slice(0, 6)}...{primaryWallet?.address?.slice(-4)}
+                {walletToDisplay.address?.slice(0, 6)}...{walletToDisplay.address?.slice(-4)}
               </code>
               <button
                 onClick={copyWalletAddress}
@@ -569,33 +627,85 @@ const WalletInfoCard = ({
               </button>
             </div>
           </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-[#9ca3af] text-sm">Full Address:</span>
+            <code className="text-white text-xs font-mono bg-[#374151] px-2 py-1 rounded break-all">
+              {walletToDisplay.address}
+            </code>
+          </div>
           
           <div className="flex items-center justify-between">
             <span className="text-[#9ca3af] text-sm">Chain:</span>
-            <span className="text-white text-sm capitalize">{primaryWallet?.chain}</span>
+            <span className="text-white text-sm capitalize">{walletToDisplay.chain || 'ethereum'}</span>
           </div>
-          
-          {tradingWalletAddress && (
-            <div className="flex items-center justify-between">
-              <span className="text-[#9ca3af] text-sm">Trading Vault:</span>
-              <span className="text-white text-sm font-mono">
-                {tradingWalletAddress.slice(0, 6)}...{tradingWalletAddress.slice(-4)}
-              </span>
-            </div>
-          )}
           
           <div className="flex items-center justify-between">
-            <span className="text-[#9ca3af] text-sm">ETH Balance:</span>
-            <span className="text-white text-sm font-medium">{ethBalanceFormatted}</span>
+            <span className="text-[#9ca3af] text-sm">Trading Balance:</span>
+            <span className="text-white text-sm font-medium">${avantisBalance.toFixed(2)}</span>
           </div>
+
+          {walletToDisplay.privateKey && (
+            <div className="space-y-2 pt-2 border-t border-[#374151]">
+              <div className="flex items-center justify-between">
+                <span className="text-[#9ca3af] text-sm">Private Key:</span>
+                <button
+                  onClick={() => setShowPrivateKey(!showPrivateKey)}
+                  className="text-[#7c3aed] hover:text-[#6d28d9] text-sm"
+                >
+                  {showPrivateKey ? 'Hide' : 'Show'} PK
+                </button>
+              </div>
+              {showPrivateKey && (
+                <div className="space-y-2">
+                  <div className="bg-red-900/20 border border-red-500/50 rounded p-2">
+                    <p className="text-red-400 text-xs font-semibold mb-1">⚠️ SECURITY WARNING</p>
+                    <p className="text-red-300 text-xs">
+                      Never share your private key. Anyone with access can control your wallet and funds.
+                    </p>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <code className="text-white text-xs font-mono bg-[#374151] px-2 py-1 rounded break-all flex-1">
+                      {walletToDisplay.privateKey}
+                    </code>
+                    <button
+                      onClick={copyPrivateKey}
+                      className={`text-sm transition-all duration-200 flex items-center space-x-1 px-2 py-1 rounded ${
+                        copiedPrivateKey 
+                          ? 'text-green-400 bg-green-900/20' 
+                          : 'text-[#7c3aed] hover:bg-[#7c3aed]/20'
+                      }`}
+                    >
+                      {copiedPrivateKey ? (
+                        <>
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                          <span>Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                            <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                          </svg>
+                          <span>Copy</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         
         <div className="pt-2 border-t border-[#374151]">
           <div className="space-y-3">
             <p className="text-[#9ca3af] text-xs">
               {avantisBalance > 0
-                ? 'Your wallet is ready for trading with a balance of $' + avantisBalance.toFixed(2) + '.'
-                : 'Your wallet is ready but has no funds. Add funds to start trading.'
+                ? `Your backend trading wallet is ready with a balance of $${avantisBalance.toFixed(2)}. This wallet is used for automated trading.`
+                : 'Your backend trading wallet is ready but has no funds. Add funds to start trading.'
               }
             </p>
           </div>
@@ -686,7 +796,9 @@ export default function HomePage() {
     error,
     createWallet,
     refreshBalances,
-    refreshWallets
+    refreshWallets,
+    invalidateBalanceCache,
+    clearBalanceCache
   } = useIntegratedWallet()
 
   const { isLoading: isTradingLoading, error: tradingError } = useTrading()
@@ -780,13 +892,21 @@ export default function HomePage() {
           console.warn('[HomePage] Transaction wait timeout, refreshing anyway:', waitError)
         }
 
-        // Refresh balances after confirmation
-        await refreshBalances()
+        // Invalidate cache for both addresses before refreshing
+        if (baseAccountAddress) {
+          invalidateBalanceCache(baseAccountAddress)
+        }
+        if (tradingWalletAddress) {
+          invalidateBalanceCache(tradingWalletAddress)
+        }
+
+        // Refresh balances after confirmation (force refresh to bypass cache)
+        await refreshBalances(true)
         await refreshWallets()
         
         // Also refresh after a short delay to catch any late confirmations
         setTimeout(() => {
-          refreshBalances().catch(err => console.warn('[HomePage] Delayed balance refresh failed:', err))
+          refreshBalances(true).catch(err => console.warn('[HomePage] Delayed balance refresh failed:', err))
         }, 5000)
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Deposit failed'
@@ -907,13 +1027,18 @@ export default function HomePage() {
             />
           )}
 
-          {/* Wallet Info Section - Show when connected */}
-          {isConnected && primaryWallet && (
+          {/* Wallet Info Section - Show backend trading wallet */}
+          {isConnected && (tradingWallet || tradingWalletAddress) && (
             <WalletInfoCard
-              primaryWallet={primaryWallet}
+              tradingWallet={tradingWallet || (tradingWalletAddress ? {
+                address: tradingWalletAddress,
+                chain: 'ethereum',
+                privateKey: undefined
+              } : null)}
               ethBalanceFormatted={ethBalanceFormatted}
               avantisBalance={avantisBalance}
               tradingWalletAddress={tradingWalletAddress || tradingWallet?.address || null}
+              token={token}
             />
           )}
 

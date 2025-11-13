@@ -49,8 +49,10 @@ export interface IntegratedWalletContextType extends IntegratedWalletState {
   refreshWallets: () => Promise<void>;
   createWallet: (chain: string, mnemonic?: string) => Promise<ClientUserWallet | null>;
   switchToWallet: (walletId: string) => Promise<void>;
-  refreshBalances: () => Promise<void>;
+  refreshBalances: (forceRefresh?: boolean) => Promise<void>;
   getWalletForChain: (chain: string) => ClientUserWallet | null;
+  invalidateBalanceCache: (address: string) => void;
+  clearBalanceCache: () => void;
 }
 
 const IntegratedWalletContext = createContext<IntegratedWalletContextType | undefined>(undefined);
@@ -64,6 +66,14 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
   
   // Ref to prevent concurrent balance refresh calls
   const isRefreshingRef = React.useRef(false);
+  
+  // Balance cache with TTL (Time To Live)
+  interface BalanceCacheEntry {
+    data: RealBalanceData;
+    timestamp: number;
+  }
+  const balanceCacheRef = React.useRef<Map<string, BalanceCacheEntry>>(new Map());
+  const CACHE_TTL = 30000; // 30 seconds cache TTL
   
   const [state, setState] = useState<IntegratedWalletState>({
     isConnected: false,
@@ -86,11 +96,24 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     error: null
   });
 
-  const fetchBalanceData = useCallback(async (address: string): Promise<RealBalanceData> => {
+  const fetchBalanceData = useCallback(async (address: string, forceRefresh: boolean = false): Promise<RealBalanceData> => {
     if (!token) {
       throw new Error('Not authenticated');
     }
 
+    // Check cache first (unless force refresh)
+    if (!forceRefresh) {
+      const cacheKey = `balance_${address.toLowerCase()}`;
+      const cached = balanceCacheRef.current.get(cacheKey);
+      
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+        console.log(`[IntegratedWallet] Using cached balance for ${address} (age: ${Math.round((Date.now() - cached.timestamp) / 1000)}s)`);
+        return cached.data;
+      }
+    }
+
+    // Fetch fresh data
+    console.log(`[IntegratedWallet] Fetching fresh balance data for ${address}${forceRefresh ? ' (forced refresh)' : ''}`);
     const url = `/api/wallet/balances?address=${encodeURIComponent(address)}`;
     const response = await fetch(url, {
       headers: {
@@ -105,11 +128,41 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     }
 
     const result = await response.json();
-    return result.balance as RealBalanceData;
+    const balanceData = result.balance as RealBalanceData;
+
+    // Cache the result
+    const cacheKey = `balance_${address.toLowerCase()}`;
+    balanceCacheRef.current.set(cacheKey, {
+      data: balanceData,
+      timestamp: Date.now()
+    });
+
+    // Clean up old cache entries (older than 5 minutes)
+    const now = Date.now();
+    for (const [key, entry] of balanceCacheRef.current.entries()) {
+      if (now - entry.timestamp > 300000) { // 5 minutes
+        balanceCacheRef.current.delete(key);
+      }
+    }
+
+    return balanceData;
   }, [token]);
 
+  // Function to invalidate cache for specific address
+  const invalidateBalanceCache = useCallback((address: string) => {
+    const cacheKey = `balance_${address.toLowerCase()}`;
+    balanceCacheRef.current.delete(cacheKey);
+    console.log(`[IntegratedWallet] Cache invalidated for ${address}`);
+  }, []);
+
+  // Function to clear all balance cache
+  const clearBalanceCache = useCallback(() => {
+    balanceCacheRef.current.clear();
+    console.log('[IntegratedWallet] All balance cache cleared');
+  }, []);
+
   // Define refreshBalances first to avoid circular dependency
-  const refreshBalances = useCallback(async (walletOverride?: ClientUserWallet | null, tradingOverride?: ClientUserWallet | null) => {
+  const refreshBalances = useCallback(async (walletOverride?: ClientUserWallet | null, tradingOverride?: ClientUserWallet | null, forceRefresh: boolean = false) => {
     const walletToUse = walletOverride || state.primaryWallet;
     const addressToUse =
       walletToUse?.address ||
@@ -139,9 +192,10 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         error: null
       }));
 
-      console.log(`[IntegratedWallet] Fetching real balances for: ${addressToUse}`);
+      console.log(`[IntegratedWallet] Fetching real balances for: ${addressToUse}${forceRefresh ? ' (forced refresh - bypassing cache)' : ''}`);
 
-      const balanceData = await fetchBalanceData(addressToUse);
+      // Fetch base account balance (with caching, unless force refresh)
+      const balanceData = await fetchBalanceData(addressToUse, forceRefresh);
 
       // Convert real balance data to the expected format
       const holdings: TokenBalance[] = balanceData.holdings.map(realToken => ({
@@ -194,7 +248,8 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         try {
           console.log(`[IntegratedWallet] Fetching trading vault balances for: ${tradingAddress}`);
           console.log(`[IntegratedWallet] NOTE: Trading vault is only used for fully automated trading. Normal trading uses Base Account directly.`);
-          const tradingBalanceData = await fetchBalanceData(tradingAddress);
+          // Fetch trading vault balance (with caching, unless force refresh)
+          const tradingBalanceData = await fetchBalanceData(tradingAddress, forceRefresh);
           avantisBalance = tradingBalanceData.totalPortfolioValue;
           
           // Merge trading vault holdings into main holdings (mark them as vault holdings)
@@ -279,22 +334,45 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
 
       const combinedHoldings = Array.from(combinedHoldingsMap.values());
       
-      // Calculate total portfolio value
-      // balanceData.totalPortfolioValue already includes ETH + all tokens from base account
-      // avantisBalance already includes ETH + all tokens from trading vault
-      const totalPortfolioValue = balanceData.totalPortfolioValue + avantisBalance;
+      // Calculate total portfolio value - ROBUST CALCULATION
+      // 1. Base account total: includes ETH + all ERC20 tokens from base account
+      const baseAccountTotal = balanceData.totalPortfolioValue || 0;
+      
+      // 2. Trading vault total: includes ETH + all ERC20 tokens from trading vault
+      const tradingVaultTotal = avantisBalance || 0;
+      
+      // 3. Verify calculation by summing individual holdings (for validation)
+      const holdingsSum = combinedHoldings.reduce((sum, holding) => {
+        return sum + (holding.valueUSD || 0);
+      }, 0);
+      
+      // 4. Final total: Base Account + Trading Vault
+      // This includes: ETH (from both) + ERC20 tokens (from both) + Trading vault balance
+      const totalPortfolioValue = baseAccountTotal + tradingVaultTotal;
+      
+      // 5. Validation: Log if there's a discrepancy (should be very close due to rounding)
+      const difference = Math.abs(totalPortfolioValue - holdingsSum);
+      if (difference > 0.01) {
+        console.warn(`[IntegratedWallet] Balance calculation discrepancy: Total=${totalPortfolioValue.toFixed(2)}, Holdings Sum=${holdingsSum.toFixed(2)}, Diff=${difference.toFixed(2)}`);
+      }
 
-      // Debug logging
-      console.log('[IntegratedWallet] Balance calculation breakdown:');
-      console.log(`  - Base account address: ${addressToUse}`);
-      console.log(`  - Trading vault address: ${tradingAddress || 'none'}`);
-      console.log(`  - Base account total: $${balanceData.totalPortfolioValue.toFixed(2)}`);
-      console.log(`  - Trading vault total: $${avantisBalance.toFixed(2)}`);
-      console.log(`  - Combined total: $${totalPortfolioValue.toFixed(2)}`);
-      console.log(`  - Combined holdings count: ${combinedHoldings.length}`);
+      // Debug logging - Comprehensive balance breakdown
+      console.log('[IntegratedWallet] ===== BALANCE CALCULATION BREAKDOWN =====');
+      console.log(`  Base Account Address: ${addressToUse}`);
+      console.log(`  Trading Vault Address: ${tradingAddress || 'none'}`);
+      console.log(`  Base Account Total: $${baseAccountTotal.toFixed(2)} (ETH + ERC20 tokens)`);
+      console.log(`  Trading Vault Total: $${tradingVaultTotal.toFixed(2)} (ETH + ERC20 tokens)`);
+      console.log(`  Combined Total: $${totalPortfolioValue.toFixed(2)}`);
+      console.log(`  Holdings Sum (validation): $${holdingsSum.toFixed(2)}`);
+      console.log(`  Difference: $${difference.toFixed(2)} ${difference > 0.01 ? '⚠️' : '✓'}`);
+      console.log(`  Combined Holdings Count: ${combinedHoldings.length}`);
+      console.log(`  Individual Holdings:`);
       combinedHoldings.forEach(h => {
-        console.log(`    - ${h.token.symbol}: $${h.valueUSD.toFixed(2)} (${h.balanceFormatted})`);
+        if (h.valueUSD > 0) {
+          console.log(`    - ${h.token.symbol}: $${h.valueUSD.toFixed(2)} (${h.balanceFormatted})`);
+        }
       });
+      console.log('[IntegratedWallet] ===========================================');
 
       const nativeHolding = holdings.find(
         holding => holding.token.symbol.toUpperCase() === nativeSymbol.toUpperCase()
@@ -306,18 +384,20 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       );
 
       // Update state with all balances at once - this prevents flickering
+      // totalPortfolioValue includes: Base Account (ETH + ERC20) + Trading Vault (ETH + ERC20)
+      // holdings includes: Combined list of all tokens from both wallets (deduplicated)
       setState(prev => ({
         ...prev,
         ethBalance: balanceData.ethBalance,
         ethBalanceFormatted: combinedNativeHolding?.balanceFormatted || nativeHolding?.balanceFormatted || `${balanceData.ethBalanceFormatted} ${nativeSymbol}`,
-        holdings: combinedHoldings,
-        totalPortfolioValue,
+        holdings: combinedHoldings, // Combined holdings from Base Account + Trading Vault
+        totalPortfolioValue, // Base Account Total + Trading Vault Total (includes all ETH + ERC20)
         dailyChange: balanceData.dailyChange,
         dailyChangePercentage: balanceData.dailyChangePercentage,
         lastDayValue: balanceData.lastDayValue,
-        avantisBalance,
-        isAvantisConnected: avantisBalance > 0,
-        hasRealAvantisBalance: avantisBalance > 0,
+        avantisBalance: tradingVaultTotal, // Trading vault balance for reference
+        isAvantisConnected: tradingVaultTotal > 0,
+        hasRealAvantisBalance: tradingVaultTotal > 0,
         isLoading: false,
         error: null
       }));
@@ -359,9 +439,9 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       const wallets = await clientWalletService.getAllUserWallets();
 
       const baseWalletFromApi = wallets.find(w => w.walletType === 'base-account');
-      const tradingWallet = wallets.find(w => w.walletType === 'trading') || null;
+      const tradingWallet: ClientUserWallet | null = wallets.find(w => w.walletType === 'trading') || null;
 
-      const baseWallet = baseWalletFromApi || (user.baseAccountAddress
+      const baseWallet: ClientUserWallet | null = baseWalletFromApi || (user.baseAccountAddress
         ? {
             id: `fid_${user.fid}_base-account`,
             address: user.baseAccountAddress,
@@ -382,13 +462,17 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       // Pass the wallet directly to avoid state timing issues
       const walletForBalances = baseWallet || primaryWallet;
 
+      // Extract addresses before conditional to avoid TypeScript narrowing issues
+      const baseAddress: string | null = baseWallet ? baseWallet.address : (user.baseAccountAddress || null);
+      const tradingAddress: string | null = tradingWallet ? tradingWallet.address : null;
+
       if (walletForBalances) {
         // Update wallet state but keep isLoading true - refreshBalances will handle it
         setState(prev => ({
           ...prev,
           isConnected: !!primaryWallet,
-          baseAccountAddress: baseWallet?.address || user.baseAccountAddress || null,
-          tradingWalletAddress: tradingWallet?.address || null,
+          baseAccountAddress: baseAddress,
+          tradingWalletAddress: tradingAddress,
           primaryWallet,
           tradingWallet,
           allWallets: combinedWallets,
@@ -401,8 +485,8 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         setState(prev => ({
           ...prev,
           isConnected: !!primaryWallet,
-          baseAccountAddress: baseWallet?.address || user.baseAccountAddress || null,
-          tradingWalletAddress: tradingWallet?.address || null,
+          baseAccountAddress: baseAddress,
+          tradingWalletAddress: tradingAddress,
           primaryWallet,
           tradingWallet,
           allWallets: combinedWallets,
@@ -415,10 +499,12 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       setState(prev => ({
         ...prev,
         isLoading: false,
-        error: error instanceof Error ? error.message : 'Failed to load wallets'
+        error: error instanceof Error ? error.message : 'Failed to load wallets',
+        baseAccountAddress: user?.baseAccountAddress || null,
+        tradingWalletAddress: null
       }));
     }
-  }, [user?.fid, token, refreshBalances]);
+  }, [user?.fid, user?.baseAccountAddress, token, refreshBalances]);
 
   // Load user wallets on mount
   useEffect(() => {
@@ -491,13 +577,20 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     return state.allWallets.find(wallet => wallet.chain === chain) || null;
   }, [state.allWallets]);
 
+  // Wrapper for refreshBalances to match interface (forceRefresh is optional)
+  const refreshBalancesWrapper = useCallback(async (forceRefresh: boolean = false) => {
+    return refreshBalances(undefined, undefined, forceRefresh);
+  }, [refreshBalances]);
+
   const value: IntegratedWalletContextType = {
     ...state,
     refreshWallets,
     createWallet,
     switchToWallet,
-    refreshBalances,
-    getWalletForChain
+    refreshBalances: refreshBalancesWrapper,
+    getWalletForChain,
+    invalidateBalanceCache,
+    clearBalanceCache
   };
 
   return (
