@@ -71,7 +71,8 @@ const PortfolioBalanceCard = ({
   setIsBalanceVisible,
   isConnected,
   isTradingLoading,
-  tradingError
+  tradingError,
+  isLoading
 }: {
   totalPortfolioValue: number
   totalProfits: number
@@ -82,6 +83,7 @@ const PortfolioBalanceCard = ({
   isConnected: boolean
   isTradingLoading: boolean
   tradingError: string | null
+  isLoading: boolean
 }) => {
   const formatValue = useCallback((value: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -100,7 +102,11 @@ const PortfolioBalanceCard = ({
         <h2 className="text-[#b4b4b4] text-sm font-medium">Total Portfolio Balance</h2>
         <div className="flex items-center space-x-3">
           <span className="text-3xl sm:text-4xl font-bold text-white">
-            {isBalanceVisible ? formatValue(totalPortfolioValue + totalProfits) : "••••••"}
+            {isLoading ? (
+              <span className="text-[#9ca3af] text-2xl sm:text-3xl">Loading...</span>
+            ) : (
+              isBalanceVisible ? formatValue(totalPortfolioValue + totalProfits) : "••••••"
+            )}
           </span>
           <button
             onClick={toggleBalance}
@@ -140,17 +146,23 @@ const PortfolioBalanceCard = ({
           </button>
         </div>
         <div className="flex items-center space-x-4">
-          <span className={`text-sm sm:text-base font-medium ${dailyChange >= 0 ? 'text-[#27c47d]' : 'text-[#ef4444]'}`}>
-            {isBalanceVisible ? `${dailyChange >= 0 ? '+' : ''}${formatValue(dailyChange)} today` : `${dailyChange >= 0 ? '+' : ''}••••••• today`}
-          </span>
-          <div className="flex items-center space-x-1">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className={dailyChange >= 0 ? 'text-[#27c47d]' : 'text-[#ef4444]'}>
-              <path d={dailyChange >= 0 ? "M6 2L10 8.5L17 8L10 9.5L12 15L8.5 9.5L3 8L8.5 8.5L12 2Z" : "M6 10L2 3.5L-5 4L2 2.5L0 -3L3.5 2.5L9 4L3.5 3.5L0 10Z"} fill="currentColor" />
-            </svg>
-            <span className={`text-sm sm:text-base font-medium ${dailyChange >= 0 ? 'text-[#27c47d]' : 'text-[#ef4444]'}`}>
-              {isBalanceVisible ? `${dailyChangePercentage >= 0 ? '+' : ''}${dailyChangePercentage.toFixed(2)}%` : `${dailyChangePercentage >= 0 ? '+' : ''}•••%`}
-            </span>
-          </div>
+          {isLoading ? (
+            <span className="text-sm sm:text-base font-medium text-[#9ca3af]">Loading...</span>
+          ) : (
+            <>
+              <span className={`text-sm sm:text-base font-medium ${dailyChange >= 0 ? 'text-[#27c47d]' : 'text-[#ef4444]'}`}>
+                {isBalanceVisible ? `${dailyChange >= 0 ? '+' : ''}${formatValue(dailyChange)} today` : `${dailyChange >= 0 ? '+' : ''}••••••• today`}
+              </span>
+              <div className="flex items-center space-x-1">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className={dailyChange >= 0 ? 'text-[#27c47d]' : 'text-[#ef4444]'}>
+                  <path d={dailyChange >= 0 ? "M6 2L10 8.5L17 8L10 9.5L12 15L8.5 9.5L3 8L8.5 8.5L12 2Z" : "M6 10L2 3.5L-5 4L2 2.5L0 -3L3.5 2.5L9 4L3.5 3.5L0 10Z"} fill="currentColor" />
+                </svg>
+                <span className={`text-sm sm:text-base font-medium ${dailyChange >= 0 ? 'text-[#27c47d]' : 'text-[#ef4444]'}`}>
+                  {isBalanceVisible ? `${dailyChangePercentage >= 0 ? '+' : ''}${dailyChangePercentage.toFixed(2)}%` : `${dailyChangePercentage >= 0 ? '+' : ''}•••%`}
+                </span>
+              </div>
+            </>
+          )}
         </div>
         <div className="text-xs text-[#9ca3af] mt-2">
           {isConnected ? 'Connected to wallet' : 'Wallet not connected'} • {isTradingLoading ? 'Trading system loading...' : 'Trading system ready'}
@@ -872,6 +884,7 @@ export default function HomePage() {
               isConnected={isConnected}
               isTradingLoading={isTradingLoading}
               tradingError={tradingError}
+              isLoading={isLoading}
             />
           )}
 

@@ -199,6 +199,7 @@ export class RealBalanceService {
 
       const nativeBalance = tokenBalances.find(balance => balance.token.isNative) || null
 
+      // Calculate total: sum of ALL token values (including native ETH)
       const totalPortfolioValue = tokenBalances.reduce(
         (sum, tokenBalance) => sum + tokenBalance.valueUSD,
         0
@@ -208,7 +209,14 @@ export class RealBalanceService {
       const dailyChangePercentage = 0
       const lastDayValue = totalPortfolioValue
 
-      console.log(`[RealBalanceService] Total portfolio value: $${totalPortfolioValue.toFixed(2)}`)
+      // Debug logging
+      console.log(`[RealBalanceService] Balance breakdown for ${address}:`);
+      tokenBalances.forEach(tb => {
+        if (tb.valueUSD > 0) {
+          console.log(`  - ${tb.token.symbol}: $${tb.valueUSD.toFixed(2)} (${tb.balanceFormatted})`);
+        }
+      });
+      console.log(`[RealBalanceService] Total portfolio value: $${totalPortfolioValue.toFixed(2)}`);
 
       return {
         ethBalance: nativeBalance?.balance || '0',

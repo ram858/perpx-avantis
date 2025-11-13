@@ -62,6 +62,9 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
   const networkConfig = useMemo(() => getNetworkConfig(), []);
   const nativeSymbol = networkConfig.nativeSymbol || 'ETH';
   
+  // Ref to prevent concurrent balance refresh calls
+  const isRefreshingRef = React.useRef(false);
+  
   const [state, setState] = useState<IntegratedWalletState>({
     isConnected: false,
     primaryWallet: null,
@@ -120,7 +123,22 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       return;
     }
 
+    // Prevent concurrent calls
+    if (isRefreshingRef.current) {
+      console.log('[IntegratedWallet] Balance refresh already in progress, skipping...');
+      return;
+    }
+
     try {
+      isRefreshingRef.current = true;
+      
+      // Set loading state while preserving previous values to prevent flickering
+      setState(prev => ({
+        ...prev,
+        isLoading: true,
+        error: null
+      }));
+
       console.log(`[IntegratedWallet] Fetching real balances for: ${addressToUse}`);
 
       const balanceData = await fetchBalanceData(addressToUse);
@@ -142,19 +160,40 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
 
       console.log(`[IntegratedWallet] Real balance fetched: $${balanceData.totalPortfolioValue.toFixed(2)}`);
 
-      // Determine trading wallet balance (PrepX vault) separately
-      const tradingAddress =
+      // Determine trading wallet balance (only if it exists and is different from base account)
+      // NOTE: Trading wallet is only needed for fully automated trading.
+      // For normal trading, we use Base Account directly (no separate vault needed).
+      let tradingAddress =
         tradingOverride?.address ||
         state.tradingWallet?.address ||
         state.tradingWalletAddress ||
         (walletOverride?.walletType === 'trading' ? walletOverride.address : null);
 
+      // If trading address is not in state, try to fetch it from API
+      if (!tradingAddress && user?.fid && token) {
+        try {
+          const wallets = await clientWalletService.getAllUserWallets();
+          const tradingWallet = wallets.find(w => w.walletType === 'trading');
+          if (tradingWallet) {
+            tradingAddress = tradingWallet.address;
+            console.log(`[IntegratedWallet] Found trading wallet from API: ${tradingAddress}`);
+          }
+        } catch (walletFetchError) {
+          console.warn('[IntegratedWallet] Could not fetch trading wallet from API:', walletFetchError);
+        }
+      }
+
       let avantisBalance = 0;
       let tradingVaultHoldings: TokenBalance[] = [];
       
+      // Only fetch trading vault balance if:
+      // 1. Trading wallet exists
+      // 2. It's different from the base account address
+      // 3. User has explicitly created it for automated trading
       if (tradingAddress && tradingAddress.toLowerCase() !== addressToUse.toLowerCase()) {
         try {
           console.log(`[IntegratedWallet] Fetching trading vault balances for: ${tradingAddress}`);
+          console.log(`[IntegratedWallet] NOTE: Trading vault is only used for fully automated trading. Normal trading uses Base Account directly.`);
           const tradingBalanceData = await fetchBalanceData(tradingAddress);
           avantisBalance = tradingBalanceData.totalPortfolioValue;
           
@@ -175,6 +214,13 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
           console.log(`[IntegratedWallet] Trading vault balance: $${avantisBalance.toFixed(2)} (${tradingVaultHoldings.length} holdings)`);
         } catch (vaultError) {
           console.warn('[IntegratedWallet] Unable to fetch trading vault balance:', vaultError);
+          console.warn('[IntegratedWallet] This is normal if no trading wallet exists. Trading will use Base Account directly.');
+        }
+      } else {
+        if (tradingAddress) {
+          console.log(`[IntegratedWallet] Trading vault address (${tradingAddress}) is same as base account (${addressToUse}) - skipping separate fetch`);
+        } else {
+          console.log(`[IntegratedWallet] No separate trading vault found - using Base Account for all trading`);
         }
       }
 
@@ -232,7 +278,23 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       });
 
       const combinedHoldings = Array.from(combinedHoldingsMap.values());
+      
+      // Calculate total portfolio value
+      // balanceData.totalPortfolioValue already includes ETH + all tokens from base account
+      // avantisBalance already includes ETH + all tokens from trading vault
       const totalPortfolioValue = balanceData.totalPortfolioValue + avantisBalance;
+
+      // Debug logging
+      console.log('[IntegratedWallet] Balance calculation breakdown:');
+      console.log(`  - Base account address: ${addressToUse}`);
+      console.log(`  - Trading vault address: ${tradingAddress || 'none'}`);
+      console.log(`  - Base account total: $${balanceData.totalPortfolioValue.toFixed(2)}`);
+      console.log(`  - Trading vault total: $${avantisBalance.toFixed(2)}`);
+      console.log(`  - Combined total: $${totalPortfolioValue.toFixed(2)}`);
+      console.log(`  - Combined holdings count: ${combinedHoldings.length}`);
+      combinedHoldings.forEach(h => {
+        console.log(`    - ${h.token.symbol}: $${h.valueUSD.toFixed(2)} (${h.balanceFormatted})`);
+      });
 
       const nativeHolding = holdings.find(
         holding => holding.token.symbol.toUpperCase() === nativeSymbol.toUpperCase()
@@ -243,6 +305,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         holding => holding.token.symbol.toUpperCase() === nativeSymbol.toUpperCase()
       );
 
+      // Update state with all balances at once - this prevents flickering
       setState(prev => ({
         ...prev,
         ethBalance: balanceData.ethBalance,
@@ -255,14 +318,18 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         avantisBalance,
         isAvantisConnected: avantisBalance > 0,
         hasRealAvantisBalance: avantisBalance > 0,
+        isLoading: false,
         error: null
       }));
     } catch (error) {
       console.error('[IntegratedWallet] Error refreshing real balances:', error);
       setState(prev => ({
         ...prev,
+        isLoading: false,
         error: 'Failed to refresh balances'
       }));
+    } finally {
+      isRefreshingRef.current = false;
     }
   }, [
     state.primaryWallet,
@@ -270,11 +337,13 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     state.tradingWallet,
     state.tradingWalletAddress,
     user?.baseAccountAddress,
+    user?.fid,
     metaMaskAccount,
     isMetaMaskConnected,
     token,
     fetchBalanceData,
-    nativeSymbol
+    nativeSymbol,
+    clientWalletService
   ]);
 
   const refreshWallets = useCallback(async () => {
@@ -309,24 +378,36 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
 
       const primaryWallet = baseWallet || tradingWallet || wallets[0] || null;
 
-      setState(prev => ({
-        ...prev,
-        isConnected: !!primaryWallet,
-        baseAccountAddress: baseWallet?.address || user.baseAccountAddress || null,
-        tradingWalletAddress: tradingWallet?.address || null,
-        primaryWallet,
-        tradingWallet,
-        allWallets: combinedWallets,
-        isLoading: false
-      }));
-
       // Refresh balances if we have a primary wallet
       // Pass the wallet directly to avoid state timing issues
       const walletForBalances = baseWallet || primaryWallet;
 
       if (walletForBalances) {
+        // Update wallet state but keep isLoading true - refreshBalances will handle it
+        setState(prev => ({
+          ...prev,
+          isConnected: !!primaryWallet,
+          baseAccountAddress: baseWallet?.address || user.baseAccountAddress || null,
+          tradingWalletAddress: tradingWallet?.address || null,
+          primaryWallet,
+          tradingWallet,
+          allWallets: combinedWallets,
+          isLoading: true // Keep loading true until balances are fetched
+        }));
+        
         await refreshBalances(walletForBalances, tradingWallet);
       } else {
+        // No wallet found, set loading to false
+        setState(prev => ({
+          ...prev,
+          isConnected: !!primaryWallet,
+          baseAccountAddress: baseWallet?.address || user.baseAccountAddress || null,
+          tradingWalletAddress: tradingWallet?.address || null,
+          primaryWallet,
+          tradingWallet,
+          allWallets: combinedWallets,
+          isLoading: false
+        }));
         console.log('[IntegratedWallet] No primary wallet found, balances will not be refreshed');
       }
     } catch (error) {
