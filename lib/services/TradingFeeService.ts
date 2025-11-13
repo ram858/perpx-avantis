@@ -1,11 +1,12 @@
 /**
  * Trading Fee Service
- * Handles $0.03 fee payment when user starts trading
+ * Handles 1% of total wallet balance as fee payment when user starts trading
+ * Note: This service is kept for backward compatibility. The main fee logic is in /api/trading/pay-fee
  */
 
 import { ethers } from 'ethers';
 
-const FEE_AMOUNT_USD = 0.03;
+const FEE_AMOUNT_USD = 0.03; // Legacy: This is now calculated as 1% of wallet balance in the API
 const FEE_RECIPIENT = '0xeb56286910d3Cf36Ba26958Be0BbC91D60B28799';
 
 // USDC on Base (if available)
@@ -37,7 +38,7 @@ export class TradingFeeService {
   }
 
   /**
-   * Calculate ETH amount for $0.03 fee
+   * Calculate ETH amount for fee (legacy - now uses 1% of wallet balance)
    */
   private async calculateEthAmount(): Promise<string> {
     const ethPrice = await this.getEthPrice();
@@ -48,10 +49,10 @@ export class TradingFeeService {
   }
 
   /**
-   * Calculate USDC amount for $0.03 fee
+   * Calculate USDC amount for fee (legacy - now uses 1% of wallet balance)
    */
   private calculateUsdcAmount(): string {
-    // USDC is 1:1 with USD, so $0.03 = 0.03 USDC
+    // USDC is 1:1 with USD
     return ethers.parseUnits('0.03', USDC_DECIMALS).toString();
   }
 

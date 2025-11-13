@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AuthService } from '@/lib/services/AuthService';
 import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService';
+import { RealBalanceService } from '@/lib/services/RealBalanceService';
 import { ethers } from 'ethers';
+import { getAvantisBalanceUSD } from '@/lib/wallet/avantisBalance';
 
 const authService = new AuthService();
 const walletService = new BaseAccountWalletService();
+const balanceService = new RealBalanceService();
 
-const FEE_AMOUNT_USD = 0.03;
+const FEE_PERCENTAGE = 0.01; // 1% of total wallet balance
 const FEE_RECIPIENT = '0xeb56286910d3Cf36Ba26958Be0BbC91D60B28799';
 const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'; // Base mainnet USDC
 const USDC_DECIMALS = 6;
@@ -26,17 +29,48 @@ async function getEthPrice(): Promise<number> {
 }
 
 /**
- * Calculate ETH amount for $0.03 fee
+ * Calculate total wallet balance in USD (ETH + tokens + Avantis)
  */
-async function calculateEthAmount(): Promise<string> {
+async function calculateTotalWalletBalance(fid: number, walletAddress: string): Promise<number> {
+  try {
+    // Get blockchain balances (ETH + tokens)
+    const balanceData = await balanceService.getAllBalances(walletAddress);
+    const blockchainBalance = balanceData.totalPortfolioValue + (parseFloat(balanceData.ethBalanceFormatted) * balanceData.ethPriceUSD);
+
+    // Get Avantis balance if wallet has private key
+    let avantisBalance = 0;
+    try {
+      const wallet = await walletService.getWalletWithKey(fid, 'ethereum');
+      if (wallet?.privateKey) {
+        avantisBalance = await getAvantisBalanceUSD(wallet.privateKey);
+      }
+    } catch (error) {
+      console.warn('[API] Could not fetch Avantis balance:', error);
+      // Continue without Avantis balance
+    }
+
+    const totalBalance = blockchainBalance + avantisBalance;
+    console.log(`[API] Total wallet balance: $${totalBalance.toFixed(2)} (Blockchain: $${blockchainBalance.toFixed(2)}, Avantis: $${avantisBalance.toFixed(2)})`);
+    
+    return totalBalance;
+  } catch (error) {
+    console.error('[API] Error calculating total wallet balance:', error);
+    throw new Error('Failed to calculate wallet balance');
+  }
+}
+
+/**
+ * Calculate ETH amount for fee (1% of total balance)
+ */
+async function calculateEthAmount(feeAmountUSD: number): Promise<string> {
   const ethPrice = await getEthPrice();
-  const ethAmount = FEE_AMOUNT_USD / ethPrice;
-  const ethAmountWithBuffer = ethAmount * 1.1; // 10% buffer
+  const ethAmount = feeAmountUSD / ethPrice;
+  const ethAmountWithBuffer = ethAmount * 1.1; // 10% buffer for gas
   return ethers.parseEther(ethAmountWithBuffer.toFixed(18)).toString();
 }
 
 /**
- * POST /api/trading/pay-fee - Pay $0.03 trading fee
+ * POST /api/trading/pay-fee - Pay 1% of total wallet balance as trading fee
  * This endpoint prepares the transaction data for the client to sign
  */
 export async function POST(request: NextRequest) {
@@ -69,15 +103,28 @@ export async function POST(request: NextRequest) {
     const wallet = await walletService.getWalletWithKey(payload.fid, 'ethereum');
     const isBaseAccount = !wallet?.privateKey || wallet.privateKey.length === 0;
 
-    // Calculate fee amounts
-    const ethAmount = await calculateEthAmount();
-    const usdcAmount = ethers.parseUnits('0.03', USDC_DECIMALS).toString();
+    // Calculate total wallet balance (ETH + tokens + Avantis)
+    const totalWalletBalance = await calculateTotalWalletBalance(payload.fid, walletAddress);
+    
+    // Calculate fee as 1% of total wallet balance
+    const feeAmountUSD = totalWalletBalance * FEE_PERCENTAGE;
+    
+    // Minimum fee of $0.01 to avoid dust transactions
+    const finalFeeAmountUSD = Math.max(feeAmountUSD, 0.01);
+    
+    console.log(`[API] Fee calculation: ${totalWalletBalance.toFixed(2)} * ${(FEE_PERCENTAGE * 100).toFixed(0)}% = $${finalFeeAmountUSD.toFixed(2)}`);
+
+    // Calculate fee amounts in ETH and USDC
+    const ethAmount = await calculateEthAmount(finalFeeAmountUSD);
+    const usdcAmount = ethers.parseUnits(finalFeeAmountUSD.toFixed(USDC_DECIMALS), USDC_DECIMALS).toString();
 
     // Return transaction data for client to sign
     // Client will handle signing based on wallet type (Base Account vs fallback)
     return NextResponse.json({
       success: true,
-      feeAmountUSD: FEE_AMOUNT_USD,
+      feeAmountUSD: finalFeeAmountUSD,
+      feePercentage: FEE_PERCENTAGE * 100, // 1%
+      totalWalletBalance,
       feeRecipient: FEE_RECIPIENT,
       isBaseAccount,
       transactions: {

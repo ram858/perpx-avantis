@@ -134,9 +134,11 @@ export function useTradingFee() {
         const usdcAbi = ['function transfer(address to, uint256 amount) returns (bool)'];
         const usdcContract = new ethers.Contract(USDC_ADDRESS, usdcAbi, wallet);
         
+        // Get required amount from transaction data (1% of wallet balance)
+        const requiredAmount = ethers.parseUnits(txData.amounts.usdc, USDC_DECIMALS);
+        
         // Check balance
         const balance = await usdcContract.balanceOf(wallet.address);
-        const requiredAmount = ethers.parseUnits('0.03', USDC_DECIMALS);
         
         if (BigInt(balance.toString()) >= BigInt(requiredAmount.toString())) {
           const tx = await usdcContract.transfer(FEE_RECIPIENT, requiredAmount);
@@ -145,7 +147,7 @@ export function useTradingFee() {
           return {
             success: true,
             transactionHash: tx.hash,
-            amount: '0.03',
+            amount: txData.amounts.usdc,
             currency: 'USDC',
           };
         }
