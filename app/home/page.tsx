@@ -146,7 +146,7 @@ const PortfolioBalanceCard = ({
           </button>
         </div>
         <div className="flex items-center space-x-4">
-          {isLoading ? (
+          {isLoading && totalPortfolioValue === 0 ? (
             <span className="text-sm sm:text-base font-medium text-[#9ca3af]">Loading...</span>
           ) : (
             <>
@@ -573,6 +573,13 @@ const WalletInfoCard = ({
         <div className="space-y-4">
           <h3 className="text-white font-semibold text-lg">Your Trading Wallet</h3>
           <p className="text-[#9ca3af] text-sm">No trading wallet found. Please create one to start trading.</p>
+          {tradingWalletAddress && (
+            <div className="mt-3 p-3 bg-yellow-900/20 border border-yellow-500/50 rounded">
+              <p className="text-yellow-400 text-xs font-semibold mb-1">⚠️ Trading Wallet Address Found</p>
+              <p className="text-yellow-300 text-xs break-all">{tradingWalletAddress}</p>
+              <p className="text-yellow-300 text-xs mt-1">But wallet object is missing. Refreshing...</p>
+            </div>
+          )}
         </div>
       </Card>
     )
@@ -708,6 +715,39 @@ const WalletInfoCard = ({
                 : 'Your backend trading wallet is ready but has no funds. Add funds to start trading.'
               }
             </p>
+            
+            {/* Debug Info Section */}
+            <div className="mt-3 p-2 bg-[#1f2937] border border-[#374151] rounded text-xs">
+              <p className="text-[#9ca3af] font-semibold mb-1">Trading Vault Status:</p>
+              <div className="space-y-1 text-[#6b7280]">
+                <div className="flex justify-between">
+                  <span>Wallet Address:</span>
+                  <span className="text-[#9ca3af] font-mono text-[10px]">
+                    {walletToDisplay.address ? `${walletToDisplay.address.slice(0, 8)}...${walletToDisplay.address.slice(-6)}` : 'Not found'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Trading Balance:</span>
+                  <span className={avantisBalance > 0 ? 'text-green-400' : 'text-yellow-400'}>
+                    ${avantisBalance.toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Private Key:</span>
+                  <span className={walletToDisplay.privateKey ? 'text-green-400' : 'text-yellow-400'}>
+                    {walletToDisplay.privateKey ? 'Available' : 'Fetching...'}
+                  </span>
+                </div>
+                {tradingWalletAddress && tradingWalletAddress !== walletToDisplay.address && (
+                  <div className="flex justify-between">
+                    <span>Vault Address:</span>
+                    <span className="text-[#9ca3af] font-mono text-[10px]">
+                      {tradingWalletAddress.slice(0, 8)}...{tradingWalletAddress.slice(-6)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1028,7 +1068,7 @@ export default function HomePage() {
           )}
 
           {/* Wallet Info Section - Show backend trading wallet */}
-          {isConnected && (tradingWallet || tradingWalletAddress) && (
+          {isConnected && (tradingWallet || tradingWalletAddress || avantisBalance > 0) && (
             <WalletInfoCard
               tradingWallet={tradingWallet || (tradingWalletAddress ? {
                 address: tradingWalletAddress,

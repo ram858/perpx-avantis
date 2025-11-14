@@ -420,15 +420,22 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         null;
 
       // Fetch trading wallet from API if not in state
+      let foundTradingWallet: ClientUserWallet | null = null;
       if (!tradingAddress && user?.fid && token) {
         try {
           const wallets = await clientWalletService.getAllUserWallets();
-          const tradingWallet = wallets.find(w => w.walletType === 'trading');
-          if (tradingWallet) {
-            tradingAddress = tradingWallet.address;
+          foundTradingWallet = wallets.find(w => w.walletType === 'trading') || null;
+          if (foundTradingWallet) {
+            tradingAddress = foundTradingWallet.address;
+            // Update state with found trading wallet
+            setState(prev => ({
+              ...prev,
+              tradingWallet: foundTradingWallet,
+              tradingWalletAddress: tradingAddress
+            }));
             if (DEBUG_BALANCE_LOGS) {
-            console.log(`[IntegratedWallet] Found trading wallet from API: ${tradingAddress}`);
-          }
+              console.log(`[IntegratedWallet] Found trading wallet from API: ${tradingAddress}`);
+            }
           }
         } catch (walletFetchError) {
           console.warn('[IntegratedWallet] Could not fetch trading wallet from API:', walletFetchError);
@@ -441,9 +448,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       
       if (tradingAddress && tradingAddress.toLowerCase() !== addressToUse.toLowerCase()) {
         try {
-          if (DEBUG_BALANCE_LOGS) {
-            console.log(`[IntegratedWallet] Fetching trading vault balances for: ${tradingAddress}`);
-          }
+          console.log(`[IntegratedWallet] Fetching trading vault balances for: ${tradingAddress}`);
           const tradingBalanceData = await fetchBalanceData(tradingAddress, forceRefresh);
           const tradingVaultHoldingsRaw = convertHoldingsToTokenBalance(tradingBalanceData.holdings)
             .filter(vaultHolding => parseFloat(vaultHolding.balance) > 0);
@@ -455,20 +460,21 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
           
           tradingVaultHoldings = tradingVaultHoldingsRaw;
           
-          if (DEBUG_BALANCE_LOGS) {
-            console.log(`[IntegratedWallet] Trading vault balance: $${tradingVaultTotal.toFixed(2)} (${tradingVaultHoldings.length} holdings)`);
-          }
+          console.log(`[IntegratedWallet] Trading vault balance: $${tradingVaultTotal.toFixed(2)} (${tradingVaultHoldings.length} holdings)`);
+          tradingVaultHoldings.forEach(h => {
+            if (h.valueUSD > 0) {
+              console.log(`[IntegratedWallet]   - ${h.token.symbol}: $${h.valueUSD.toFixed(2)} (${h.balanceFormatted})`);
+            }
+          });
         } catch (vaultError) {
           console.warn('[IntegratedWallet] Unable to fetch trading vault balance:', vaultError);
           console.warn('[IntegratedWallet] This is normal if no trading wallet exists. Trading will use Base Account directly.');
         }
       } else {
-        if (DEBUG_BALANCE_LOGS) {
-          if (tradingAddress) {
-            console.log(`[IntegratedWallet] Trading vault address (${tradingAddress}) is same as base account (${addressToUse}) - skipping separate fetch`);
-          } else {
-            console.log(`[IntegratedWallet] No separate trading vault found - using Base Account for all trading`);
-          }
+        if (tradingAddress) {
+          console.log(`[IntegratedWallet] Trading vault address (${tradingAddress}) is same as base account (${addressToUse}) - skipping separate fetch`);
+        } else {
+          console.log(`[IntegratedWallet] No separate trading vault found - using Base Account for all trading`);
         }
       }
 
@@ -530,6 +536,10 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
           avantisBalance: tradingVaultTotal,
           isAvantisConnected: tradingVaultTotal > 0,
           hasRealAvantisBalance: tradingVaultTotal > 0,
+          // Ensure trading wallet address is set in state if we found it
+          ...(tradingAddress && !state.tradingWalletAddress ? {
+            tradingWalletAddress: tradingAddress
+          } : {}),
           isLoading: false,
         error: null
         };
