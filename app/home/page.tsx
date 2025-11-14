@@ -102,7 +102,7 @@ const PortfolioBalanceCard = ({
         <h2 className="text-[#b4b4b4] text-sm font-medium">Total Portfolio Balance</h2>
         <div className="flex items-center space-x-3">
           <span className="text-3xl sm:text-4xl font-bold text-white">
-            {isLoading ? (
+            {isLoading && totalPortfolioValue === 0 ? (
               <span className="text-[#9ca3af] text-2xl sm:text-3xl">Loading...</span>
             ) : (
               isBalanceVisible ? formatValue(totalPortfolioValue + totalProfits) : "••••••"
