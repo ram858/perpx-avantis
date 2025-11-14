@@ -198,14 +198,11 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       const cached = balanceCacheRef.current.get(cacheKey);
       
       if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-        const age = Math.round((Date.now() - cached.timestamp) / 1000);
-        console.log(`[IntegratedWallet] Using cached balance for ${address} (age: ${age}s)`);
         return cached.data;
       }
     }
 
     // Fetch fresh data
-    console.log(`[IntegratedWallet] Fetching fresh balance data for ${address}${forceRefresh ? ' (forced refresh)' : ''}`);
     const url = `/api/wallet/balances?address=${encodeURIComponent(address)}`;
     const response = await fetch(url, {
       headers: {
@@ -241,7 +238,6 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
   const invalidateBalanceCache = useCallback((address: string) => {
     const cacheKey = getCacheKey(address);
     balanceCacheRef.current.delete(cacheKey);
-    console.log(`[IntegratedWallet] Cache invalidated for ${address}`);
   }, []);
 
   /**
@@ -249,7 +245,6 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
    */
   const clearBalanceCache = useCallback(() => {
     balanceCacheRef.current.clear();
-    console.log('[IntegratedWallet] All balance cache cleared');
   }, []);
 
   // ============================================================================
@@ -395,10 +390,6 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     try {
       isRefreshingRef.current = true;
 
-      if (DEBUG_BALANCE_LOGS) {
-        console.log(`[IntegratedWallet] Fetching real balances for: ${addressToUse}${forceRefresh ? ' (forced refresh - bypassing cache)' : ''}`);
-      }
-
       // Fetch base account balance (always fetch fresh, cache only raw balances)
       const balanceData = await fetchBalanceData(addressToUse, forceRefresh);
       const baseHoldings = convertHoldingsToTokenBalance(balanceData.holdings);
@@ -408,10 +399,6 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       const baseAccountTotal = baseHoldings.reduce((sum, holding) => {
         return sum + (isValidNumber(holding.valueUSD) ? holding.valueUSD : 0);
       }, 0);
-
-      if (DEBUG_BALANCE_LOGS) {
-        console.log(`[IntegratedWallet] Base account balance: $${baseAccountTotal.toFixed(2)}`);
-      }
 
       // Determine trading wallet address from state
       let tradingAddress =
@@ -433,9 +420,6 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
               tradingWallet: foundTradingWallet,
               tradingWalletAddress: tradingAddress
             }));
-            if (DEBUG_BALANCE_LOGS) {
-              console.log(`[IntegratedWallet] Found trading wallet from API: ${tradingAddress}`);
-            }
           }
         } catch (walletFetchError) {
           console.warn('[IntegratedWallet] Could not fetch trading wallet from API:', walletFetchError);
@@ -448,7 +432,6 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       
       if (tradingAddress && tradingAddress.toLowerCase() !== addressToUse.toLowerCase()) {
         try {
-          console.log(`[IntegratedWallet] Fetching trading vault balances for: ${tradingAddress}`);
           const tradingBalanceData = await fetchBalanceData(tradingAddress, forceRefresh);
           const tradingVaultHoldingsRaw = convertHoldingsToTokenBalance(tradingBalanceData.holdings)
             .filter(vaultHolding => parseFloat(vaultHolding.balance) > 0);
@@ -459,22 +442,8 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
           }, 0);
           
           tradingVaultHoldings = tradingVaultHoldingsRaw;
-          
-          console.log(`[IntegratedWallet] Trading vault balance: $${tradingVaultTotal.toFixed(2)} (${tradingVaultHoldings.length} holdings)`);
-          tradingVaultHoldings.forEach(h => {
-            if (h.valueUSD > 0) {
-              console.log(`[IntegratedWallet]   - ${h.token.symbol}: $${h.valueUSD.toFixed(2)} (${h.balanceFormatted})`);
-            }
-          });
         } catch (vaultError) {
           console.warn('[IntegratedWallet] Unable to fetch trading vault balance:', vaultError);
-          console.warn('[IntegratedWallet] This is normal if no trading wallet exists. Trading will use Base Account directly.');
-        }
-      } else {
-        if (tradingAddress) {
-          console.log(`[IntegratedWallet] Trading vault address (${tradingAddress}) is same as base account (${addressToUse}) - skipping separate fetch`);
-        } else {
-          console.log(`[IntegratedWallet] No separate trading vault found - using Base Account for all trading`);
         }
       }
 
@@ -493,11 +462,6 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       // Validate calculation integrity (after merging and recalculation)
       validateBalanceCalculation(totalPortfolioValue, combinedHoldings);
 
-      if (DEBUG_BALANCE_LOGS) {
-        const difference = Math.abs(totalPortfolioValue - holdingsSum);
-        console.log(`[IntegratedWallet] Balance: $${totalPortfolioValue.toFixed(2)} (${combinedHoldings.length} holdings, diff: $${difference.toFixed(2)})`);
-      }
-
       // Find native token holding for formatted display
       // Native token detection: check address first (0x0000...), then fallback to symbol
       const NATIVE_ADDRESS = '0x0000000000000000000000000000000000000000';
@@ -512,14 +476,22 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
 
       // Atomic state update - prevents flickering by updating all values at once
       setState(prev => {
-        // Preserve previous values if new data is invalid (never set to 0 during fetch)
-        const newTotalPortfolioValue = isValidNumber(totalPortfolioValue)
+        // Preserve previous values if new data is invalid or empty
+        // Only update if we have meaningful new data
+        const hasValidNewData = Array.isArray(combinedHoldings) && combinedHoldings.length > 0
+        const shouldUpdateHoldings = hasValidNewData || prev.holdings.length === 0
+        
+        const newTotalPortfolioValue = isValidNumber(totalPortfolioValue) && totalPortfolioValue >= 0
           ? totalPortfolioValue
           : prev.totalPortfolioValue;
         
-        const newHoldings = Array.isArray(combinedHoldings) && combinedHoldings.length >= 0
-          ? combinedHoldings
-          : prev.holdings;
+        // Only update holdings if we have valid new data, or if we have no previous holdings
+        const newHoldings = shouldUpdateHoldings ? combinedHoldings : prev.holdings;
+        
+        // Only update avantis balance if it's valid or if we're forcing an update
+        const newAvantisBalance = isValidNumber(tradingVaultTotal) && tradingVaultTotal >= 0
+          ? tradingVaultTotal
+          : prev.avantisBalance;
         
         return {
         ...prev,
@@ -533,11 +505,11 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
           dailyChange: isValidNumber(balanceData.dailyChange) ? balanceData.dailyChange : prev.dailyChange,
           dailyChangePercentage: isValidNumber(balanceData.dailyChangePercentage) ? balanceData.dailyChangePercentage : prev.dailyChangePercentage,
           lastDayValue: isValidNumber(balanceData.lastDayValue) ? balanceData.lastDayValue : prev.lastDayValue,
-          avantisBalance: tradingVaultTotal,
-          isAvantisConnected: tradingVaultTotal > 0,
-          hasRealAvantisBalance: tradingVaultTotal > 0,
+          avantisBalance: newAvantisBalance,
+          isAvantisConnected: newAvantisBalance > 0,
+          hasRealAvantisBalance: newAvantisBalance > 0,
           // Ensure trading wallet address is set in state if we found it
-          ...(tradingAddress && !state.tradingWalletAddress ? {
+          ...(tradingAddress && !prev.tradingWalletAddress ? {
             tradingWalletAddress: tradingAddress
           } : {}),
           isLoading: false,
@@ -580,7 +552,6 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
    */
   const refreshWallets = useCallback(async () => {
     if (!user?.fid || !token) {
-      console.log('[IntegratedWallet] Skipping wallet refresh - no user or token');
       return;
     }
 
@@ -640,7 +611,6 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
           allWallets: combinedWallets,
           isLoading: false
         }));
-        console.log('[IntegratedWallet] No primary wallet found, balances will not be refreshed');
       }
     } catch (error) {
       console.error('Error refreshing wallets:', error);
@@ -718,39 +688,40 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     }
   }, [user?.fid, token, refreshWallets]);
 
-  // Refresh balances when primary wallet changes
+  // Refresh balances when primary wallet changes (once)
   useEffect(() => {
-    if (state.primaryWallet && token) {
-      refreshBalances(true).catch(err => {
+    if (!state.primaryWallet || !token) return
+    
+    // Only refresh if we don't have holdings yet
+    if (state.holdings.length === 0) {
+      refreshBalances(false).catch(err => {
         console.error('[IntegratedWallet] Error refreshing balances on wallet change:', err);
       });
     }
-  }, [state.primaryWallet, token, refreshBalances]);
+  }, [state.primaryWallet?.address, token]); // Only trigger when wallet address changes
 
-  // Refresh balances when MetaMask connection changes (debounced to prevent flickering)
+  // Refresh balances when MetaMask connection changes (heavily debounced to prevent flickering)
   useEffect(() => {
-    let mounted = true;
-    let timeoutId: NodeJS.Timeout | null = null;
+    // Skip if no wallet or MetaMask not connected
+    if (!state.primaryWallet || !isMetaMaskConnected) return
     
-    if (state.primaryWallet && (isMetaMaskConnected || metaMaskAccount)) {
-      if (timeoutId) clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        if (mounted) {
-          console.log('[IntegratedWallet] MetaMask connection changed, refreshing balances...');
-          refreshBalances(false).catch(err => {
-            if (mounted) {
-              console.error('[IntegratedWallet] Error refreshing balances:', err);
-            }
-          });
-        }
-      }, DEBOUNCE_DELAY);
-    }
+    let mounted = true;
+    // Longer debounce to prevent excessive refreshing
+    const timeoutId = setTimeout(() => {
+      if (mounted && state.holdings.length === 0) {
+        refreshBalances(false).catch(err => {
+          if (mounted) {
+            console.error('[IntegratedWallet] Error refreshing balances:', err);
+          }
+        });
+      }
+    }, 5000); // 5 second debounce
     
     return () => {
       mounted = false;
-      if (timeoutId) clearTimeout(timeoutId);
+      clearTimeout(timeoutId);
     };
-  }, [isMetaMaskConnected, metaMaskAccount, state.primaryWallet, refreshBalances]);
+  }, [isMetaMaskConnected]); // Only trigger when connection state changes, not on every render
 
   // ============================================================================
   // Public API Wrapper

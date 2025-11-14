@@ -519,96 +519,70 @@ const WalletInfoCard = ({
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [isFetching, setIsFetching] = useState(false)
 
-  // Fetch trading wallet with private key if not already available
+  // Update local wallet state when props change (but don't fetch)
   useEffect(() => {
+    if (tradingWallet && !tradingWalletWithKey) {
+      setTradingWalletWithKey(tradingWallet)
+    }
+  }, [tradingWallet, tradingWalletWithKey])
+  
+  // Fetch trading wallet ONLY ONCE on mount or when explicitly needed
+  useEffect(() => {
+    // Don't fetch if we already have wallet info
+    if (tradingWalletWithKey || !token) return
+    
+    // Only fetch once
+    let isMounted = true
+    
     const fetchTradingWallet = async () => {
-      if (!token) {
-        setFetchError('No authentication token available')
-        return
-      }
-      
       setIsFetching(true)
       setFetchError(null)
       
       try {
-        // If we have tradingWalletAddress but no wallet object, fetch it
-        if (tradingWalletAddress && !tradingWalletWithKey) {
-          const response = await fetch('/api/wallet/user-wallets', {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          })
-          
-          if (response.ok) {
-            const data = await response.json()
-            const tradingWallet = data.wallets?.find((w: any) => w.walletType === 'trading')
-            if (tradingWallet) {
-              setTradingWalletWithKey({
-                address: tradingWallet.address,
-                chain: tradingWallet.chain || 'ethereum',
-                privateKey: undefined
-              })
-              setFetchError(null)
-            } else {
-              setFetchError('Trading wallet not found in API response')
-            }
-          } else {
-            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-            setFetchError(`Failed to fetch wallets: ${errorData.error || 'Unknown error'}`)
+        const response = await fetch('/api/wallet/user-wallets', {
+          headers: {
+            'Authorization': `Bearer ${token}`
           }
-        }
+        })
         
-        // If we don't have tradingWalletAddress, try to fetch it anyway
-        if (!tradingWalletAddress && !tradingWalletWithKey) {
-          const response = await fetch('/api/wallet/user-wallets', {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          })
-          
-          if (response.ok) {
-            const data = await response.json()
-            const tradingWallet = data.wallets?.find((w: any) => w.walletType === 'trading')
-            if (tradingWallet) {
-              setTradingWalletWithKey({
-                address: tradingWallet.address,
-                chain: tradingWallet.chain || 'ethereum',
-                privateKey: undefined
-              })
-              setFetchError(null)
-            } else {
-              setFetchError('No trading wallet found. Make a deposit to create one.')
-            }
-          } else {
-            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-            setFetchError(`Failed to fetch wallets: ${errorData.error || 'Unknown error'}`)
+        if (!isMounted) return
+        
+        if (response.ok) {
+          const data = await response.json()
+          const tradingWallet = data.wallets?.find((w: any) => w.walletType === 'trading')
+          if (tradingWallet && isMounted) {
+            setTradingWalletWithKey({
+              address: tradingWallet.address,
+              chain: tradingWallet.chain || 'ethereum',
+              privateKey: undefined
+            })
+            setFetchError(null)
+          } else if (isMounted) {
+            setFetchError('No trading wallet found. Make a deposit to create one.')
           }
-        }
-        
-        // If we have wallet address but no private key, fetch it
-        if (tradingWalletAddress && tradingWalletWithKey && !tradingWalletWithKey.privateKey) {
-          const response = await fetch('/api/wallet/primary-with-key', {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          })
-          
-          if (response.ok) {
-            const data = await response.json()
-            if (data.wallet && data.wallet.privateKey) {
-              setTradingWalletWithKey(data.wallet)
-            }
+        } else {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+          if (isMounted) {
+            setFetchError(`Failed to fetch wallets: ${errorData.error || 'Unknown error'}`)
           }
         }
       } catch (error) {
-        setFetchError(error instanceof Error ? error.message : 'Failed to fetch trading wallet')
+        if (isMounted) {
+          setFetchError(error instanceof Error ? error.message : 'Failed to fetch trading wallet')
+        }
       } finally {
-        setIsFetching(false)
+        if (isMounted) {
+          setIsFetching(false)
+        }
       }
     }
 
     fetchTradingWallet()
-  }, [token, tradingWalletAddress, tradingWalletWithKey])
+    
+    return () => {
+      isMounted = false
+    }
+  }, [token]) // Only depend on token - fetch once when component mounts
 
   const walletToDisplay = tradingWalletWithKey || tradingWallet
 
@@ -658,7 +632,7 @@ const WalletInfoCard = ({
             )}
           </div>
           
-          {isFetching || isLoading ? (
+          {isFetching ? (
             <div className="p-3 bg-blue-900/20 border border-blue-500/50 rounded">
               <p className="text-blue-400 text-sm font-semibold mb-1">🔄 Loading trading wallet...</p>
               <p className="text-blue-300 text-xs">Fetching wallet information from server</p>
@@ -748,7 +722,8 @@ const WalletInfoCard = ({
           </div>
         )}
         
-        {isFetching || isLoading ? (
+        {/* Only show loading if actively fetching (not just isLoading from parent) */}
+        {isFetching ? (
           <div className="p-3 bg-blue-900/20 border border-blue-500/50 rounded">
             <p className="text-blue-400 text-xs font-semibold mb-1">🔄 Refreshing wallet data...</p>
             <p className="text-blue-300 text-xs">Please wait while we fetch the latest balance</p>
@@ -1010,7 +985,6 @@ export default function HomePage() {
     // 4. No wallets exist for this user
     // 5. Not already creating a wallet (prevent multiple simultaneous calls)
     if (user?.fid && !isLoading && !primaryWallet && allWallets && allWallets.length === 0 && !error) {
-      console.log('[HomePage] Auto-creating wallet for FID:', user.fid)
       // Add a small delay to ensure auth is fully complete
       const timer = setTimeout(() => {
         createWallet('ethereum').catch(err => {
@@ -1021,22 +995,20 @@ export default function HomePage() {
     }
   }, [user?.fid, isLoading, primaryWallet, allWallets, createWallet, error])
 
-  // Ensure trading wallet is fetched if missing (especially after deposit)
+  // Ensure trading wallet is fetched ONCE after deposit completes
   useEffect(() => {
-    const ensureTradingWallet = async () => {
-      // If we have a recent deposit hash but no trading wallet, refresh wallets
-      if (recentDepositHash && (!tradingWallet && !tradingWalletAddress) && token && !isLoading) {
-        console.log('[HomePage] Recent deposit detected but trading wallet missing, refreshing wallets...')
-        try {
-          await refreshWallets()
-        } catch (err) {
+    if (!recentDepositHash) return // Only run when deposit completes
+    
+    const timeoutId = setTimeout(() => {
+      if (!tradingWallet && !tradingWalletAddress && token && !isLoading) {
+        refreshWallets().catch(err => {
           console.error('[HomePage] Failed to refresh wallets after deposit:', err)
-        }
+        })
       }
-    }
-
-    ensureTradingWallet()
-  }, [recentDepositHash, tradingWallet, tradingWalletAddress, token, isLoading, refreshWallets])
+    }, 2000) // Wait 2 seconds after deposit before checking
+    
+    return () => clearTimeout(timeoutId)
+  }, [recentDepositHash]) // Only trigger when deposit hash changes
 
   const handleDeposit = useCallback(
     async ({ amount, asset }: { amount: string; asset: 'USDC' | 'ETH' }) => {
@@ -1099,7 +1071,6 @@ export default function HomePage() {
         // Wait for transaction confirmation before refreshing balances
         try {
           await waitForTransaction(txHash, 2) // Wait up to 2 confirmations
-          console.log('[HomePage] Deposit transaction confirmed, refreshing balances...')
         } catch (waitError) {
           console.warn('[HomePage] Transaction wait timeout, refreshing anyway:', waitError)
         }
@@ -1113,20 +1084,15 @@ export default function HomePage() {
         }
 
         // Refresh wallets FIRST to ensure trading wallet address is available
-        console.log('[HomePage] Refreshing wallets after deposit...')
         await refreshWallets()
         
         // Then refresh balances (force refresh to bypass cache)
-        console.log('[HomePage] Refreshing balances after deposit...')
         await refreshBalances(true)
         
-        // Also refresh after a short delay to catch any late confirmations and ensure balance is updated
+        // Do ONE more delayed refresh to catch late confirmations (10 seconds later)
         setTimeout(() => {
-          console.log('[HomePage] Delayed refresh after deposit...')
-          refreshWallets().then(() => {
-            refreshBalances(true).catch(err => console.warn('[HomePage] Delayed balance refresh failed:', err))
-          }).catch(err => console.warn('[HomePage] Delayed wallet refresh failed:', err))
-        }, 5000)
+          refreshBalances(true).catch(err => console.warn('[HomePage] Delayed balance refresh failed:', err))
+        }, 10000) // Wait 10 seconds for blockchain confirmation
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Deposit failed'
         setDepositError(message)

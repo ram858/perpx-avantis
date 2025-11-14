@@ -1,10 +1,10 @@
 /**
  * Wallet service for Base Account users
  * Uses FID (Farcaster ID) instead of phone numbers
- * Stores wallets in minimal storage (Vercel KV or localStorage)
+ * Stores wallets in PostgreSQL via Supabase (scalable, production-ready)
  */
 
-import { WalletStorageService } from './WalletStorageService';
+import { DatabaseWalletStorageService } from './DatabaseWalletStorageService';
 import { EncryptionService } from './EncryptionService';
 
 export interface BaseAccountWallet {
@@ -16,12 +16,12 @@ export interface BaseAccountWallet {
 }
 
 export class BaseAccountWalletService {
-  private walletStorage: WalletStorageService;
+  private walletStorage: DatabaseWalletStorageService;
   private encryptionService: EncryptionService;
   private readonly BASE_ACCOUNT_CHAIN = 'base-account';
 
   constructor() {
-    this.walletStorage = new WalletStorageService();
+    this.walletStorage = new DatabaseWalletStorageService();
     this.encryptionService = new EncryptionService();
   }
 

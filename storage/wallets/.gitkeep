@@ -1,0 +1,3 @@
+# This file ensures the directory is tracked by git
+# Actual wallet files are ignored for security
+

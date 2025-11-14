@@ -58,13 +58,10 @@ export async function GET(request: NextRequest) {
       if (address) {
         try {
           await walletService.storeBaseAccountAddress(fid, address, 'ethereum');
-          console.log(`[API] Stored Base Account address for FID ${fid}: ${address}`);
         } catch (error) {
           console.error(`[API] Failed to store Base Account address:`, error);
           // Continue anyway - address might already be stored
         }
-      } else {
-        console.warn(`[API] No Base Account address found for FID ${fid} - user will need fallback wallet`);
       }
 
       // Generate our own JWT token for API requests

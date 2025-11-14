@@ -1,0 +1,8 @@
+# Ignore all wallet files - these contain sensitive encrypted data
+wallets/*.json
+
+# Keep the directory structure
+!wallets/
+!wallets/.gitkeep
+!wallets/README.md
+

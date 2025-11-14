@@ -27,7 +27,10 @@
     "lint": "next lint",
     "start": "next start",
     "start:production": "concurrently \"pnpm run start\" \"pnpm run dev:api\" \"pnpm run dev:websocket\"",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "db:test": "tsx scripts/test-db-connection.ts",
+    "db:migrate": "tsx scripts/migrate-wallets-to-db.ts",
+    "test:flow": "tsx scripts/test-wallet-flow.ts"
   },
   "dependencies": {
     "@aptos-labs/ts-sdk": "^1.39.0",
@@ -63,6 +66,7 @@
     "@radix-ui/react-toggle-group": "1.1.1",
     "@radix-ui/react-tooltip": "1.1.6",
     "@solana/web3.js": "^1.98.4",
+    "@supabase/supabase-js": "^2.81.1",
     "@vercel/analytics": "^1.4.0",
     "autoprefixer": "^10.4.20",
     "axios": "^1.9.0",
@@ -78,7 +82,6 @@
     "csv-parse": "^5.6.0",
     "date-fns": "4.1.0",
     "decimal.js": "^10.4.3",
-    "dotenv": "^16.6.1",
     "ed25519-hd-key": "^1.3.0",
     "embla-carousel-react": "8.5.1",
     "ethers": "^6.15.0",
@@ -124,11 +127,13 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/ws": "^8.5.10",
+    "dotenv": "^16.6.1",
     "eslint": "^9",
     "eslint-config-next": "15.5.2",
     "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
     "ts-node": "^10.9.1",
+    "tsx": "^4.20.6",
     "tw-animate-css": "1.3.3",
     "typescript": "^5"
   },
