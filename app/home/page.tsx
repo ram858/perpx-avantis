@@ -501,45 +501,114 @@ const WalletInfoCard = ({
   avantisBalance,
   tradingWalletAddress,
   token,
+  isLoading = false,
+  onRefresh,
 }: {
   tradingWallet: { address: string; privateKey?: string; chain: string } | null
   ethBalanceFormatted: string
   avantisBalance: number
   tradingWalletAddress?: string | null
   token: string | null
+  isLoading?: boolean
+  onRefresh?: () => void
 }) => {
   const [copiedAddress, setCopiedAddress] = useState(false)
   const [copiedPrivateKey, setCopiedPrivateKey] = useState(false)
   const [showPrivateKey, setShowPrivateKey] = useState(false)
   const [tradingWalletWithKey, setTradingWalletWithKey] = useState<{ address: string; privateKey?: string; chain: string } | null>(tradingWallet)
+  const [fetchError, setFetchError] = useState<string | null>(null)
+  const [isFetching, setIsFetching] = useState(false)
 
   // Fetch trading wallet with private key if not already available
   useEffect(() => {
     const fetchTradingWallet = async () => {
-      if (!token || !tradingWalletAddress) return
+      if (!token) {
+        setFetchError('No authentication token available')
+        return
+      }
+      
+      setIsFetching(true)
+      setFetchError(null)
       
       try {
-        const response = await fetch('/api/wallet/primary-with-key', {
-          headers: {
-            'Authorization': `Bearer ${token}`
+        // If we have tradingWalletAddress but no wallet object, fetch it
+        if (tradingWalletAddress && !tradingWalletWithKey) {
+          const response = await fetch('/api/wallet/user-wallets', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          })
+          
+          if (response.ok) {
+            const data = await response.json()
+            const tradingWallet = data.wallets?.find((w: any) => w.walletType === 'trading')
+            if (tradingWallet) {
+              setTradingWalletWithKey({
+                address: tradingWallet.address,
+                chain: tradingWallet.chain || 'ethereum',
+                privateKey: undefined
+              })
+              setFetchError(null)
+            } else {
+              setFetchError('Trading wallet not found in API response')
+            }
+          } else {
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+            setFetchError(`Failed to fetch wallets: ${errorData.error || 'Unknown error'}`)
           }
-        })
+        }
         
-        if (response.ok) {
-          const data = await response.json()
-          if (data.wallet) {
-            setTradingWalletWithKey(data.wallet)
+        // If we don't have tradingWalletAddress, try to fetch it anyway
+        if (!tradingWalletAddress && !tradingWalletWithKey) {
+          const response = await fetch('/api/wallet/user-wallets', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          })
+          
+          if (response.ok) {
+            const data = await response.json()
+            const tradingWallet = data.wallets?.find((w: any) => w.walletType === 'trading')
+            if (tradingWallet) {
+              setTradingWalletWithKey({
+                address: tradingWallet.address,
+                chain: tradingWallet.chain || 'ethereum',
+                privateKey: undefined
+              })
+              setFetchError(null)
+            } else {
+              setFetchError('No trading wallet found. Make a deposit to create one.')
+            }
+          } else {
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+            setFetchError(`Failed to fetch wallets: ${errorData.error || 'Unknown error'}`)
+          }
+        }
+        
+        // If we have wallet address but no private key, fetch it
+        if (tradingWalletAddress && tradingWalletWithKey && !tradingWalletWithKey.privateKey) {
+          const response = await fetch('/api/wallet/primary-with-key', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          })
+          
+          if (response.ok) {
+            const data = await response.json()
+            if (data.wallet && data.wallet.privateKey) {
+              setTradingWalletWithKey(data.wallet)
+            }
           }
         }
       } catch (error) {
-        console.error('Failed to fetch trading wallet with key:', error)
+        setFetchError(error instanceof Error ? error.message : 'Failed to fetch trading wallet')
+      } finally {
+        setIsFetching(false)
       }
     }
 
-    if (tradingWalletAddress && !tradingWalletWithKey?.privateKey) {
-      fetchTradingWallet()
-    }
-  }, [token, tradingWalletAddress, tradingWalletWithKey?.privateKey])
+    fetchTradingWallet()
+  }, [token, tradingWalletAddress, tradingWalletWithKey])
 
   const walletToDisplay = tradingWalletWithKey || tradingWallet
 
@@ -571,15 +640,72 @@ const WalletInfoCard = ({
     return (
       <Card className="bg-[#1a1a1a] border-[#262626] p-4 sm:p-6 rounded-2xl">
         <div className="space-y-4">
-          <h3 className="text-white font-semibold text-lg">Your Trading Wallet</h3>
-          <p className="text-[#9ca3af] text-sm">No trading wallet found. Please create one to start trading.</p>
-          {tradingWalletAddress && (
-            <div className="mt-3 p-3 bg-yellow-900/20 border border-yellow-500/50 rounded">
+          <div className="flex items-center justify-between">
+            <h3 className="text-white font-semibold text-lg">Your Trading Wallet</h3>
+            {onRefresh && (
+              <Button
+                onClick={() => {
+                  setIsFetching(true)
+                  setFetchError(null)
+                  onRefresh()
+                  setTimeout(() => setIsFetching(false), 2000)
+                }}
+                disabled={isFetching || isLoading}
+                className="bg-[#8759ff] hover:bg-[#7c4dff] text-white text-xs px-3 py-1"
+              >
+                {isFetching || isLoading ? 'Refreshing...' : 'Refresh'}
+              </Button>
+            )}
+          </div>
+          
+          {isFetching || isLoading ? (
+            <div className="p-3 bg-blue-900/20 border border-blue-500/50 rounded">
+              <p className="text-blue-400 text-sm font-semibold mb-1">🔄 Loading trading wallet...</p>
+              <p className="text-blue-300 text-xs">Fetching wallet information from server</p>
+            </div>
+          ) : tradingWalletAddress ? (
+            <div className="p-3 bg-yellow-900/20 border border-yellow-500/50 rounded">
               <p className="text-yellow-400 text-xs font-semibold mb-1">⚠️ Trading Wallet Address Found</p>
-              <p className="text-yellow-300 text-xs break-all">{tradingWalletAddress}</p>
-              <p className="text-yellow-300 text-xs mt-1">But wallet object is missing. Refreshing...</p>
+              <p className="text-yellow-300 text-xs break-all font-mono">{tradingWalletAddress}</p>
+              <p className="text-yellow-300 text-xs mt-1">Balance: ${avantisBalance.toFixed(2)}</p>
+              <p className="text-yellow-300 text-xs mt-1">Wallet details are being loaded...</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-[#9ca3af] text-sm">No trading wallet found. Make a deposit to create one.</p>
+              {fetchError && (
+                <div className="p-3 bg-red-900/20 border border-red-500/50 rounded">
+                  <p className="text-red-400 text-xs font-semibold mb-1">❌ Error:</p>
+                  <p className="text-red-300 text-xs">{fetchError}</p>
+                </div>
+              )}
             </div>
           )}
+          
+          {/* Debug Info - Always visible */}
+          <div className="mt-3 p-2 bg-[#1f2937] border border-[#374151] rounded text-xs">
+            <p className="text-[#9ca3af] font-semibold mb-1">Status:</p>
+            <div className="space-y-1 text-[#6b7280]">
+              <div className="flex justify-between">
+                <span>Wallet Address:</span>
+                <span className="text-[#9ca3af] font-mono text-[10px]">
+                  {tradingWalletAddress ? `${tradingWalletAddress.slice(0, 8)}...${tradingWalletAddress.slice(-6)}` : 'Not found'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Trading Balance:</span>
+                <span className={avantisBalance > 0 ? 'text-green-400' : 'text-yellow-400'}>
+                  ${avantisBalance.toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Loading State:</span>
+                <span className={isLoading || isFetching ? 'text-yellow-400' : 'text-green-400'}>
+                  {isLoading || isFetching ? 'Loading...' : 'Ready'}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
       </Card>
     )
@@ -593,12 +719,41 @@ const WalletInfoCard = ({
             Your Backend Trading Wallet
           </h3>
           <div className="flex items-center space-x-2">
+            {onRefresh && (
+              <Button
+                onClick={() => {
+                  setIsFetching(true)
+                  setFetchError(null)
+                  onRefresh()
+                  setTimeout(() => setIsFetching(false), 2000)
+                }}
+                disabled={isFetching || isLoading}
+                className="bg-[#8759ff] hover:bg-[#7c4dff] text-white text-xs px-3 py-1"
+              >
+                {isFetching || isLoading ? 'Refreshing...' : 'Refresh'}
+              </Button>
+            )}
             <div className={`w-2 h-2 rounded-full ${avantisBalance > 0 ? 'bg-green-400' : 'bg-yellow-400'}`}></div>
             <span className={`text-sm font-medium ${avantisBalance > 0 ? 'text-green-400' : 'text-yellow-400'}`}>
               {avantisBalance > 0 ? 'Ready to Trade' : 'Add Funds'}
             </span>
           </div>
         </div>
+        
+        {/* Show visible status messages */}
+        {fetchError && (
+          <div className="p-3 bg-red-900/20 border border-red-500/50 rounded">
+            <p className="text-red-400 text-xs font-semibold mb-1">❌ Error:</p>
+            <p className="text-red-300 text-xs">{fetchError}</p>
+          </div>
+        )}
+        
+        {isFetching || isLoading ? (
+          <div className="p-3 bg-blue-900/20 border border-blue-500/50 rounded">
+            <p className="text-blue-400 text-xs font-semibold mb-1">🔄 Refreshing wallet data...</p>
+            <p className="text-blue-300 text-xs">Please wait while we fetch the latest balance</p>
+          </div>
+        ) : null}
         
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -866,6 +1021,23 @@ export default function HomePage() {
     }
   }, [user?.fid, isLoading, primaryWallet, allWallets, createWallet, error])
 
+  // Ensure trading wallet is fetched if missing (especially after deposit)
+  useEffect(() => {
+    const ensureTradingWallet = async () => {
+      // If we have a recent deposit hash but no trading wallet, refresh wallets
+      if (recentDepositHash && (!tradingWallet && !tradingWalletAddress) && token && !isLoading) {
+        console.log('[HomePage] Recent deposit detected but trading wallet missing, refreshing wallets...')
+        try {
+          await refreshWallets()
+        } catch (err) {
+          console.error('[HomePage] Failed to refresh wallets after deposit:', err)
+        }
+      }
+    }
+
+    ensureTradingWallet()
+  }, [recentDepositHash, tradingWallet, tradingWalletAddress, token, isLoading, refreshWallets])
+
   const handleDeposit = useCallback(
     async ({ amount, asset }: { amount: string; asset: 'USDC' | 'ETH' }) => {
       if (!token) {
@@ -940,13 +1112,20 @@ export default function HomePage() {
           invalidateBalanceCache(tradingWalletAddress)
         }
 
-        // Refresh balances after confirmation (force refresh to bypass cache)
-        await refreshBalances(true)
+        // Refresh wallets FIRST to ensure trading wallet address is available
+        console.log('[HomePage] Refreshing wallets after deposit...')
         await refreshWallets()
         
-        // Also refresh after a short delay to catch any late confirmations
+        // Then refresh balances (force refresh to bypass cache)
+        console.log('[HomePage] Refreshing balances after deposit...')
+        await refreshBalances(true)
+        
+        // Also refresh after a short delay to catch any late confirmations and ensure balance is updated
         setTimeout(() => {
-          refreshBalances(true).catch(err => console.warn('[HomePage] Delayed balance refresh failed:', err))
+          console.log('[HomePage] Delayed refresh after deposit...')
+          refreshWallets().then(() => {
+            refreshBalances(true).catch(err => console.warn('[HomePage] Delayed balance refresh failed:', err))
+          }).catch(err => console.warn('[HomePage] Delayed wallet refresh failed:', err))
         }, 5000)
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Deposit failed'
@@ -1068,7 +1247,8 @@ export default function HomePage() {
           )}
 
           {/* Wallet Info Section - Show backend trading wallet */}
-          {isConnected && (tradingWallet || tradingWalletAddress || avantisBalance > 0) && (
+          {/* Always show when connected, even if wallet is still being fetched */}
+          {isConnected && (
             <WalletInfoCard
               tradingWallet={tradingWallet || (tradingWalletAddress ? {
                 address: tradingWalletAddress,
@@ -1079,6 +1259,8 @@ export default function HomePage() {
               avantisBalance={avantisBalance}
               tradingWalletAddress={tradingWalletAddress || tradingWallet?.address || null}
               token={token}
+              isLoading={isLoading}
+              onRefresh={refreshWallets}
             />
           )}
 
