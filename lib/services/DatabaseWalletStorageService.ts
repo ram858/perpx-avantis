@@ -12,8 +12,9 @@
  * - Works on serverless platforms
  */
 
-import { getSupabaseClient } from '@/lib/db/supabase';
+import { getSupabaseClient, type Database } from '@/lib/db/supabase';
 import { EncryptionService } from './EncryptionService';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 export interface StoredWallet {
   fid?: number;
@@ -40,7 +41,7 @@ export class DatabaseWalletStorageService {
    */
   async storeWallet(fid: number, wallet: StoredWallet): Promise<void> {
     try {
-      const supabase = getSupabaseClient();
+      const supabase: SupabaseClient<Database> = getSupabaseClient();
 
       // Determine wallet type from chain
       const walletType = wallet.chain === 'base-account' ? 'base-account' : 'trading';
@@ -59,6 +60,7 @@ export class DatabaseWalletStorageService {
         iv = wallet.iv || null;
       }
 
+      // @ts-ignore - Supabase type inference issue with nullable fields
       const { error } = await supabase
         .from('wallets')
         .upsert(
@@ -94,8 +96,9 @@ export class DatabaseWalletStorageService {
    */
   async getWallet(fid: number, chain: string): Promise<StoredWallet | null> {
     try {
-      const supabase = getSupabaseClient();
+      const supabase: SupabaseClient<Database> = getSupabaseClient();
 
+      // @ts-ignore - Supabase type inference issue
       const { data, error } = await supabase
         .from('wallets')
         .select('*')
@@ -119,14 +122,16 @@ export class DatabaseWalletStorageService {
       // Log the wallet access for audit
       await this.logWalletAccess(fid, chain, 'accessed');
 
+      // Type cast to work around Supabase type inference issue
+      const wallet = data as any;
       return {
-        fid: data.fid,
-        address: data.address,
-        encryptedPrivateKey: data.encrypted_private_key,
-        iv: data.iv,
-        chain: data.chain,
-        walletType: data.wallet_type,
-        createdAt: data.created_at,
+        fid: wallet.fid,
+        address: wallet.address,
+        encryptedPrivateKey: wallet.encrypted_private_key,
+        iv: wallet.iv,
+        chain: wallet.chain,
+        walletType: wallet.wallet_type,
+        createdAt: wallet.created_at,
       };
     } catch (error) {
       console.error('[DatabaseWalletStorageService] Unexpected error fetching wallet:', error);
@@ -139,7 +144,7 @@ export class DatabaseWalletStorageService {
    */
   async getWalletAddress(fid: number, chain: string): Promise<string | null> {
     try {
-      const supabase = getSupabaseClient();
+      const supabase: SupabaseClient<Database> = getSupabaseClient();
 
       const { data, error } = await supabase
         .from('wallets')
@@ -155,7 +160,7 @@ export class DatabaseWalletStorageService {
         throw new Error(`Failed to fetch wallet address: ${error.message}`);
       }
 
-      return data?.address || null;
+      return (data as any)?.address || null;
     } catch (error) {
       console.error('[DatabaseWalletStorageService] Error fetching wallet address:', error);
       throw error;
@@ -170,6 +175,11 @@ export class DatabaseWalletStorageService {
       const wallet = await this.getWallet(fid, chain);
 
       if (!wallet) {
+        return null;
+      }
+
+      // Check if encrypted private key exists (Base Account wallets don't have private keys)
+      if (!wallet.encryptedPrivateKey || !wallet.iv) {
         return null;
       }
 
@@ -194,7 +204,7 @@ export class DatabaseWalletStorageService {
    */
   async hasWallet(fid: number, chain: string): Promise<boolean> {
     try {
-      const supabase = getSupabaseClient();
+      const supabase: SupabaseClient<Database> = getSupabaseClient();
 
       const { count, error } = await supabase
         .from('wallets')
@@ -219,7 +229,7 @@ export class DatabaseWalletStorageService {
    */
   async getAllWalletsByFid(fid: number): Promise<StoredWallet[]> {
     try {
-      const supabase = getSupabaseClient();
+      const supabase: SupabaseClient<Database> = getSupabaseClient();
 
       const { data, error } = await supabase
         .from('wallets')
@@ -232,7 +242,7 @@ export class DatabaseWalletStorageService {
         throw new Error(`Failed to fetch user wallets: ${error.message}`);
       }
 
-      return (data || []).map((row) => ({
+      return (data || []).map((row: any) => ({
         fid: row.fid,
         address: row.address,
         encryptedPrivateKey: row.encrypted_private_key,
@@ -253,7 +263,7 @@ export class DatabaseWalletStorageService {
    */
   async deleteWallet(fid: number, chain: string): Promise<void> {
     try {
-      const supabase = getSupabaseClient();
+      const supabase: SupabaseClient<Database> = getSupabaseClient();
 
       // Get wallet ID first
       const { data: wallet } = await supabase
@@ -271,7 +281,7 @@ export class DatabaseWalletStorageService {
       await supabase
         .from('wallet_audit_log')
         .delete()
-        .eq('wallet_id', wallet.id);
+        .eq('wallet_id', (wallet as any).id);
 
       // Now delete the wallet
       const { error } = await supabase
@@ -304,7 +314,7 @@ export class DatabaseWalletStorageService {
     }
   ): Promise<void> {
     try {
-      const supabase = getSupabaseClient();
+      const supabase: SupabaseClient<Database> = getSupabaseClient();
 
       // First, get the wallet ID
       const { data: wallet, error: walletError } = await supabase
@@ -320,9 +330,10 @@ export class DatabaseWalletStorageService {
       }
 
       // Update or insert metadata
+      // @ts-ignore - Supabase type inference issue with nullable fields
       const { error } = await supabase.from('wallet_metadata').upsert(
         {
-          wallet_id: wallet.id,
+          wallet_id: (wallet as any).id,
           balance_usd: metadata.balanceUsd,
           total_deposits: metadata.totalDeposits,
           total_withdrawals: metadata.totalWithdrawals,
@@ -352,7 +363,7 @@ export class DatabaseWalletStorageService {
     action: string
   ): Promise<void> {
     try {
-      const supabase = getSupabaseClient();
+      const supabase: SupabaseClient<Database> = getSupabaseClient();
 
       // Get wallet ID first
       const { data: wallet } = await supabase
@@ -367,8 +378,9 @@ export class DatabaseWalletStorageService {
       }
 
       // Insert audit log (fire and forget - don't block main operation)
+      // @ts-ignore - Supabase type inference issue
       await supabase.from('wallet_audit_log').insert({
-        wallet_id: wallet.id,
+        wallet_id: (wallet as any).id,
         action,
         accessed_by: 'backend_api',
         timestamp: new Date().toISOString(),
@@ -389,7 +401,7 @@ export class DatabaseWalletStorageService {
     totalUsers: number;
   }> {
     try {
-      const supabase = getSupabaseClient();
+      const supabase: SupabaseClient<Database> = getSupabaseClient();
 
       const { count: totalWallets } = await supabase
         .from('wallets')
@@ -408,7 +420,7 @@ export class DatabaseWalletStorageService {
       const { data: uniqueUsers } = await supabase
         .from('wallets')
         .select('fid', { count: 'exact' })
-        .then(({ data }) => ({ data: [...new Set(data?.map((w) => w.fid))] }));
+        .then(({ data }) => ({ data: [...new Set(data?.map((w: any) => w.fid))] }));
 
       return {
         totalWallets: totalWallets ?? 0,

@@ -73,7 +73,7 @@ export class BaseAccountWalletService {
           address: stored.address,
           chain: stored.chain,
           privateKey: privateKey && privateKey.length > 0 ? privateKey : undefined, // Only return if not empty
-          createdAt: new Date(stored.createdAt),
+          createdAt: stored.createdAt ? new Date(stored.createdAt) : new Date(),
         };
       }
 
@@ -152,7 +152,7 @@ export class BaseAccountWalletService {
         address: stored.address,
         chain: stored.chain,
         privateKey: privateKey || undefined,
-        createdAt: new Date(stored.createdAt),
+        createdAt: stored.createdAt ? new Date(stored.createdAt) : new Date(),
       };
     } catch (error) {
       console.error('Error getting wallet with key:', error);

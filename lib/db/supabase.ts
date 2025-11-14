@@ -39,8 +39,8 @@ export interface Database {
           id: number;
           fid: number;
           address: string;
-          encrypted_private_key: string;
-          iv: string;
+          encrypted_private_key: string | null;
+          iv: string | null;
           chain: string;
           wallet_type: string;
           created_at: string;
@@ -50,8 +50,8 @@ export interface Database {
           id?: number;
           fid: number;
           address: string;
-          encrypted_private_key: string;
-          iv: string;
+          encrypted_private_key?: string | null;
+          iv?: string | null;
           chain: string;
           wallet_type: string;
           created_at?: string;
@@ -61,8 +61,8 @@ export interface Database {
           id?: number;
           fid?: number;
           address?: string;
-          encrypted_private_key?: string;
-          iv?: string;
+          encrypted_private_key?: string | null;
+          iv?: string | null;
           chain?: string;
           wallet_type?: string;
           created_at?: string;

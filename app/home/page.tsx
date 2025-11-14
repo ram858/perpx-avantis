@@ -502,7 +502,6 @@ const WalletInfoCard = ({
   tradingWalletAddress,
   token,
   isLoading = false,
-  onRefresh,
 }: {
   tradingWallet: { address: string; privateKey?: string; chain: string } | null
   ethBalanceFormatted: string
@@ -510,7 +509,6 @@ const WalletInfoCard = ({
   tradingWalletAddress?: string | null
   token: string | null
   isLoading?: boolean
-  onRefresh?: () => void
 }) => {
   const [copiedAddress, setCopiedAddress] = useState(false)
   const [copiedPrivateKey, setCopiedPrivateKey] = useState(false)
@@ -518,6 +516,7 @@ const WalletInfoCard = ({
   const [tradingWalletWithKey, setTradingWalletWithKey] = useState<{ address: string; privateKey?: string; chain: string } | null>(tradingWallet)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [isFetching, setIsFetching] = useState(false)
+  const [hasAttemptedFetch, setHasAttemptedFetch] = useState(false) // Track if we've already tried fetching
 
   // Update local wallet state when props change (but don't fetch)
   useEffect(() => {
@@ -528,8 +527,11 @@ const WalletInfoCard = ({
   
   // Fetch trading wallet ONLY ONCE on mount or when explicitly needed
   useEffect(() => {
-    // Don't fetch if we already have wallet info
-    if (tradingWalletWithKey || !token) return
+    // Don't fetch if:
+    // 1. We already have wallet info
+    // 2. We don't have a token
+    // 3. We've already attempted to fetch (prevents infinite loops when no wallet exists)
+    if (tradingWalletWithKey || !token || hasAttemptedFetch) return
     
     // Only fetch once
     let isMounted = true
@@ -557,18 +559,23 @@ const WalletInfoCard = ({
               privateKey: undefined
             })
             setFetchError(null)
+            setHasAttemptedFetch(true)
           } else if (isMounted) {
-            setFetchError('No trading wallet found. Make a deposit to create one.')
+            // No wallet found - this is OK, user needs to deposit
+            setFetchError(null) // Don't show error, it's expected
+            setHasAttemptedFetch(true) // Mark as attempted to prevent refetch loop
           }
         } else {
           const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
           if (isMounted) {
             setFetchError(`Failed to fetch wallets: ${errorData.error || 'Unknown error'}`)
+            setHasAttemptedFetch(true)
           }
         }
       } catch (error) {
         if (isMounted) {
           setFetchError(error instanceof Error ? error.message : 'Failed to fetch trading wallet')
+          setHasAttemptedFetch(true)
         }
       } finally {
         if (isMounted) {
@@ -582,7 +589,7 @@ const WalletInfoCard = ({
     return () => {
       isMounted = false
     }
-  }, [token]) // Only depend on token - fetch once when component mounts
+  }, [token, tradingWalletWithKey, hasAttemptedFetch]) // Depend on hasAttemptedFetch to prevent loops
 
   const walletToDisplay = tradingWalletWithKey || tradingWallet
 
@@ -616,37 +623,23 @@ const WalletInfoCard = ({
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-white font-semibold text-lg">Your Trading Wallet</h3>
-            {onRefresh && (
-              <Button
-                onClick={() => {
-                  setIsFetching(true)
-                  setFetchError(null)
-                  onRefresh()
-                  setTimeout(() => setIsFetching(false), 2000)
-                }}
-                disabled={isFetching || isLoading}
-                className="bg-[#8759ff] hover:bg-[#7c4dff] text-white text-xs px-3 py-1"
-              >
-                {isFetching || isLoading ? 'Refreshing...' : 'Refresh'}
-              </Button>
-            )}
           </div>
           
-          {isFetching ? (
+          {/* Only show loading during the INITIAL fetch, not repeatedly */}
+          {isFetching && !hasAttemptedFetch ? (
             <div className="p-3 bg-blue-900/20 border border-blue-500/50 rounded">
               <p className="text-blue-400 text-sm font-semibold mb-1">🔄 Loading trading wallet...</p>
-              <p className="text-blue-300 text-xs">Fetching wallet information from server</p>
+              <p className="text-blue-300 text-xs">Checking for existing wallet...</p>
             </div>
           ) : tradingWalletAddress ? (
             <div className="p-3 bg-yellow-900/20 border border-yellow-500/50 rounded">
               <p className="text-yellow-400 text-xs font-semibold mb-1">⚠️ Trading Wallet Address Found</p>
               <p className="text-yellow-300 text-xs break-all font-mono">{tradingWalletAddress}</p>
               <p className="text-yellow-300 text-xs mt-1">Balance: ${avantisBalance.toFixed(2)}</p>
-              <p className="text-yellow-300 text-xs mt-1">Wallet details are being loaded...</p>
             </div>
           ) : (
             <div className="space-y-2">
-              <p className="text-[#9ca3af] text-sm">No trading wallet found. Make a deposit to create one.</p>
+              <p className="text-[#9ca3af] text-sm">💡 No trading wallet yet. Make your first deposit to create one automatically.</p>
               {fetchError && (
                 <div className="p-3 bg-red-900/20 border border-red-500/50 rounded">
                   <p className="text-red-400 text-xs font-semibold mb-1">❌ Error:</p>
@@ -690,26 +683,12 @@ const WalletInfoCard = ({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-white font-semibold text-lg">
-            Your Backend Trading Wallet
+            Your Trading Wallet
           </h3>
           <div className="flex items-center space-x-2">
-            {onRefresh && (
-              <Button
-                onClick={() => {
-                  setIsFetching(true)
-                  setFetchError(null)
-                  onRefresh()
-                  setTimeout(() => setIsFetching(false), 2000)
-                }}
-                disabled={isFetching || isLoading}
-                className="bg-[#8759ff] hover:bg-[#7c4dff] text-white text-xs px-3 py-1"
-              >
-                {isFetching || isLoading ? 'Refreshing...' : 'Refresh'}
-              </Button>
-            )}
             <div className={`w-2 h-2 rounded-full ${avantisBalance > 0 ? 'bg-green-400' : 'bg-yellow-400'}`}></div>
             <span className={`text-sm font-medium ${avantisBalance > 0 ? 'text-green-400' : 'text-yellow-400'}`}>
-              {avantisBalance > 0 ? 'Ready to Trade' : 'Add Funds'}
+              {avantisBalance > 0 ? 'Ready' : 'Add Funds'}
             </span>
           </div>
         </div>
@@ -966,9 +945,7 @@ export default function HomePage() {
     error,
     createWallet,
     refreshBalances,
-    refreshWallets,
-    invalidateBalanceCache,
-    clearBalanceCache
+    refreshWallets
   } = useIntegratedWallet()
 
   const { isLoading: isTradingLoading, error: tradingError } = useTrading()
@@ -995,20 +972,8 @@ export default function HomePage() {
     }
   }, [user?.fid, isLoading, primaryWallet, allWallets, createWallet, error])
 
-  // Ensure trading wallet is fetched ONCE after deposit completes
-  useEffect(() => {
-    if (!recentDepositHash) return // Only run when deposit completes
-    
-    const timeoutId = setTimeout(() => {
-      if (!tradingWallet && !tradingWalletAddress && token && !isLoading) {
-        refreshWallets().catch(err => {
-          console.error('[HomePage] Failed to refresh wallets after deposit:', err)
-        })
-      }
-    }, 2000) // Wait 2 seconds after deposit before checking
-    
-    return () => clearTimeout(timeoutId)
-  }, [recentDepositHash]) // Only trigger when deposit hash changes
+  // NOTE: Automatic post-deposit refresh removed
+  // User must manually click refresh button to update balances after deposit confirms
 
   const handleDeposit = useCallback(
     async ({ amount, asset }: { amount: string; asset: 'USDC' | 'ETH' }) => {
@@ -1075,24 +1040,11 @@ export default function HomePage() {
           console.warn('[HomePage] Transaction wait timeout, refreshing anyway:', waitError)
         }
 
-        // Invalidate cache for both addresses before refreshing
-        if (baseAccountAddress) {
-          invalidateBalanceCache(baseAccountAddress)
-        }
-        if (tradingWalletAddress) {
-          invalidateBalanceCache(tradingWalletAddress)
-        }
-
-        // Refresh wallets FIRST to ensure trading wallet address is available
+        // Refresh wallets and balances immediately after deposit
         await refreshWallets()
-        
-        // Then refresh balances (force refresh to bypass cache)
         await refreshBalances(true)
         
-        // Do ONE more delayed refresh to catch late confirmations (10 seconds later)
-        setTimeout(() => {
-          refreshBalances(true).catch(err => console.warn('[HomePage] Delayed balance refresh failed:', err))
-        }, 10000) // Wait 10 seconds for blockchain confirmation
+        // NOTE: No automatic delayed refresh - user must manually refresh if needed
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Deposit failed'
         setDepositError(message)
@@ -1171,6 +1123,39 @@ export default function HomePage() {
         />
 
         <div className="px-4 sm:px-6 space-y-6 max-w-md mx-auto">
+          {/* Global Refresh Button - Only ONE refresh button for the entire app */}
+          {isConnected && (
+            <div className="flex justify-end">
+              <Button
+                onClick={async () => {
+                  try {
+                    await refreshWallets()
+                    await refreshBalances(true)
+                  } catch (err) {
+                    console.error('[HomePage] Refresh failed:', err)
+                  }
+                }}
+                disabled={isLoading}
+                className="bg-[#8759ff] hover:bg-[#7c4dff] text-white font-medium px-6 py-2.5 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 flex items-center space-x-2"
+              >
+                <svg 
+                  className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    strokeWidth={2} 
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
+                  />
+                </svg>
+                <span>{isLoading ? 'Refreshing...' : 'Refresh Balances'}</span>
+              </Button>
+            </div>
+          )}
+
           {/* Portfolio Balance Card */}
           {!isConnected ? (
             <WalletSetupCard 
@@ -1226,7 +1211,6 @@ export default function HomePage() {
               tradingWalletAddress={tradingWalletAddress || tradingWallet?.address || null}
               token={token}
               isLoading={isLoading}
-              onRefresh={refreshWallets}
             />
           )}
 

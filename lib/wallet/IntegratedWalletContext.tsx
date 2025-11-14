@@ -54,16 +54,12 @@ export interface IntegratedWalletContextType extends IntegratedWalletState {
   switchToWallet: (walletId: string) => Promise<void>;
   refreshBalances: (forceRefresh?: boolean) => Promise<void>;
   getWalletForChain: (chain: string) => ClientUserWallet | null;
-  invalidateBalanceCache: (address: string) => void;
-  clearBalanceCache: () => void;
 }
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-const CACHE_TTL = 30000; // 30 seconds
-const CACHE_CLEANUP_THRESHOLD = 300000; // 5 minutes
 const DEBOUNCE_DELAY = 500; // 500ms for MetaMask refresh debounce
 const DEBUG_BALANCE_LOGS = false; // Set to true for detailed balance logging
 
@@ -72,15 +68,6 @@ const DEBUG_BALANCE_LOGS = false; // Set to true for detailed balance logging
 // ============================================================================
 
 const IntegratedWalletContext = createContext<IntegratedWalletContextType | undefined>(undefined);
-
-// ============================================================================
-// Cache Types
-// ============================================================================
-
-interface BalanceCacheEntry {
-  data: RealBalanceData;
-  timestamp: number;
-}
 
 // ============================================================================
 // Helper Functions
@@ -123,13 +110,6 @@ function isValidNumber(value: number): boolean {
   return typeof value === 'number' && !isNaN(value) && value >= 0 && isFinite(value);
 }
 
-/**
- * Get cache key for address
- */
-function getCacheKey(address: string): string {
-  return `balance_${address.toLowerCase()}`;
-}
-
 // ============================================================================
 // Provider Component
 // ============================================================================
@@ -141,9 +121,9 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
   const networkConfig = useMemo(() => getNetworkConfig(), []);
   const nativeSymbol = networkConfig.nativeSymbol || 'ETH';
   
-  // Refs for preventing race conditions and managing cache
+  // Refs for preventing race conditions
   const isRefreshingRef = useRef(false);
-  const balanceCacheRef = useRef<Map<string, BalanceCacheEntry>>(new Map());
+  const lastUpdateTimestampRef = useRef<number>(0); // Track when last update happened
   
   // Initial state
   const [state, setState] = useState<IntegratedWalletState>({
@@ -168,41 +148,18 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
   });
 
   // ============================================================================
-  // Cache Management
+  // Balance Data Fetching
   // ============================================================================
 
   /**
-   * Clean up old cache entries (older than threshold)
-   */
-  const cleanupOldCacheEntries = useCallback(() => {
-    const now = Date.now();
-    const cache = balanceCacheRef.current;
-    for (const [key, entry] of cache.entries()) {
-      if (now - entry.timestamp > CACHE_CLEANUP_THRESHOLD) {
-        cache.delete(key);
-      }
-    }
-  }, []);
-
-  /**
-   * Fetch balance data with caching support
+   * Fetch balance data (always fresh - no caching)
    */
   const fetchBalanceData = useCallback(async (address: string, forceRefresh: boolean = false): Promise<RealBalanceData> => {
     if (!token) {
       throw new Error('Not authenticated');
     }
 
-    // Check cache first (unless force refresh)
-    if (!forceRefresh) {
-      const cacheKey = getCacheKey(address);
-      const cached = balanceCacheRef.current.get(cacheKey);
-      
-      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-        return cached.data;
-      }
-    }
-
-    // Fetch fresh data
+    // Always fetch fresh data
     const url = `/api/wallet/balances?address=${encodeURIComponent(address)}`;
     const response = await fetch(url, {
       headers: {
@@ -219,33 +176,8 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     const result = await response.json();
     const balanceData = result.balance as RealBalanceData;
 
-    // Cache the result
-    const cacheKey = getCacheKey(address);
-    balanceCacheRef.current.set(cacheKey, {
-      data: balanceData,
-      timestamp: Date.now()
-    });
-
-    // Clean up old entries
-    cleanupOldCacheEntries();
-
     return balanceData;
-  }, [token, cleanupOldCacheEntries]);
-
-  /**
-   * Invalidate cache for specific address
-   */
-  const invalidateBalanceCache = useCallback((address: string) => {
-    const cacheKey = getCacheKey(address);
-    balanceCacheRef.current.delete(cacheKey);
-  }, []);
-
-  /**
-   * Clear all balance cache
-   */
-  const clearBalanceCache = useCallback(() => {
-    balanceCacheRef.current.clear();
-  }, []);
+  }, [token]);
 
   // ============================================================================
   // Balance Calculation Helpers
@@ -379,6 +311,13 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       return;
     }
 
+    // Prevent too frequent refreshes (unless force refresh)
+    const timeSinceLastRefresh = Date.now() - lastUpdateTimestampRef.current;
+    if (!forceRefresh && timeSinceLastRefresh < 2000) {
+      console.log('[IntegratedWallet] Skipping refresh - too soon since last update (', timeSinceLastRefresh, 'ms)');
+      return;
+    }
+
     // Always set loading state before starting refresh
     setState(prev => ({
       ...prev,
@@ -476,6 +415,27 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
 
       // Atomic state update - prevents flickering by updating all values at once
       setState(prev => {
+        // Check if this is stale data (older than previous update)
+        const currentTimestamp = Date.now();
+        const timeSinceLastUpdate = currentTimestamp - lastUpdateTimestampRef.current;
+        
+        // If we just updated less than 1 second ago and this is not a force refresh, skip if data looks stale
+        // This prevents race conditions where an old API call returns after a newer one
+        if (!forceRefresh && timeSinceLastUpdate < 1000 && prev.holdings.length > 0) {
+          // If new data has fewer holdings or significantly different total, it might be stale
+          const hasFewerHoldings = combinedHoldings.length < prev.holdings.length;
+          const totalDifference = Math.abs(totalPortfolioValue - prev.totalPortfolioValue);
+          const isSignificantDifference = totalDifference > prev.totalPortfolioValue * 0.5; // 50% difference
+          
+          if (hasFewerHoldings && isSignificantDifference) {
+            console.warn('[IntegratedWallet] Skipping potentially stale data update');
+            return prev; // Keep previous state
+          }
+        }
+        
+        // Update timestamp
+        lastUpdateTimestampRef.current = currentTimestamp;
+        
         // Preserve previous values if new data is invalid or empty
         // Only update if we have meaningful new data
         const hasValidNewData = Array.isArray(combinedHoldings) && combinedHoldings.length > 0
@@ -681,47 +641,17 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
   // Effects
   // ============================================================================
 
-  // Load user wallets on mount
+  // Load user wallets on mount (ONCE) - No automatic balance refresh
+  const hasLoadedWalletsRef = useRef(false);
   useEffect(() => {
-    if (user?.fid && token) {
+    if (user?.fid && token && !hasLoadedWalletsRef.current) {
+      hasLoadedWalletsRef.current = true;
       refreshWallets();
     }
-  }, [user?.fid, token, refreshWallets]);
+  }, [user?.fid, token]); // Remove refreshWallets from deps to prevent loops
 
-  // Refresh balances when primary wallet changes (once)
-  useEffect(() => {
-    if (!state.primaryWallet || !token) return
-    
-    // Only refresh if we don't have holdings yet
-    if (state.holdings.length === 0) {
-      refreshBalances(false).catch(err => {
-        console.error('[IntegratedWallet] Error refreshing balances on wallet change:', err);
-      });
-    }
-  }, [state.primaryWallet?.address, token]); // Only trigger when wallet address changes
-
-  // Refresh balances when MetaMask connection changes (heavily debounced to prevent flickering)
-  useEffect(() => {
-    // Skip if no wallet or MetaMask not connected
-    if (!state.primaryWallet || !isMetaMaskConnected) return
-    
-    let mounted = true;
-    // Longer debounce to prevent excessive refreshing
-    const timeoutId = setTimeout(() => {
-      if (mounted && state.holdings.length === 0) {
-        refreshBalances(false).catch(err => {
-          if (mounted) {
-            console.error('[IntegratedWallet] Error refreshing balances:', err);
-          }
-        });
-      }
-    }, 5000); // 5 second debounce
-    
-    return () => {
-      mounted = false;
-      clearTimeout(timeoutId);
-    };
-  }, [isMetaMaskConnected]); // Only trigger when connection state changes, not on every render
+  // NOTE: All automatic balance refreshes removed
+  // User must manually click refresh button to update balances
 
   // ============================================================================
   // Public API Wrapper
@@ -744,9 +674,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     createWallet,
     switchToWallet,
     refreshBalances: refreshBalancesWrapper,
-    getWalletForChain,
-    invalidateBalanceCache,
-    clearBalanceCache
+    getWalletForChain
   };
 
   return (
