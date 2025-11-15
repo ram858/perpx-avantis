@@ -1040,11 +1040,8 @@ export default function HomePage() {
           console.warn('[HomePage] Transaction wait timeout, refreshing anyway:', waitError)
         }
 
-        // Refresh wallets and balances immediately after deposit
-        await refreshWallets()
-        await refreshBalances(true)
-        
-        // NOTE: No automatic delayed refresh - user must manually refresh if needed
+        // Set deposit success - wallet will be created on backend
+        // NOTE: No automatic refresh - user must manually click refresh button to see updated balance
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Deposit failed'
         setDepositError(message)

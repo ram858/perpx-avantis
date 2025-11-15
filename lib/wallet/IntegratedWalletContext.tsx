@@ -546,7 +546,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       const tradingAddress: string | null = tradingWallet ? tradingWallet.address : null;
 
       if (walletForBalances) {
-        // Update wallet state but keep isLoading true - refreshBalances will handle it
+        // Update wallet state - NO automatic balance refresh
       setState(prev => ({
         ...prev,
         isConnected: !!primaryWallet,
@@ -555,10 +555,10 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         primaryWallet,
         tradingWallet,
         allWallets: combinedWallets,
-          isLoading: true // Keep loading true until balances are fetched
+          isLoading: false // Set to false since we're not fetching balances
       }));
 
-        await refreshBalances(false);
+        // NOTE: No automatic balance refresh - user must click refresh button
       } else {
         // No wallet found, set loading to false
         setState(prev => ({
@@ -626,9 +626,9 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         primaryWallet: wallet,
         isConnected: true
       }));
-      await refreshBalances(true);
+      // NOTE: No automatic balance refresh - user must click refresh button
     }
-  }, [state.allWallets, refreshBalances]);
+  }, [state.allWallets]);
 
   /**
    * Get wallet for specific chain
@@ -641,17 +641,35 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
   // Effects
   // ============================================================================
 
-  // Load user wallets on mount (ONCE) - No automatic balance refresh
+  // Load user wallets on mount (ONCE) with ONE initial balance refresh
   const hasLoadedWalletsRef = useRef(false);
+  const hasInitialRefreshRef = useRef(false);
+  
   useEffect(() => {
     if (user?.fid && token && !hasLoadedWalletsRef.current) {
       hasLoadedWalletsRef.current = true;
-      refreshWallets();
+      
+      // Refresh wallets and then do ONE initial balance refresh
+      refreshWallets().then(() => {
+        // Only do initial refresh once, and only if we haven't done it yet
+        if (!hasInitialRefreshRef.current) {
+          hasInitialRefreshRef.current = true;
+          
+          // Wait a bit for wallet state to update, then refresh balances
+          setTimeout(() => {
+            refreshBalances(true).catch(err => {
+              console.error('[IntegratedWallet] Initial balance refresh failed:', err);
+            });
+          }, 500);
+        }
+      }).catch(err => {
+        console.error('[IntegratedWallet] Initial wallet load failed:', err);
+      });
     }
   }, [user?.fid, token]); // Remove refreshWallets from deps to prevent loops
 
-  // NOTE: All automatic balance refreshes removed
-  // User must manually click refresh button to update balances
+  // NOTE: Only ONE automatic refresh on initial load
+  // All other refreshes are manual via the refresh button
 
   // ============================================================================
   // Public API Wrapper
