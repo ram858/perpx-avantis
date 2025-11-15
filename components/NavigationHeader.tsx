@@ -25,7 +25,7 @@ export function NavigationHeader({
   breadcrumbs = [],
   actions 
 }: NavigationHeaderProps) {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const router = useRouter();
 
   const handleBack = () => {
@@ -61,20 +61,10 @@ export function NavigationHeader({
           </div>
         </div>
         
-        {/* User info and logout */}
-        <div className="flex items-center space-x-3">
-          <div className="text-right">
-            <p className="text-sm text-[#b4b4b4]">FID: {user?.fid || 'N/A'}</p>
-            <p className="text-xs text-[#666]">Welcome back!</p>
-          </div>
-          <Button
-            onClick={logout}
-            variant="outline"
-            size="sm"
-            className="bg-transparent border-[#444] text-[#e5e5e5] hover:bg-[#333] hover:text-white"
-          >
-            Logout
-          </Button>
+        {/* User info */}
+        <div className="text-right">
+          <p className="text-sm text-[#b4b4b4]">FID: {user?.fid || 'N/A'}</p>
+          <p className="text-xs text-[#666]">Welcome back!</p>
         </div>
       </div>
 

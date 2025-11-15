@@ -431,5 +431,93 @@ export class DatabaseWalletStorageService {
       throw error;
     }
   }
+
+  /**
+   * Create or get a user in the database
+   */
+  async createOrGetUser(fid: number): Promise<{ id: number; fid: number; created_at: string; last_login_at: string }> {
+    try {
+      const supabase: SupabaseClient<Database> = getSupabaseClient();
+
+      // Check if user exists
+      const { data: existingUser, error: selectError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('fid', fid)
+        .single();
+
+      if (existingUser) {
+        // Update last login with proper type casting for Supabase
+        const { data: updatedUser, error: updateError } = await ((supabase
+          .from('users') as any)
+          .update({
+            last_login_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('fid', fid)
+          .select()
+          .single());
+
+        if (updateError) {
+          console.error('[DatabaseWalletStorageService] Error updating user last login:', updateError);
+          return existingUser as any;
+        }
+
+        return updatedUser as any;
+      }
+
+      // Create new user with proper type casting for Supabase
+      const { data: newUser, error: insertError } = await ((supabase
+        .from('users') as any)
+        .insert({
+          fid,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          last_login_at: new Date().toISOString(),
+        })
+        .select()
+        .single());
+
+      if (insertError) {
+        console.error('[DatabaseWalletStorageService] Error creating user:', insertError);
+        throw new Error(`Failed to create user: ${insertError.message}`);
+      }
+
+      console.log(`[DatabaseWalletStorageService] Created new user for FID ${fid}`);
+      return newUser as any;
+    } catch (error) {
+      console.error('[DatabaseWalletStorageService] Unexpected error creating/getting user:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get user by FID
+   */
+  async getUserByFid(fid: number): Promise<{ id: number; fid: number; created_at: string; last_login_at: string } | null> {
+    try {
+      const supabase: SupabaseClient<Database> = getSupabaseClient();
+
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('fid', fid)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // No rows returned
+          return null;
+        }
+        console.error('[DatabaseWalletStorageService] Error getting user:', error);
+        throw new Error(`Failed to get user: ${error.message}`);
+      }
+
+      return data as any;
+    } catch (error) {
+      console.error('[DatabaseWalletStorageService] Unexpected error getting user:', error);
+      throw error;
+    }
+  }
 }
 

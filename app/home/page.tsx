@@ -11,6 +11,7 @@ import { usePositions } from "@/lib/hooks/usePositions"
 import { ProtectedRoute } from "@/components/ProtectedRoute"
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { NavigationHeader } from "@/components/NavigationHeader"
+import { DepositModal } from "@/components/DepositModal"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useBaseAccountTransactions } from "@/lib/services/BaseAccountTransactionService"
@@ -342,8 +343,8 @@ const TradingCard = ({
           {isTrading ? '🔄 Starting...' : hasActivePositions ? '👁️ View Trades' : '🚀 Start Trading'}
         </Button>
         
-        {/* Show helpful message when no funds */}
-        {avantisBalance === 0 && (
+        {/* Show helpful message when no funds and no trading wallet exists yet (first time) */}
+        {avantisBalance === 0 && !tradingWalletAddress && (
           <div className="mt-4 p-4 bg-yellow-900/20 border border-yellow-500 rounded-xl">
             <h4 className="text-yellow-400 font-semibold mb-2">💰 Add Funds to Start Trading</h4>
             <p className="text-yellow-300 text-sm mb-3">
@@ -500,15 +501,25 @@ const WalletInfoCard = ({
   ethBalanceFormatted, 
   avantisBalance,
   tradingWalletAddress,
+  baseAccountAddress,
   token,
   isLoading = false,
+  onDeposit,
+  isDepositing,
+  depositError,
+  recentDepositHash,
 }: {
   tradingWallet: { address: string; privateKey?: string; chain: string } | null
   ethBalanceFormatted: string
   avantisBalance: number
   tradingWalletAddress?: string | null
+  baseAccountAddress?: string | null
   token: string | null
   isLoading?: boolean
+  onDeposit: (params: { amount: string; asset: 'USDC' | 'ETH' }) => Promise<void>
+  isDepositing: boolean
+  depositError: string | null
+  recentDepositHash: string | null
 }) => {
   const [copiedAddress, setCopiedAddress] = useState(false)
   const [copiedPrivateKey, setCopiedPrivateKey] = useState(false)
@@ -517,6 +528,7 @@ const WalletInfoCard = ({
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [isFetching, setIsFetching] = useState(false)
   const [hasAttemptedFetch, setHasAttemptedFetch] = useState(false) // Track if we've already tried fetching
+  const [isDepositModalOpen, setIsDepositModalOpen] = useState(false)
 
   // Update local wallet state when props change (but don't fetch)
   useEffect(() => {
@@ -857,9 +869,36 @@ const WalletInfoCard = ({
                 )}
               </div>
             </div>
+
+            {/* Deposit Button - Only show if wallet exists */}
+            {walletToDisplay.address && (
+              <Button
+                onClick={() => setIsDepositModalOpen(true)}
+                className="w-full bg-[#8759ff] hover:bg-[#7c4dff] text-white font-medium py-2.5 rounded-xl shadow-md hover:shadow-lg transition-all duration-200"
+              >
+                <span className="flex items-center justify-center space-x-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>Deposit Funds</span>
+                </span>
+              </Button>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Deposit Modal */}
+      <DepositModal
+        isOpen={isDepositModalOpen}
+        onClose={() => setIsDepositModalOpen(false)}
+        onDeposit={onDeposit}
+        isDepositing={isDepositing}
+        depositError={depositError}
+        recentDepositHash={recentDepositHash}
+        baseAccountAddress={baseAccountAddress || null}
+        tradingWalletAddress={tradingWalletAddress || null}
+      />
     </Card>
   )
 }
@@ -1206,8 +1245,13 @@ export default function HomePage() {
               ethBalanceFormatted={ethBalanceFormatted}
               avantisBalance={avantisBalance}
               tradingWalletAddress={tradingWalletAddress || tradingWallet?.address || null}
+              baseAccountAddress={baseAccountAddress}
               token={token}
               isLoading={isLoading}
+              onDeposit={handleDeposit}
+              isDepositing={isDepositing}
+              depositError={depositError}
+              recentDepositHash={recentDepositHash}
             />
           )}
 

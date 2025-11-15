@@ -22,9 +22,12 @@ export interface FeePaymentResult {
 export function useTradingFee() {
   const { token } = useAuth();
   const { sdk, isBaseContext } = useBaseMiniApp();
-  const { primaryWallet } = useIntegratedWallet();
+  const { primaryWallet, tradingWallet } = useIntegratedWallet();
   const [isPayingFee, setIsPayingFee] = useState(false);
   const [feeError, setFeeError] = useState<string | null>(null);
+
+  // Use trading wallet if available (has private key), otherwise fall back to primary wallet
+  const walletForFee = tradingWallet || primaryWallet;
 
   /**
    * Get fee payment transaction data from API
@@ -120,14 +123,14 @@ export function useTradingFee() {
    * Pay fee using fallback wallet (with private key)
    */
   const payFeeWithFallbackWallet = useCallback(async (txData: any): Promise<FeePaymentResult> => {
-    if (!primaryWallet?.privateKey) {
+    if (!walletForFee?.privateKey) {
       throw new Error('No private key available for fee payment');
     }
 
     try {
       // Connect to Base network
       const provider = new ethers.JsonRpcProvider('https://mainnet.base.org');
-      const wallet = new ethers.Wallet(primaryWallet.privateKey, provider);
+      const wallet = new ethers.Wallet(walletForFee.privateKey, provider);
 
       // Try USDC first
       try {
@@ -184,7 +187,7 @@ export function useTradingFee() {
         currency: 'ETH',
       };
     }
-  }, [primaryWallet]);
+  }, [walletForFee]);
 
   /**
    * Pay trading fee - main function
@@ -203,11 +206,11 @@ export function useTradingFee() {
       if (txData.isBaseAccount && isBaseContext && sdk) {
         // Use Base Account SDK
         result = await payFeeWithBaseAccount(txData);
-      } else if (primaryWallet?.privateKey) {
-        // Use fallback wallet with private key
+      } else if (walletForFee?.privateKey) {
+        // Use trading wallet with private key
         result = await payFeeWithFallbackWallet(txData);
       } else {
-        throw new Error('No payment method available');
+        throw new Error('No payment method available. Please ensure your trading wallet is properly set up with funds.');
       }
 
       if (!result.success) {
@@ -223,7 +226,7 @@ export function useTradingFee() {
     } finally {
       setIsPayingFee(false);
     }
-  }, [token, sdk, isBaseContext, primaryWallet, getFeeTransactionData, payFeeWithBaseAccount, payFeeWithFallbackWallet]);
+  }, [token, sdk, isBaseContext, walletForFee, getFeeTransactionData, payFeeWithBaseAccount, payFeeWithFallbackWallet]);
 
   return {
     payTradingFee,

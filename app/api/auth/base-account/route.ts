@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, Errors } from '@farcaster/quick-auth';
 import { AuthService } from '@/lib/services/AuthService';
 import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService';
+import { DatabaseWalletStorageService } from '@/lib/services/DatabaseWalletStorageService';
 
 // Domain must match your mini app's deployment domain
 // This will be set via environment variable in production
@@ -9,6 +10,7 @@ const domain = process.env.NEXT_PUBLIC_APP_URL?.replace(/^https?:\/\//, '') || '
 const client = createClient();
 const authService = new AuthService();
 const walletService = new BaseAccountWalletService();
+const dbService = new DatabaseWalletStorageService();
 
 /**
  * Verify Base Account JWT token and return user FID + JWT token
@@ -40,7 +42,17 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      // Create or get user by FID (no database needed - just for internal tracking)
+      // Create or get user in Supabase database
+      let dbUser;
+      try {
+        dbUser = await dbService.createOrGetUser(fid);
+        console.log(`[API] User in database: FID ${fid}, ID ${dbUser.id}`);
+      } catch (error) {
+        console.error(`[API] Failed to create/get user in database:`, error);
+        // Continue anyway - use in-memory user as fallback
+      }
+
+      // Create or get user by FID (in-memory for JWT generation)
       const user = await authService.createUserByFid(fid);
 
       // Get Base Account address from token payload if available
