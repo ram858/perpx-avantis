@@ -60,23 +60,22 @@ export class DatabaseWalletStorageService {
         iv = wallet.iv || null;
       }
 
-      // @ts-ignore - Supabase type inference issue with nullable fields
+      // Cast to any to work around Supabase type inference issue
+      const walletData: any = {
+        fid,
+        address: wallet.address,
+        encrypted_private_key: encryptedPrivateKey,
+        iv: iv,
+        chain: wallet.chain,
+        wallet_type: walletType,
+        updated_at: new Date().toISOString(),
+      };
+
       const { error } = await supabase
         .from('wallets')
-        .upsert(
-          {
-            fid,
-            address: wallet.address,
-            encrypted_private_key: encryptedPrivateKey,
-            iv: iv,
-            chain: wallet.chain,
-            wallet_type: walletType,
-            updated_at: new Date().toISOString(),
-          },
-          {
-            onConflict: 'fid,chain', // Update if exists
-          }
-        );
+        .upsert(walletData, {
+          onConflict: 'fid,chain', // Update if exists
+        });
 
       if (error) {
         console.error('[DatabaseWalletStorageService] Error storing wallet:', error);
@@ -330,21 +329,19 @@ export class DatabaseWalletStorageService {
       }
 
       // Update or insert metadata
-      // @ts-ignore - Supabase type inference issue with nullable fields
-      const { error } = await supabase.from('wallet_metadata').upsert(
-        {
-          wallet_id: (wallet as any).id,
-          balance_usd: metadata.balanceUsd,
-          total_deposits: metadata.totalDeposits,
-          total_withdrawals: metadata.totalWithdrawals,
-          transaction_count: metadata.transactionCount,
-          last_balance_check: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: 'wallet_id',
-        }
-      );
+      const metadataData: any = {
+        wallet_id: (wallet as any).id,
+        balance_usd: metadata.balanceUsd,
+        total_deposits: metadata.totalDeposits,
+        total_withdrawals: metadata.totalWithdrawals,
+        transaction_count: metadata.transactionCount,
+        last_balance_check: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase.from('wallet_metadata').upsert(metadataData, {
+        onConflict: 'wallet_id',
+      });
 
       if (error) {
         console.error('[DatabaseWalletStorageService] Error updating metadata:', error);
@@ -378,13 +375,14 @@ export class DatabaseWalletStorageService {
       }
 
       // Insert audit log (fire and forget - don't block main operation)
-      // @ts-ignore - Supabase type inference issue
-      await supabase.from('wallet_audit_log').insert({
+      const auditData: any = {
         wallet_id: (wallet as any).id,
         action,
         accessed_by: 'backend_api',
         timestamp: new Date().toISOString(),
-      });
+      };
+      
+      await supabase.from('wallet_audit_log').insert(auditData);
     } catch (error) {
       // Don't throw - audit logging shouldn't break the main flow
       console.error('[DatabaseWalletStorageService] Error logging wallet access:', error);
