@@ -46,6 +46,7 @@ export interface IntegratedWalletState {
   hasRealAvantisBalance: boolean;
   isLoading: boolean;
   error: string | null;
+  hasCompletedInitialLoad: boolean;
 }
 
 export interface IntegratedWalletContextType extends IntegratedWalletState {
@@ -144,7 +145,8 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     isAvantisConnected: false,
     hasRealAvantisBalance: false,
     isLoading: false,
-    error: null
+    error: null,
+    hasCompletedInitialLoad: false
   });
 
   // ============================================================================
@@ -641,7 +643,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
   // Effects
   // ============================================================================
 
-  // Load user wallets on mount (ONCE) with ONE initial balance refresh
+  // Load user wallets on mount (ONCE)
   const hasLoadedWalletsRef = useRef(false);
   const hasInitialRefreshRef = useRef(false);
   
@@ -649,26 +651,45 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     if (user?.fid && token && !hasLoadedWalletsRef.current) {
       hasLoadedWalletsRef.current = true;
       
-      // Refresh wallets and then do ONE initial balance refresh
-      refreshWallets().then(() => {
-        // Only do initial refresh once, and only if we haven't done it yet
-        if (!hasInitialRefreshRef.current) {
-          hasInitialRefreshRef.current = true;
-          
-          // Wait a bit for wallet state to update, then refresh balances
-          setTimeout(() => {
-            refreshBalances(true).catch(err => {
-              console.error('[IntegratedWallet] Initial balance refresh failed:', err);
-            });
-          }, 500);
-        }
-      }).catch(err => {
+      // Just load wallets, don't refresh balances yet
+      refreshWallets().catch(err => {
         console.error('[IntegratedWallet] Initial wallet load failed:', err);
       });
     }
   }, [user?.fid, token]); // Remove refreshWallets from deps to prevent loops
 
-  // NOTE: Only ONE automatic refresh on initial load
+  // Do ONE initial balance refresh AFTER wallet addresses are loaded into state
+  useEffect(() => {
+    // Only trigger if:
+    // 1. We haven't done the initial refresh yet
+    // 2. We have loaded wallets (hasLoadedWalletsRef is true)
+    // 3. We have a base account address OR trading wallet address in state
+    // 4. We have a token for API calls
+    if (
+      !hasInitialRefreshRef.current && 
+      hasLoadedWalletsRef.current && 
+      token &&
+      (state.baseAccountAddress || state.tradingWalletAddress)
+    ) {
+      hasInitialRefreshRef.current = true;
+      
+      // Give it a moment to ensure state is fully settled
+      setTimeout(() => {
+        refreshBalances(true)
+          .then(() => {
+            // Mark initial load as complete
+            setState(prev => ({ ...prev, hasCompletedInitialLoad: true }));
+          })
+          .catch(err => {
+            console.error('[IntegratedWallet] Initial balance refresh failed:', err);
+            // Still mark as complete even if it failed, so user can manually refresh
+            setState(prev => ({ ...prev, hasCompletedInitialLoad: true }));
+          });
+      }, 300);
+    }
+  }, [state.baseAccountAddress, state.tradingWalletAddress, token, refreshBalances]);
+
+  // NOTE: Only ONE automatic refresh on initial load (after wallet addresses are in state)
   // All other refreshes are manual via the refresh button
 
   // ============================================================================

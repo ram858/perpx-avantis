@@ -945,7 +945,8 @@ export default function HomePage() {
     error,
     createWallet,
     refreshBalances,
-    refreshWallets
+    refreshWallets,
+    hasCompletedInitialLoad
   } = useIntegratedWallet()
 
   const { isLoading: isTradingLoading, error: tradingError } = useTrading()
@@ -1117,12 +1118,8 @@ export default function HomePage() {
         <NavigationHeader
           title="Home"
           breadcrumbs={[{ label: 'Home' }]}
-        />
-
-        <div className="px-4 sm:px-6 space-y-6 max-w-md mx-auto">
-          {/* Global Refresh Button - Only ONE refresh button for the entire app */}
-          {isConnected && (
-            <div className="flex justify-end">
+          actions={
+            isConnected && hasCompletedInitialLoad ? (
               <Button
                 onClick={async () => {
                   try {
@@ -1133,10 +1130,11 @@ export default function HomePage() {
                   }
                 }}
                 disabled={isLoading}
-                className="bg-[#8759ff] hover:bg-[#7c4dff] text-white font-medium px-6 py-2.5 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 flex items-center space-x-2"
+                className="bg-[#8759ff] hover:bg-[#7c4dff] text-white p-2 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                title={isLoading ? 'Refreshing...' : 'Refresh Balances'}
               >
                 <svg 
-                  className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} 
+                  className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} 
                   fill="none" 
                   stroke="currentColor" 
                   viewBox="0 0 24 24"
@@ -1144,14 +1142,16 @@ export default function HomePage() {
                   <path 
                     strokeLinecap="round" 
                     strokeLinejoin="round" 
-                    strokeWidth={2} 
+                    strokeWidth={2.5} 
                     d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
                   />
                 </svg>
-                <span>{isLoading ? 'Refreshing...' : 'Refresh Balances'}</span>
               </Button>
-            </div>
-          )}
+            ) : undefined
+          }
+        />
+
+        <div className="px-4 sm:px-6 space-y-6 max-w-md mx-auto">
 
           {/* Portfolio Balance Card */}
           {!isConnected ? (
