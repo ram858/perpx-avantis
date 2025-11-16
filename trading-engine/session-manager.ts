@@ -60,11 +60,7 @@ export class TradingSessionManager {
       sessionId
     };
     
-    // Start the real trading bot
-    await this.tradingBot.startTrading(botConfig);
-    
-    console.log(`[SESSION_MANAGER] Starting session ${sessionId} with config:`, config);
-
+    // Create session record immediately (before bot initialization)
     const session = {
       config,
       status: {
@@ -83,15 +79,27 @@ export class TradingSessionManager {
 
     this.sessions.set(sessionId, session);
     
+    console.log(`[SESSION_MANAGER] Starting session ${sessionId} with config:`, config);
+    
     // Log Base Account session info
     if (config.isBaseAccount) {
       console.log(`[SESSION_MANAGER] Base Account session ${sessionId} with address ${config.walletAddress}`);
       console.log(`[SESSION_MANAGER] Note: Automated trading disabled - transactions must be signed via Base Account SDK`);
     }
 
-    // Start monitoring the session
+    // Start monitoring the session immediately
     this.startSessionMonitoring(sessionId);
+    
+    // Start the trading bot asynchronously (don't await - return sessionId immediately)
+    // This allows the API to respond faster while bot initializes in background
+    this.tradingBot.startTrading(botConfig).catch(error => {
+      console.error(`[SESSION_MANAGER] Error starting bot for session ${sessionId}:`, error);
+      // Update session status to error
+      session.status.status = 'error';
+      session.status.error = error instanceof Error ? error.message : 'Unknown error';
+    });
 
+    // Return sessionId immediately (bot initializes in background)
     return sessionId;
   }
 

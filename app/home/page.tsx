@@ -1126,11 +1126,37 @@ export default function HomePage() {
   
   // Refresh session status when component mounts or when positions change
   const { positionData } = usePositions()
+  
+  // Auto-refresh session status on mount and periodically
   useEffect(() => {
-    if (isConnected && positionData && positionData.openPositions > 0) {
-      refreshSessionStatus();
+    if (isConnected) {
+      // Force restore session on mount - check for active sessions even if state is empty
+      refreshSessionStatus(true);
+      
+      // Set up periodic refresh every 10 seconds if there's an active session or positions
+      const interval = setInterval(() => {
+        // Always refresh if we have an active session, or try to restore if we don't
+        if (tradingSession?.status === 'running') {
+          refreshSessionStatus(false); // Just refresh existing session
+        } else if (positionData && positionData.openPositions > 0) {
+          refreshSessionStatus(true); // Try to restore session
+        } else {
+          // Even without positions, check for active sessions periodically
+          refreshSessionStatus(true);
+        }
+      }, 10000); // Refresh every 10 seconds
+      
+      return () => clearInterval(interval);
     }
-  }, [isConnected, positionData?.openPositions, refreshSessionStatus]);
+  }, [isConnected, tradingSession?.status, positionData?.openPositions, refreshSessionStatus]);
+  
+  // Also restore session when positions are detected
+  useEffect(() => {
+    if (isConnected && positionData && positionData.openPositions > 0 && !tradingSession) {
+      // If we have positions but no session, try to restore it
+      refreshSessionStatus(true);
+    }
+  }, [isConnected, positionData?.openPositions, tradingSession, refreshSessionStatus]);
 
   // Auto-create wallet if user doesn't have one - optimized with useCallback
   useEffect(() => {
@@ -1351,33 +1377,89 @@ export default function HomePage() {
             />
           )}
 
-          {/* Active Trading Session Banner - Show if session is running */}
-          {isConnected && tradingSession && tradingSession.status === 'running' && (
-            <Card className="bg-gradient-to-r from-[#8759ff]/20 to-[#7c4dff]/20 border-[#8759ff] p-4 rounded-2xl">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                  <div>
-                    <h3 className="text-white font-semibold">Active Trading Session</h3>
-                    <p className="text-[#9ca3af] text-sm">
-                      Session: {tradingSession.sessionId.slice(0, 8)}... • PnL: ${tradingSession.totalPnL.toFixed(2)}
-                    </p>
-                  </div>
+          {/* Active Trading Session Card - Detailed floating card like chat page */}
+          {/* Show card if session is running OR if we have open positions (session might be restoring) */}
+          {isConnected && ((tradingSession && tradingSession.status === 'running') || (positionData && positionData.openPositions > 0)) && (
+            <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4 sm:p-6 sticky top-4 z-10 shadow-lg">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-[#27c47d] rounded-full animate-pulse"></div>
+                  <span className="text-[#27c47d] text-sm font-medium">Trading Active</span>
                 </div>
-                <Button
-                  onClick={() => {
-                    const params = new URLSearchParams({
-                      mode: 'real',
-                      view: 'positions',
-                      sessionId: tradingSession.sessionId
-                    });
-                    router.push(`/chat?${params.toString()}`);
-                  }}
-                  className="bg-[#8759ff] hover:bg-[#7c4dff] text-white text-sm px-4 py-2"
-                >
-                  View Session
-                </Button>
+                <div className="flex items-center space-x-2">
+                  <span className="text-[#b4b4b4] text-xs">
+                    Session: {tradingSession?.sessionId?.slice(-8) || (positionData?.openPositions ? 'Restoring...' : 'N/A')}
+                  </span>
+                  <Button
+                    onClick={() => {
+                      const sessionId = tradingSession?.sessionId || 'active';
+                      const params = new URLSearchParams({
+                        mode: 'real',
+                        view: 'positions',
+                        ...(tradingSession?.sessionId ? { sessionId } : {})
+                      });
+                      router.push(`/chat?${params.toString()}`);
+                    }}
+                    className="bg-[#8759ff] hover:bg-[#7c4dff] text-white text-xs px-3 py-1.5 ml-2"
+                  >
+                    View Details
+                  </Button>
+                </div>
               </div>
+              
+              <div className="grid grid-cols-2 gap-4 mb-3">
+                <div>
+                  <p className="text-[#b4b4b4] text-xs sm:text-sm">Current PnL</p>
+                  <p className={`font-semibold text-base sm:text-lg ${(positionData?.totalPnL || tradingSession?.totalPnL || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    ${(positionData?.totalPnL || tradingSession?.totalPnL || 0).toFixed(2)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[#b4b4b4] text-xs sm:text-sm">Target Profit</p>
+                  <p className="text-white font-semibold text-base sm:text-lg">${tradingSession?.config?.profitGoal || '0'}</p>
+                </div>
+                <div>
+                  <p className="text-[#b4b4b4] text-xs sm:text-sm">Open Positions</p>
+                  <p className="text-white font-semibold text-base sm:text-lg">{positionData?.openPositions || tradingSession?.openPositions || 0}</p>
+                </div>
+                <div>
+                  <p className="text-[#b4b4b4] text-xs sm:text-sm">Cycle</p>
+                  <p className="text-white font-semibold text-base sm:text-lg">{tradingSession?.cycle || 0}</p>
+                </div>
+              </div>
+              
+              <div className="w-full bg-[#262626] rounded-full h-2 mb-2">
+                <div 
+                  className="bg-[#27c47d] h-2 rounded-full transition-all duration-300" 
+                  style={{ 
+                    width: `${Math.min(100, (() => {
+                      const pnl = positionData?.totalPnL || tradingSession?.totalPnL || 0;
+                      const goal = tradingSession?.config?.profitGoal || 1;
+                      const positions = positionData?.openPositions || tradingSession?.openPositions || 0;
+                      
+                      // If PnL is 0 but we have positions, show some progress based on position count
+                      if (pnl === 0 && positions > 0) {
+                        return Math.min(20, positions * 2); // 2% per position, max 20%
+                      }
+                      
+                      return (pnl / goal) * 100;
+                    })())}%` 
+                  }}
+                ></div>
+              </div>
+              <p className="text-[#b4b4b4] text-xs">
+                Progress: {(() => {
+                  const pnl = positionData?.totalPnL || tradingSession?.totalPnL || 0;
+                  const goal = tradingSession?.config?.profitGoal || 1;
+                  const positions = positionData?.openPositions || tradingSession?.openPositions || 0;
+                  
+                  if (pnl === 0 && positions > 0) {
+                    return `${Math.min(20, positions * 2).toFixed(1)}% (${positions} positions)`;
+                  }
+                  
+                  return `${((pnl / goal) * 100).toFixed(1)}%`;
+                })()}
+              </p>
             </Card>
           )}
 

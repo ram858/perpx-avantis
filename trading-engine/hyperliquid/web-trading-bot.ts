@@ -70,15 +70,25 @@ export class WebTradingBot {
     log('WEB_BOT', `Config: Budget=$${config.maxBudget}, Goal=$${config.profitGoal}, MaxPos=${config.maxPerSession}`);
 
     try {
-      // Initialize blockchain connection
-      await initBlockchain();
-      log('WEB_BOT', 'Blockchain initialized successfully');
+      // Initialize blockchain connection (non-blocking for faster startup)
+      initBlockchain().then(() => {
+        log('WEB_BOT', 'Blockchain initialized successfully');
+      }).catch(err => {
+        log('ERROR', `Blockchain init error: ${err}`);
+      });
 
-      // Record existing positions as trades
-      await recordExistingPositionsAsTrades();
+      // Record existing positions as trades (non-blocking)
+      recordExistingPositionsAsTrades().catch(err => {
+        log('WARN', `Failed to record existing positions: ${err}`);
+      });
 
-      // Start the main trading loop
-      await this.runTradingLoop();
+      // Start the main trading loop (don't await - return immediately)
+      // This allows the API to return sessionId faster
+      this.runTradingLoop().catch(error => {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        log('FATAL', `Critical error in session ${this.sessionId}: ${errorMessage}`);
+        this.isRunning = false;
+      });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       log('FATAL', `Critical error in session ${this.sessionId}: ${errorMessage}`);

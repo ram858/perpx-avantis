@@ -152,10 +152,11 @@ export default function ChatPage() {
           return
         }
         
-        // Start real trading
+        // Start real trading with progress updates
+        const progressMessageId = Date.now().toString();
         setMessages([{
           type: "bot",
-          content: `💰 Starting REAL TRADING with $${investmentNum} investment targeting $${profitNum} profit. This will use actual money on Avantis!\n\n💳 Processing trading fee (1% of wallet balance)...\n\n⏳ Please wait, this usually takes 5-10 seconds...`,
+          content: `💰 **Starting REAL TRADING**\n\n📊 Investment: $${investmentNum}\n🎯 Target Profit: $${profitNum}\n\n⏳ **Initializing...**\n\n🔄 Step 1: Preparing fee payment...`,
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         }])
         
@@ -164,16 +165,41 @@ export default function ChatPage() {
           maxBudget: investmentNum,
           maxPerSession: maxPositions ? parseInt(maxPositions) : 3,
           lossThreshold: lossThreshold ? parseFloat(lossThreshold) : 10
+        }, (step, message) => {
+          // Update progress in real-time
+          setMessages(prev => {
+            const lastMessage = prev[prev.length - 1];
+            if (lastMessage && lastMessage.type === "bot") {
+              let content = lastMessage.content;
+              
+              // Update the relevant step
+              if (step === 'fee') {
+                content = content.replace(/🔄 Step 1:.*/, `✅ Step 1: ${message}`);
+                content += `\n🔄 Step 2: Starting session...`;
+              } else if (step === 'balance') {
+                content = content.replace(/🔄 Step 2:.*/, `✅ Step 2: ${message}`);
+              } else if (step === 'session') {
+                content = content.replace(/🔄 Step 2:.*/, `✅ Step 2: ${message}`);
+                content += `\n\n🚀 **Trading session is now active!**\n\n📈 Monitoring markets and executing trades...`;
+              } else if (step === 'complete') {
+                content = content.replace(/🔄 Step.*/, '');
+                content += `\n\n${message}`;
+              }
+              
+              return [...prev.slice(0, -1), { ...lastMessage, content }];
+            }
+            return prev;
+          });
         }).then(() => {
           setMessages(prev => [...prev, {
             type: "bot",
-            content: `✅ Trading fee paid successfully! Starting trading session...`,
+            content: `✅ **Trading session started successfully!**\n\n📊 The bot is now actively monitoring markets and will open positions when profitable opportunities are detected.\n\n💡 You can monitor your positions and PnL in real-time above.`,
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           }])
         }).catch(error => {
           setMessages(prev => [...prev, {
             type: "bot",
-            content: `❌ Failed to start real trading: ${error.message}`,
+            content: `❌ **Failed to start trading**\n\n${error.message}\n\nPlease check your balance and try again.`,
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           }])
         })
@@ -1320,7 +1346,7 @@ export default function ChatPage() {
                 <div className="mt-4 space-y-2">
                   <div className="grid grid-cols-2 gap-2">
                     <Button
-                      onClick={refreshSessionStatus}
+                      onClick={() => refreshSessionStatus(false)}
                       className="bg-[#4A2C7C] hover:bg-[#5A3C8C] text-white rounded-lg py-2"
                     >
                       🔄 Refresh
