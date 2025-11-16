@@ -5,6 +5,17 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 
+interface TokenHolding {
+  token: {
+    symbol: string
+    name: string
+    decimals: number
+  }
+  balance: string
+  balanceFormatted: string
+  valueUSD: number
+}
+
 interface DepositModalProps {
   isOpen: boolean
   onClose: () => void
@@ -14,6 +25,8 @@ interface DepositModalProps {
   recentDepositHash: string | null
   baseAccountAddress: string | null
   tradingWalletAddress: string | null
+  holdings?: TokenHolding[]
+  ethBalance?: string
 }
 
 export function DepositModal({
@@ -24,11 +37,22 @@ export function DepositModal({
   depositError,
   recentDepositHash,
   baseAccountAddress,
-  tradingWalletAddress
+  tradingWalletAddress,
+  holdings = [],
+  ethBalance = '0'
 }: DepositModalProps) {
   const [depositAsset, setDepositAsset] = useState<'USDC' | 'ETH'>('USDC')
   const [depositAmount, setDepositAmount] = useState('')
   const [hasSuccessfulDeposit, setHasSuccessfulDeposit] = useState(false)
+  
+  // Find available balance for selected asset
+  const selectedAssetBalance = depositAsset === 'ETH' 
+    ? ethBalance 
+    : holdings.find(h => h.token.symbol === 'USDC')?.balanceFormatted || '0'
+  
+  const selectedAssetUSD = depositAsset === 'ETH'
+    ? holdings.find(h => h.token.symbol === 'ETH')?.valueUSD || 0
+    : holdings.find(h => h.token.symbol === 'USDC')?.valueUSD || 0
 
   const explorerBaseUrl = process.env.NEXT_PUBLIC_AVANTIS_NETWORK === 'base-testnet'
     ? 'https://sepolia.basescan.org'
@@ -100,6 +124,58 @@ export function DepositModal({
               Transfer {depositAsset} from your Base wallet to your trading vault to fund your automated trading.
             </p>
 
+            {/* Available Funds Section */}
+            {holdings.length > 0 && (
+              <div className="bg-[#0d0d0d] border border-[#374151] rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-white text-sm font-medium">💼 Your Available Funds</h4>
+                  <span className="text-[#9ca3af] text-xs">Farcaster Wallet</span>
+                </div>
+                
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {/* ETH Balance */}
+                  {ethBalance && parseFloat(ethBalance) > 0 && (
+                    <div className="flex items-center justify-between p-2 bg-[#1a1a1a] rounded-lg hover:bg-[#262626] transition-colors">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-8 h-8 rounded-full bg-[#627eea] flex items-center justify-center text-white font-bold text-xs">
+                          Ξ
+                        </div>
+                        <div>
+                          <p className="text-white text-sm font-medium">ETH</p>
+                          <p className="text-[#9ca3af] text-xs">Ethereum</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-white text-sm font-semibold">{parseFloat(ethBalance).toFixed(4)}</p>
+                        <p className="text-[#9ca3af] text-xs">
+                          ${(holdings.find(h => h.token.symbol === 'ETH')?.valueUSD || 0).toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Other Token Holdings */}
+                  {holdings.filter(h => h.token.symbol !== 'ETH' && parseFloat(h.balance) > 0).map((holding, index) => (
+                    <div key={index} className="flex items-center justify-between p-2 bg-[#1a1a1a] rounded-lg hover:bg-[#262626] transition-colors">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-8 h-8 rounded-full bg-[#2775ca] flex items-center justify-center text-white font-bold text-xs">
+                          {holding.token.symbol.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="text-white text-sm font-medium">{holding.token.symbol}</p>
+                          <p className="text-[#9ca3af] text-xs">{holding.token.name}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-white text-sm font-semibold">{holding.balanceFormatted}</p>
+                        <p className="text-[#9ca3af] text-xs">${holding.valueUSD.toFixed(2)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Asset Selection */}
             <div className="space-y-2">
               <label className="block text-sm text-white font-medium">Select Asset</label>
@@ -129,18 +205,37 @@ export function DepositModal({
 
             {/* Amount Input */}
             <div className="space-y-2">
-              <label className="block text-sm text-white font-medium">
-                Amount ({depositAsset})
-              </label>
-              <Input
-                type="number"
-                min="0"
-                step="0.0001"
-                value={depositAmount}
-                onChange={(e) => setDepositAmount(e.target.value)}
-                className="bg-[#2a2a2a] border-[#374151] text-white placeholder:text-[#6b7280]"
-                placeholder={depositAsset === 'USDC' ? 'Enter USDC amount' : 'Enter ETH amount'}
-              />
+              <div className="flex items-center justify-between">
+                <label className="block text-sm text-white font-medium">
+                  Amount ({depositAsset})
+                </label>
+                <span className="text-xs text-[#9ca3af]">
+                  Available: <span className="text-white font-medium">{selectedAssetBalance} {depositAsset}</span>
+                </span>
+              </div>
+              <div className="relative">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  className="bg-[#2a2a2a] border-[#374151] text-white placeholder:text-[#6b7280] pr-16"
+                  placeholder={depositAsset === 'USDC' ? 'Enter USDC amount' : 'Enter ETH amount'}
+                />
+                <button
+                  type="button"
+                  onClick={() => setDepositAmount(selectedAssetBalance)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-[#8759ff] hover:bg-[#7c4dff] text-white text-xs rounded transition-colors"
+                >
+                  MAX
+                </button>
+              </div>
+              {selectedAssetUSD > 0 && (
+                <p className="text-xs text-[#9ca3af]">
+                  ≈ ${selectedAssetUSD.toFixed(2)} USD
+                </p>
+              )}
             </div>
 
             {/* Wallet Addresses */}

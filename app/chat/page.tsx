@@ -568,7 +568,7 @@ export default function ChatPage() {
     <ErrorBoundary>
     <div className="min-h-screen bg-[#0d0d0d] text-white flex flex-col relative">
       {/* Header */}
-      <header className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4">
+      <header className="flex items-center justify-between px-4 sm:px-6 py-4 sm:py-5 border-b border-[#1a1a1a]">
         <Link href="/home" aria-label="Go back to home">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="text-white" aria-hidden="true">
             <path
@@ -603,20 +603,20 @@ export default function ChatPage() {
 
       {/* Chat Content */}
       <main
-        className="flex-1 px-2 sm:px-3 md:px-4 pb-32 sm:pb-36 space-y-3 sm:space-y-4 overflow-y-auto momentum-scroll"
+        className="flex-1 px-4 sm:px-6 md:px-8 py-6 pb-32 sm:pb-36 space-y-4 sm:space-y-6 overflow-y-auto momentum-scroll"
         style={{ touchAction: 'pan-y' }}
         role="log"
         aria-live="polite"
         aria-label="Chat conversation"
       >
         {messages.map((message, index) => (
-          <div key={index} className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}>
+          <div key={index} className={`flex ${message.type === "user" ? "justify-end" : "justify-start"} mb-3`}>
             {message.type === "user" ? (
-              <div className="bg-[#8759ff] rounded-3xl px-4 sm:px-6 py-3 sm:py-4 max-w-[85%] sm:max-w-[280px] md:max-w-[320px]">
+              <div className="bg-[#8759ff] rounded-3xl px-5 sm:px-6 py-3.5 sm:py-4 max-w-[85%] sm:max-w-[280px] md:max-w-[320px] shadow-lg">
                 <p className="text-white text-sm sm:text-base leading-relaxed">{message.content}</p>
               </div>
             ) : (
-              <div className="bg-[#1a1a1a] rounded-3xl px-4 sm:px-6 py-3 sm:py-4 max-w-[90%] sm:max-w-[320px] md:max-w-[380px] border border-[#262626]">
+              <div className="bg-[#1a1a1a] rounded-3xl px-5 sm:px-6 py-3.5 sm:py-4 max-w-[90%] sm:max-w-[320px] md:max-w-[380px] border border-[#262626] shadow-md">
                 <p className="text-white text-sm sm:text-base leading-relaxed whitespace-pre-line">{message.content}</p>
               </div>
             )}
@@ -642,12 +642,12 @@ export default function ChatPage() {
         )}
 
         {tradingPhase === "initial" && (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {/* Technical Analysis */}
-            <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl overflow-hidden">
+            <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl overflow-hidden shadow-md">
               <button
                 onClick={() => toggleSection("technical")}
-                className="w-full p-4 flex items-center justify-between text-left"
+                className="w-full p-5 flex items-center justify-between text-left hover:bg-[#1f1f1f] transition-colors"
               >
                 <div className="flex items-center space-x-3">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="text-[#27c47d]">
@@ -692,10 +692,10 @@ export default function ChatPage() {
             </Card>
 
             {/* Risk Management */}
-            <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl overflow-hidden">
+            <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl overflow-hidden shadow-md">
               <button
                 onClick={() => toggleSection("risk")}
-                className="w-full p-4 flex items-center justify-between text-left"
+                className="w-full p-5 flex items-center justify-between text-left hover:bg-[#1f1f1f] transition-colors"
               >
                 <div className="flex items-center space-x-3">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="text-[#27c47d]">

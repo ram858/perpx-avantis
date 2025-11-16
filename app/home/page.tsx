@@ -16,6 +16,18 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useBaseAccountTransactions } from "@/lib/services/BaseAccountTransactionService"
 
+// Type definitions
+interface TokenBalance {
+  token: {
+    symbol: string
+    name: string
+    decimals: number
+  }
+  balance: string
+  balanceFormatted: string
+  valueUSD: number
+}
+
 // Memoized components for better performance
 const WalletSetupCard = ({ isLoading, error, onRetry }: { isLoading: boolean; error: string | null; onRetry?: () => void }) => (
   <Card className="bg-[#1a1a1a] border-[#262626] p-4 sm:p-6 rounded-2xl text-center">
@@ -176,6 +188,8 @@ const TradingCard = ({
   depositError,
   recentDepositHash,
   isBaseContextAvailable,
+  holdings = [],
+  ethBalanceFormatted = '0',
 }: {
   targetProfit: string
   setTargetProfit: (value: string) => void
@@ -190,6 +204,8 @@ const TradingCard = ({
   depositError: string | null
   recentDepositHash: string | null
   isBaseContextAvailable: boolean
+  holdings?: TokenBalance[]
+  ethBalanceFormatted?: string
 }) => {
   const [isTrading, setIsTrading] = useState(false)
   const { positionData, isLoading: positionsLoading } = usePositions()
@@ -402,6 +418,48 @@ const TradingCard = ({
             <p className="text-yellow-300 text-sm mb-3">
               Your trading balance is $0.00. Deposit funds from your Base wallet into your PrepX trading vault to start trading.
             </p>
+            
+            {/* Available Funds Section */}
+            {holdings.length > 0 && (
+              <div className="bg-[#0d0d0d] border border-yellow-700/50 rounded-lg p-3 mb-4 max-h-36 overflow-y-auto">
+                <div className="flex items-center justify-between mb-2">
+                  <h5 className="text-yellow-200 text-xs font-medium">💼 Your Available Funds</h5>
+                  <span className="text-yellow-400 text-[10px]">Farcaster Wallet</span>
+                </div>
+                <div className="space-y-1.5">
+                  {/* ETH Balance */}
+                  {ethBalanceFormatted && parseFloat(ethBalanceFormatted) > 0 && (
+                    <div className="flex items-center justify-between p-1.5 bg-[#1a1a1a] rounded-md">
+                      <div className="flex items-center space-x-1.5">
+                        <div className="w-5 h-5 rounded-full bg-[#627eea] flex items-center justify-center text-white font-bold text-[9px]">
+                          Ξ
+                        </div>
+                        <span className="text-yellow-100 text-xs font-medium">ETH</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-yellow-100 text-xs font-semibold">{parseFloat(ethBalanceFormatted).toFixed(4)}</p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Other Token Holdings */}
+                  {holdings.filter(h => h.token.symbol !== 'ETH' && parseFloat(h.balance) > 0).map((holding, index) => (
+                    <div key={index} className="flex items-center justify-between p-1.5 bg-[#1a1a1a] rounded-md">
+                      <div className="flex items-center space-x-1.5">
+                        <div className="w-5 h-5 rounded-full bg-[#2775ca] flex items-center justify-center text-white font-bold text-[9px]">
+                          {holding.token.symbol.charAt(0)}
+                        </div>
+                        <span className="text-yellow-100 text-xs font-medium">{holding.token.symbol}</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-yellow-100 text-xs font-semibold">{holding.balanceFormatted}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <button
@@ -560,6 +618,7 @@ const WalletInfoCard = ({
   isDepositing,
   depositError,
   recentDepositHash,
+  holdings = [],
 }: {
   tradingWallet: { address: string; privateKey?: string; chain: string } | null
   ethBalanceFormatted: string
@@ -572,6 +631,7 @@ const WalletInfoCard = ({
   isDepositing: boolean
   depositError: string | null
   recentDepositHash: string | null
+  holdings?: TokenBalance[]
 }) => {
   const [copiedAddress, setCopiedAddress] = useState(false)
   const [copiedPrivateKey, setCopiedPrivateKey] = useState(false)
@@ -951,6 +1011,8 @@ const WalletInfoCard = ({
         recentDepositHash={recentDepositHash}
         baseAccountAddress={baseAccountAddress || null}
         tradingWalletAddress={tradingWalletAddress || null}
+        holdings={holdings}
+        ethBalance={ethBalanceFormatted}
       />
     </Card>
   )
@@ -1243,7 +1305,7 @@ export default function HomePage() {
           }
         />
 
-        <div className="px-4 sm:px-6 space-y-6 max-w-md mx-auto">
+        <div className="px-4 sm:px-6 py-6 space-y-8 max-w-md mx-auto">
 
           {/* Portfolio Balance Card */}
           {!isConnected ? (
@@ -1281,6 +1343,8 @@ export default function HomePage() {
               depositError={depositError}
               recentDepositHash={recentDepositHash}
               isBaseContextAvailable={isBaseTxAvailable}
+              holdings={holdings}
+              ethBalanceFormatted={ethBalanceFormatted}
             />
           )}
 
@@ -1303,6 +1367,7 @@ export default function HomePage() {
               isDepositing={isDepositing}
               depositError={depositError}
               recentDepositHash={recentDepositHash}
+              holdings={holdings}
             />
           )}
 
