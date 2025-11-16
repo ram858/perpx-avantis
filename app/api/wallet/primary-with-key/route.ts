@@ -10,52 +10,118 @@ export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.error('[API] primary-with-key - Missing or invalid authorization header')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const token = authHeader.substring(7)
-    const payload = await authService.verifyToken(token)
+    
+    let payload
+    try {
+      payload = await authService.verifyToken(token)
+    } catch (authError) {
+      console.error('[API] primary-with-key - Token verification failed:', authError)
+      return NextResponse.json(
+        { error: 'Invalid or expired token' },
+        { status: 401 }
+      )
+    }
     
     // FID is required for Base Account users
     if (!payload.fid) {
+      console.error('[API] primary-with-key - No FID in token payload')
       return NextResponse.json(
         { error: 'Base Account (FID) required' },
         { status: 400 }
       )
     }
     
-    const wallet = await walletService.getWalletWithKey(payload.fid, 'ethereum')
+    console.log('[API] primary-with-key - Fetching wallet for FID:', payload.fid)
+    
+    let wallet
+    try {
+      wallet = await walletService.getWalletWithKey(payload.fid, 'ethereum')
+    } catch (walletError) {
+      console.error('[API] primary-with-key - Error fetching wallet:', walletError)
+      return NextResponse.json(
+        { 
+          error: 'Failed to fetch wallet from database',
+          details: walletError instanceof Error ? walletError.message : 'Unknown error'
+        },
+        { status: 500 }
+      )
+    }
     
     console.log('[API] primary-with-key - Wallet fetch result:', {
       fid: payload.fid,
       hasWallet: !!wallet,
       address: wallet?.address,
       hasPrivateKey: !!wallet?.privateKey,
-      privateKeyLength: wallet?.privateKey?.length || 0
+      privateKeyLength: wallet?.privateKey?.length || 0,
+      chain: wallet?.chain
     })
     
     if (!wallet) {
       console.error('[API] primary-with-key - No wallet found for FID:', payload.fid)
       return NextResponse.json(
-        { error: 'No wallet found' },
+        { 
+          error: 'No trading wallet found',
+          message: 'Please deposit funds to create your trading wallet first.'
+        },
         { status: 404 }
       )
     }
     
-    if (!wallet.privateKey) {
-      console.error('[API] primary-with-key - Wallet found but no private key for FID:', payload.fid)
+    if (!wallet.privateKey || wallet.privateKey.length === 0) {
+      console.error('[API] primary-with-key - Wallet found but no private key for FID:', payload.fid, {
+        address: wallet.address,
+        chain: wallet.chain,
+        hasPrivateKeyField: 'privateKey' in wallet
+      })
       return NextResponse.json(
-        { error: 'Wallet found but private key not available. Please try depositing funds first to initialize your trading wallet.' },
+        { 
+          error: 'Wallet found but private key not available',
+          message: 'The trading wallet exists but the private key is missing. Please try depositing funds again to reinitialize your trading wallet.',
+          walletAddress: wallet.address
+        },
         { status: 404 }
       )
     }
     
-    console.log('[API] primary-with-key - Successfully returning wallet with private key')
-    return NextResponse.json({ wallet })
+    // Validate private key format (should start with 0x and be 66 chars)
+    if (!wallet.privateKey.startsWith('0x') || wallet.privateKey.length !== 66) {
+      console.error('[API] primary-with-key - Invalid private key format:', {
+        length: wallet.privateKey.length,
+        startsWith0x: wallet.privateKey.startsWith('0x')
+      })
+      return NextResponse.json(
+        { 
+          error: 'Invalid private key format',
+          message: 'The private key stored in the database is invalid. Please contact support.'
+        },
+        { status: 500 }
+      )
+    }
+    
+    console.log('[API] primary-with-key - ✅ Successfully returning wallet with private key for FID:', payload.fid)
+    
+    // Return wallet with private key (security: only return to authenticated user)
+    return NextResponse.json({ 
+      wallet: {
+        id: wallet.id,
+        address: wallet.address,
+        chain: wallet.chain,
+        privateKey: wallet.privateKey, // Only returned to authenticated user
+        createdAt: wallet.createdAt
+      }
+    })
   } catch (error) {
-    console.error('Error fetching primary wallet with key:', error)
+    console.error('[API] primary-with-key - Unexpected error:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch primary wallet with key' },
+      { 
+        error: 'Failed to fetch primary wallet with key',
+        message: error instanceof Error ? error.message : 'Unknown error occurred'
+      },
       { status: 500 }
     )
   }

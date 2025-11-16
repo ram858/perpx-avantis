@@ -4,8 +4,10 @@ import { useState, useCallback, useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useBaseMiniApp } from './useBaseMiniApp';
 import { useIntegratedWallet } from '../wallet/IntegratedWalletContext';
+import { useUILogger } from './useUILogger';
 import { ethers } from 'ethers';
 import { BaseAccountTransactionService } from '../services/BaseAccountTransactionService';
+import { getNetworkConfig } from '../config/network';
 
 const FEE_RECIPIENT = '0xeb56286910d3Cf36Ba26958Be0BbC91D60B28799';
 const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'; // Base mainnet USDC
@@ -29,6 +31,7 @@ export function useTradingFee() {
   const { token } = useAuth();
   const { sdk, isBaseContext } = useBaseMiniApp();
   const { primaryWallet, tradingWallet } = useIntegratedWallet();
+  const { addLog } = useUILogger();
   const [isPayingFee, setIsPayingFee] = useState(false);
   const [feeError, setFeeError] = useState<string | null>(null);
   const [tradingWalletWithKey, setTradingWalletWithKey] = useState<WalletWithKey | null>(null);
@@ -42,7 +45,7 @@ export function useTradingFee() {
     }
     
     const fetchTradingWalletWithKey = async () => {
-      console.log('[useTradingFee] Fetching trading wallet with private key...');
+      addLog('info', 'Fetching trading wallet with private key...');
       
       try {
         const response = await fetch('/api/wallet/primary-with-key', {
@@ -51,11 +54,11 @@ export function useTradingFee() {
           }
         });
         
-        console.log('[useTradingFee] API response status:', response.status);
+        addLog('info', `API response status: ${response.status}`);
         
         if (response.ok) {
           const data = await response.json();
-          console.log('[useTradingFee] API response data:', {
+          addLog('info', 'API response received', {
             hasWallet: !!data.wallet,
             address: data.wallet?.address,
             hasPrivateKey: !!data.wallet?.privateKey,
@@ -64,19 +67,19 @@ export function useTradingFee() {
           
           if (data.wallet && data.wallet.privateKey) {
             setTradingWalletWithKey(data.wallet);
-            console.log('[useTradingFee] ✅ Successfully loaded trading wallet with private key:', data.wallet.address);
+            addLog('success', `Successfully loaded trading wallet with private key: ${data.wallet.address.slice(0, 10)}...`);
           } else {
-            console.log('[useTradingFee] ⚠️ Wallet exists but no private key yet (may be creating)');
+            addLog('warning', 'Wallet exists but no private key yet (may be creating)');
           }
         } else if (response.status === 404) {
           // Wallet not found yet - this is OK during initial creation
-          console.log('[useTradingFee] ⚠️ Trading wallet not found yet (may be creating)');
+          addLog('warning', 'Trading wallet not found yet (may be creating)');
         } else {
           const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-          console.error('[useTradingFee] ❌ API request failed:', response.status, errorData);
+          addLog('error', `API request failed: ${response.status}`, errorData);
         }
       } catch (error) {
-        console.error('[useTradingFee] ❌ Exception during fetch:', error);
+        addLog('error', 'Exception during wallet fetch', error);
       }
     };
 
@@ -252,6 +255,106 @@ export function useTradingFee() {
   }, [walletForFee]);
 
   /**
+   * Fetch trading wallet with private key on-demand
+   */
+  const fetchWalletWithKeyOnDemand = useCallback(async (): Promise<WalletWithKey | null> => {
+    if (!token) {
+      addLog('warning', 'No token for on-demand fetch');
+      return null;
+    }
+
+    // If we already have it, return it
+    if (tradingWalletWithKey?.privateKey) {
+      addLog('info', 'Already have wallet with private key');
+      return tradingWalletWithKey;
+    }
+
+    // Try to fetch it
+    addLog('info', 'Fetching wallet with private key on-demand...');
+    
+    try {
+      const response = await fetch('/api/wallet/primary-with-key', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.wallet && data.wallet.privateKey) {
+          // Validate private key format
+          if (data.wallet.privateKey.length === 66 && data.wallet.privateKey.startsWith('0x')) {
+            addLog('success', 'On-demand fetch successful! Private key loaded.');
+            setTradingWalletWithKey(data.wallet);
+            return data.wallet;
+          } else {
+            addLog('error', 'Invalid private key format received', {
+              length: data.wallet.privateKey.length,
+              startsWith0x: data.wallet.privateKey.startsWith('0x')
+            });
+            return null;
+          }
+        } else {
+          addLog('error', 'Wallet returned but no private key in response', {
+            hasWallet: !!data.wallet,
+            hasPrivateKey: !!data.wallet?.privateKey
+          });
+        }
+      } else if (response.status === 404) {
+        // Wallet doesn't exist - try to create it
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        addLog('warning', 'Trading wallet not found. Attempting to create...', errorData);
+        
+        // Try to create the wallet via API
+        try {
+          const createResponse = await fetch('/api/wallet/user-wallets', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ chain: 'ethereum' })
+          });
+          
+          if (createResponse.ok) {
+            addLog('success', 'Trading wallet created! Retrying fetch...');
+            // Retry fetching after creation
+            const retryResponse = await fetch('/api/wallet/primary-with-key', {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
+            
+            if (retryResponse.ok) {
+              const retryData = await retryResponse.json();
+              if (retryData.wallet && retryData.wallet.privateKey) {
+                addLog('success', 'Wallet created and private key loaded!');
+                setTradingWalletWithKey(retryData.wallet);
+                return retryData.wallet;
+              }
+            }
+          } else {
+            const createError = await createResponse.json().catch(() => ({ error: 'Unknown error' }));
+            addLog('error', 'Failed to create trading wallet', createError);
+          }
+        } catch (createError) {
+          addLog('error', 'Exception while creating wallet', createError);
+        }
+      }
+      
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      addLog('error', 'On-demand fetch failed', {
+        status: response.status,
+        error: errorData
+      });
+      return null;
+    } catch (error) {
+      addLog('error', 'On-demand fetch error', error);
+      return null;
+    }
+  }, [token, tradingWalletWithKey, addLog]);
+
+  /**
    * Pay trading fee - main function
    */
   const payTradingFee = useCallback(async (): Promise<FeePaymentResult> => {
@@ -259,64 +362,113 @@ export function useTradingFee() {
     setFeeError(null);
 
     try {
-      console.log('[useTradingFee] Starting fee payment...');
-      console.log('[useTradingFee] Wallet info:', {
-        hasWalletForFee: !!walletForFee,
-        walletAddress: walletForFee?.address,
-        hasPrivateKey: !!walletForFee?.privateKey,
-        hasTradingWalletWithKey: !!tradingWalletWithKey,
-        tradingWalletWithKeyAddress: tradingWalletWithKey?.address,
-        hasPrivateKeyInTradingWallet: !!tradingWalletWithKey?.privateKey
+      addLog('info', 'Starting fee payment...');
+      
+      // Get transaction data from API first
+      const txData = await getFeeTransactionData();
+      addLog('info', 'Transaction data received', { isBaseAccount: txData.isBaseAccount });
+
+      // If using Base Account SDK, we don't need private key
+      if (txData.isBaseAccount && isBaseContext && sdk) {
+        addLog('info', 'Using Base Account SDK for fee payment');
+        const result = await payFeeWithBaseAccount(txData);
+        setFeeError(null);
+        addLog('success', 'Fee payment successful via Base Account SDK');
+        return result;
+      }
+
+      // For trading wallet, we need private key - fetch it on-demand if not loaded
+      let walletWithKey = tradingWalletWithKey;
+      
+      if (!walletWithKey?.privateKey && tradingWallet?.address) {
+        addLog('warning', 'Private key not loaded, fetching on-demand...');
+        walletWithKey = await fetchWalletWithKeyOnDemand();
+      }
+
+      // Update walletForFee with the fetched wallet
+      const effectiveWallet = walletWithKey || tradingWallet || primaryWallet;
+      
+      addLog('info', 'Wallet status check', {
+        hasWallet: !!effectiveWallet,
+        walletAddress: effectiveWallet?.address ? `${effectiveWallet.address.slice(0, 10)}...` : 'none',
+        hasPrivateKey: !!effectiveWallet?.privateKey,
+        hasTradingWalletWithKey: !!walletWithKey,
+        hasTradingWallet: !!tradingWallet
       });
 
-      // Get transaction data from API
-      const txData = await getFeeTransactionData();
-      console.log('[useTradingFee] Transaction data received:', { isBaseAccount: txData.isBaseAccount });
-
-      // Determine payment method based on wallet type
-      let result: FeePaymentResult;
-
       // Check if we have any wallet available
-      if (!walletForFee?.address && !txData.isBaseAccount) {
-        console.error('[useTradingFee] No wallet available');
+      if (!effectiveWallet?.address && !txData.isBaseAccount) {
+        addLog('error', 'No wallet available');
         throw new Error('No wallet available. Please connect your wallet first.');
       }
 
-      if (txData.isBaseAccount && isBaseContext && sdk) {
-        // Prioritize Base Account SDK for Base Accounts
-        console.log('[useTradingFee] Using Base Account SDK for fee payment');
-        result = await payFeeWithBaseAccount(txData);
-      } else if (walletForFee?.privateKey) {
-        // Use trading wallet with private key for automated trading
-        console.log('[useTradingFee] Using trading wallet with private key for fee payment');
-        console.log('[useTradingFee] Wallet address:', walletForFee.address);
-        result = await payFeeWithFallbackWallet(txData);
-      } else if (txData.isBaseAccount) {
+      // Determine payment method
+      let result: FeePaymentResult;
+
+      if (txData.isBaseAccount) {
         // Base Account but no SDK context - provide helpful error
-        console.error('[useTradingFee] Base Account without SDK context');
+        addLog('error', 'Base Account without SDK context');
         throw new Error('Base Account detected but SDK not available. Please open the app inside the Farcaster/Base mini app context.');
+      } else if (effectiveWallet?.privateKey) {
+        // Use trading wallet with private key for automated trading
+        addLog('info', `Using trading wallet with private key for fee payment: ${effectiveWallet.address.slice(0, 10)}...`);
+        
+        // Pay fee directly with the wallet that has private key
+        if (!effectiveWallet.privateKey) {
+          throw new Error('Private key not available');
+        }
+        
+        const networkConfig = getNetworkConfig();
+        const provider = new ethers.JsonRpcProvider(networkConfig.rpcUrl);
+        const wallet = new ethers.Wallet(effectiveWallet.privateKey, provider);
+        
+        const ethAmount = txData.transactions.eth.value;
+        const balance = await provider.getBalance(wallet.address);
+        
+        if (BigInt(balance.toString()) < BigInt(ethAmount)) {
+          throw new Error('Insufficient ETH balance to pay fee');
+        }
+
+        const tx = await wallet.sendTransaction({
+          to: FEE_RECIPIENT,
+          value: ethAmount,
+        });
+
+        await tx.wait();
+
+        result = {
+          success: true,
+          transactionHash: tx.hash,
+          amount: txData.amounts.eth,
+          currency: 'ETH',
+        };
+        addLog('success', `Fee payment successful! TX: ${tx.hash.slice(0, 10)}...`);
       } else {
-        // No private key and not a Base Account - need to create trading wallet
-        console.error('[useTradingFee] No private key available for trading wallet');
-        console.error('[useTradingFee] WalletForFee:', walletForFee);
-        console.error('[useTradingFee] TradingWalletWithKey:', tradingWalletWithKey);
-        throw new Error('Trading wallet private key not loaded. Please try refreshing the page or contact support if the issue persists.');
+        // No private key and not a Base Account
+        addLog('error', 'No private key available for trading wallet', {
+          effectiveWallet: effectiveWallet ? { address: effectiveWallet.address } : null,
+          walletWithKey: walletWithKey ? { address: walletWithKey.address, hasKey: !!walletWithKey.privateKey } : null
+        });
+        throw new Error('Trading wallet private key not available. Please ensure you have deposited funds and your trading wallet is set up correctly.');
       }
 
       if (!result.success) {
+        addLog('error', 'Fee payment failed', result.error);
         setFeeError(result.error || 'Failed to pay fee');
         throw new Error(result.error || 'Failed to pay fee');
       }
 
+      setFeeError(null);
       return result;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to pay trading fee';
+      addLog('error', 'Fee payment error', errorMessage);
       setFeeError(errorMessage);
       throw new Error(errorMessage);
     } finally {
       setIsPayingFee(false);
     }
-  }, [token, sdk, isBaseContext, walletForFee, getFeeTransactionData, payFeeWithBaseAccount, payFeeWithFallbackWallet]);
+  }, [token, sdk, isBaseContext, tradingWalletWithKey, tradingWallet, primaryWallet, getFeeTransactionData, payFeeWithBaseAccount, fetchWalletWithKeyOnDemand, addLog]);
 
   return {
     payTradingFee,

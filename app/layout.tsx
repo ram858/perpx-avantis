@@ -9,6 +9,8 @@ import { AuthProvider } from "@/lib/auth/AuthContext"
 import { PerformanceMonitor } from "@/components/PerformanceMonitor"
 import { ToastProvider } from "@/components/ui/toast"
 import { BaseMiniAppProvider } from "@/components/BaseMiniAppProvider"
+import { UILoggerProvider } from "@/lib/hooks/useUILogger"
+import { UILogger } from "@/components/UILogger"
 import { Suspense } from "react"
 import "./globals.css"
 
@@ -86,10 +88,11 @@ export default function RootLayout({
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
         <BaseMiniAppProvider>
           <ToastProvider>
-            <AuthProvider>
-              <IntegratedWalletProvider>
-              <Suspense
-                fallback={
+            <UILoggerProvider>
+              <AuthProvider>
+                <IntegratedWalletProvider>
+                <Suspense
+                  fallback={
                   <div className="min-h-screen bg-[#0d0d0d] flex flex-col items-center justify-center px-6 relative overflow-hidden">
                     {/* Background gradient circles */}
                     <div className="absolute inset-0 flex items-center justify-center">
@@ -118,10 +121,12 @@ export default function RootLayout({
                   </div>
                 }
               >
-                <ErrorBoundary>{children}</ErrorBoundary>
-              </Suspense>
-              </IntegratedWalletProvider>
-            </AuthProvider>
+                  <ErrorBoundary>{children}</ErrorBoundary>
+                </Suspense>
+                </IntegratedWalletProvider>
+              </AuthProvider>
+              <UILogger />
+            </UILoggerProvider>
           </ToastProvider>
         </BaseMiniAppProvider>
         <Analytics />
