@@ -35,6 +35,8 @@ export function useTradingFee() {
   const [isPayingFee, setIsPayingFee] = useState(false);
   const [feeError, setFeeError] = useState<string | null>(null);
   const [tradingWalletWithKey, setTradingWalletWithKey] = useState<WalletWithKey | null>(null);
+  const [isCreatingWallet, setIsCreatingWallet] = useState(false);
+  const [walletCreationAttempts, setWalletCreationAttempts] = useState(0);
 
   // Fetch trading wallet with private key when needed
   useEffect(() => {
@@ -301,13 +303,29 @@ export function useTradingFee() {
           });
         }
       } else if (response.status === 404) {
-        // Wallet doesn't exist - try to create it
+        // Wallet doesn't exist - try to create it (with safeguards)
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        addLog('warning', 'Trading wallet not found. Attempting to create...', errorData);
         
-        // Try to create the wallet via API
+        // Prevent infinite loops: max 1 creation attempt per session
+        if (isCreatingWallet) {
+          addLog('warning', 'Wallet creation already in progress, skipping...');
+          return null;
+        }
+        
+        if (walletCreationAttempts >= 1) {
+          addLog('error', 'Max wallet creation attempts reached. Please refresh the page.', {
+            attempts: walletCreationAttempts
+          });
+          return null;
+        }
+        
+        addLog('warning', 'Trading wallet not found. Attempting to create...', errorData);
+        setIsCreatingWallet(true);
+        setWalletCreationAttempts(prev => prev + 1);
+        
+        // Try to create the wallet via API with timeout
         try {
-          const createResponse = await fetch('/api/wallet/user-wallets', {
+          const createPromise = fetch('/api/wallet/user-wallets', {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -316,29 +334,57 @@ export function useTradingFee() {
             body: JSON.stringify({ chain: 'ethereum' })
           });
           
+          // Add 10 second timeout to prevent freezing
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Wallet creation timeout')), 10000)
+          );
+          
+          const createResponse = await Promise.race([createPromise, timeoutPromise]) as Response;
+          
           if (createResponse.ok) {
-            addLog('success', 'Trading wallet created! Retrying fetch...');
-            // Retry fetching after creation
-            const retryResponse = await fetch('/api/wallet/primary-with-key', {
+            addLog('success', 'Trading wallet created! Waiting 1s then retrying fetch...');
+            
+            // Wait a moment for DB to sync
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Retry fetching after creation (with timeout)
+            const retryPromise = fetch('/api/wallet/primary-with-key', {
               headers: {
                 'Authorization': `Bearer ${token}`
               }
             });
+            
+            const retryTimeoutPromise = new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('Fetch timeout')), 5000)
+            );
+            
+            const retryResponse = await Promise.race([retryPromise, retryTimeoutPromise]) as Response;
             
             if (retryResponse.ok) {
               const retryData = await retryResponse.json();
               if (retryData.wallet && retryData.wallet.privateKey) {
                 addLog('success', 'Wallet created and private key loaded!');
                 setTradingWalletWithKey(retryData.wallet);
+                setIsCreatingWallet(false);
                 return retryData.wallet;
+              } else {
+                addLog('error', 'Wallet created but private key not in response');
               }
+            } else {
+              addLog('warning', 'Wallet created but fetch failed, will retry on next attempt');
             }
           } else {
             const createError = await createResponse.json().catch(() => ({ error: 'Unknown error' }));
             addLog('error', 'Failed to create trading wallet', createError);
           }
         } catch (createError) {
-          addLog('error', 'Exception while creating wallet', createError);
+          if (createError instanceof Error && createError.message.includes('timeout')) {
+            addLog('error', 'Wallet creation timed out. Please try again or refresh the page.');
+          } else {
+            addLog('error', 'Exception while creating wallet', createError);
+          }
+        } finally {
+          setIsCreatingWallet(false);
         }
       }
       
@@ -352,7 +398,7 @@ export function useTradingFee() {
       addLog('error', 'On-demand fetch error', error);
       return null;
     }
-  }, [token, tradingWalletWithKey, addLog]);
+  }, [token, tradingWalletWithKey, addLog, isCreatingWallet, walletCreationAttempts]);
 
   /**
    * Pay trading fee - main function
@@ -443,6 +489,8 @@ export function useTradingFee() {
           currency: 'ETH',
         };
         addLog('success', `Fee payment successful! TX: ${tx.hash.slice(0, 10)}...`);
+        // Reset wallet creation attempts on success
+        setWalletCreationAttempts(0);
       } else {
         // No private key and not a Base Account
         addLog('error', 'No private key available for trading wallet', {
@@ -459,6 +507,8 @@ export function useTradingFee() {
       }
 
       setFeeError(null);
+      // Reset wallet creation attempts on success
+      setWalletCreationAttempts(0);
       return result;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to pay trading fee';
@@ -467,6 +517,8 @@ export function useTradingFee() {
       throw new Error(errorMessage);
     } finally {
       setIsPayingFee(false);
+      // Always reset creation flag in finally
+      setIsCreatingWallet(false);
     }
   }, [token, sdk, isBaseContext, tradingWalletWithKey, tradingWallet, primaryWallet, getFeeTransactionData, payFeeWithBaseAccount, fetchWalletWithKeyOnDemand, addLog]);
 

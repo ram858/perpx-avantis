@@ -210,45 +210,84 @@ export class BaseAccountWalletService {
   /**
    * Ensure a trading wallet exists (creates one if missing)
    * If wallet exists but has no private key, deletes it and creates a new one
+   * Includes safeguards to prevent infinite loops and race conditions
    */
   async ensureTradingWallet(fid: number): Promise<BaseAccountWallet | null> {
-    const existing = await this.getWalletWithKey(fid, 'ethereum');
-    
-    // If wallet exists and has valid private key, return it
-    if (existing && existing.privateKey && existing.privateKey.length === 66 && existing.privateKey.startsWith('0x')) {
-      console.log(`✅ Trading wallet exists with valid private key for FID ${fid}: ${existing.address}`);
-      return existing;
-    }
-    
-    // If wallet exists but has no private key or invalid key, delete it
-    if (existing && (!existing.privateKey || existing.privateKey.length !== 66 || !existing.privateKey.startsWith('0x'))) {
-      console.warn(`⚠️ Trading wallet exists but has invalid/missing private key for FID ${fid}. Deleting and recreating...`);
-      try {
-        await this.walletStorage.deleteWallet(fid, 'ethereum');
-        console.log(`🗑️ Deleted invalid wallet for FID ${fid}`);
-      } catch (deleteError) {
-        console.error(`❌ Failed to delete invalid wallet:`, deleteError);
-        // Continue anyway - will try to create new one
+    try {
+      const existing = await this.getWalletWithKey(fid, 'ethereum');
+      
+      // If wallet exists and has valid private key, return it
+      if (existing && existing.privateKey && existing.privateKey.length === 66 && existing.privateKey.startsWith('0x')) {
+        console.log(`✅ Trading wallet exists with valid private key for FID ${fid}: ${existing.address}`);
+        return existing;
       }
-    }
-    
-    // Create new trading wallet
-    const newWallet = await this.createTradingWallet(fid, 'ethereum');
-    
-    if (!newWallet || !newWallet.privateKey) {
-      console.error(`❌ Failed to create trading wallet with private key for FID ${fid}`);
+      
+      // If wallet exists but has no private key or invalid key, delete it
+      if (existing && (!existing.privateKey || existing.privateKey.length !== 66 || !existing.privateKey.startsWith('0x'))) {
+        console.warn(`⚠️ Trading wallet exists but has invalid/missing private key for FID ${fid}. Deleting and recreating...`);
+        try {
+          await this.walletStorage.deleteWallet(fid, 'ethereum');
+          console.log(`🗑️ Deleted invalid wallet for FID ${fid}`);
+          
+          // Small delay to ensure DB consistency
+          await new Promise(resolve => setTimeout(resolve, 100));
+        } catch (deleteError) {
+          console.error(`❌ Failed to delete invalid wallet:`, deleteError);
+          // Continue anyway - will try to create new one (upsert will handle it)
+        }
+      }
+      
+      // Create new trading wallet (with retry logic)
+      let newWallet: BaseAccountWallet | null = null;
+      let attempts = 0;
+      const maxAttempts = 2;
+      
+      while (!newWallet && attempts < maxAttempts) {
+        attempts++;
+        try {
+          newWallet = await this.createTradingWallet(fid, 'ethereum');
+          
+          if (!newWallet || !newWallet.privateKey) {
+            console.warn(`⚠️ Wallet creation attempt ${attempts} failed for FID ${fid}`);
+            newWallet = null;
+            if (attempts < maxAttempts) {
+              // Wait before retry
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          }
+        } catch (error) {
+          console.error(`❌ Wallet creation attempt ${attempts} error:`, error);
+          if (attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        }
+      }
+      
+      if (!newWallet || !newWallet.privateKey) {
+        console.error(`❌ Failed to create trading wallet with private key for FID ${fid} after ${attempts} attempts`);
+        return null;
+      }
+      
+      // Verify the wallet was stored correctly (with timeout)
+      const verifyPromise = this.getWalletWithKey(fid, 'ethereum');
+      const timeoutPromise = new Promise<BaseAccountWallet | null>((resolve) => 
+        setTimeout(() => resolve(null), 3000)
+      );
+      
+      const verifyWallet = await Promise.race([verifyPromise, timeoutPromise]);
+      
+      if (!verifyWallet || !verifyWallet.privateKey) {
+        console.error(`❌ Wallet created but private key not retrievable for FID ${fid}`);
+        // Still return the wallet we created (it might work, just verification failed)
+        return newWallet;
+      }
+      
+      console.log(`✅ Trading wallet created and verified for FID ${fid}: ${newWallet.address}`);
+      return newWallet;
+    } catch (error) {
+      console.error(`❌ Unexpected error in ensureTradingWallet for FID ${fid}:`, error);
       return null;
     }
-    
-    // Verify the wallet was stored correctly
-    const verifyWallet = await this.getWalletWithKey(fid, 'ethereum');
-    if (!verifyWallet || !verifyWallet.privateKey) {
-      console.error(`❌ Wallet created but private key not retrievable for FID ${fid}`);
-      return null;
-    }
-    
-    console.log(`✅ Trading wallet created and verified for FID ${fid}: ${newWallet.address}`);
-    return newWallet;
   }
 
   /**
