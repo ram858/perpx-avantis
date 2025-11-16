@@ -64,10 +64,8 @@ const WalletSetupCard = ({ isLoading, error, onRetry }: { isLoading: boolean; er
 )
 
 const PortfolioBalanceCard = ({ 
-  totalPortfolioValue, 
+  avantisBalance,
   totalProfits, 
-  dailyChange, 
-  dailyChangePercentage, 
   isBalanceVisible, 
   setIsBalanceVisible,
   isConnected,
@@ -75,10 +73,8 @@ const PortfolioBalanceCard = ({
   tradingError,
   isLoading
 }: {
-  totalPortfolioValue: number
+  avantisBalance: number
   totalProfits: number
-  dailyChange: number
-  dailyChangePercentage: number
   isBalanceVisible: boolean
   setIsBalanceVisible: (visible: boolean) => void
   isConnected: boolean
@@ -100,13 +96,13 @@ const PortfolioBalanceCard = ({
   return (
     <Card className="bg-[#1a1a1a] border-[#262626] p-4 sm:p-6 rounded-2xl">
       <div className="space-y-2">
-        <h2 className="text-[#b4b4b4] text-sm font-medium">Total Portfolio Balance</h2>
+        <h2 className="text-[#b4b4b4] text-sm font-medium">Trading Balance</h2>
         <div className="flex items-center space-x-3">
           <span className="text-3xl sm:text-4xl font-bold text-white">
-            {isLoading && totalPortfolioValue === 0 ? (
+            {isLoading && avantisBalance === 0 ? (
               <span className="text-[#9ca3af] text-2xl sm:text-3xl">Loading...</span>
             ) : (
-              isBalanceVisible ? formatValue(totalPortfolioValue + totalProfits) : "••••••"
+              isBalanceVisible ? formatValue(avantisBalance) : "••••••"
             )}
           </span>
           <button
@@ -146,32 +142,10 @@ const PortfolioBalanceCard = ({
             )}
           </button>
         </div>
-        <div className="flex items-center space-x-4">
-          {isLoading && totalPortfolioValue === 0 ? (
-            <span className="text-sm sm:text-base font-medium text-[#9ca3af]">Loading...</span>
-          ) : (
-            <>
-              <span className={`text-sm sm:text-base font-medium ${dailyChange >= 0 ? 'text-[#27c47d]' : 'text-[#ef4444]'}`}>
-                {isBalanceVisible ? `${dailyChange >= 0 ? '+' : ''}${formatValue(dailyChange)} today` : `${dailyChange >= 0 ? '+' : ''}••••••• today`}
-              </span>
-              <div className="flex items-center space-x-1">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className={dailyChange >= 0 ? 'text-[#27c47d]' : 'text-[#ef4444]'}>
-                  <path d={dailyChange >= 0 ? "M6 2L10 8.5L17 8L10 9.5L12 15L8.5 9.5L3 8L8.5 8.5L12 2Z" : "M6 10L2 3.5L-5 4L2 2.5L0 -3L3.5 2.5L9 4L3.5 3.5L0 10Z"} fill="currentColor" />
-                </svg>
-                <span className={`text-sm sm:text-base font-medium ${dailyChange >= 0 ? 'text-[#27c47d]' : 'text-[#ef4444]'}`}>
-                  {isBalanceVisible ? `${dailyChangePercentage >= 0 ? '+' : ''}${dailyChangePercentage.toFixed(2)}%` : `${dailyChangePercentage >= 0 ? '+' : ''}•••%`}
-                </span>
-              </div>
-            </>
-          )}
-        </div>
+        
+        {/* Simplified status info focused on trading */}
         <div className="text-xs text-[#9ca3af] mt-2">
-          {isConnected ? 'Connected to wallet' : 'Wallet not connected'} • {isTradingLoading ? 'Trading system loading...' : 'Trading system ready'}
-          {tradingError && (
-            <span className="ml-2 text-[#ef4444]">
-              • Trading error: {tradingError}
-            </span>
-          )}
+          Available for automated trading • {avantisBalance >= 10 ? 'Ready to trade' : 'Minimum $10 required'}
         </div>
         
         {/* Trading Profits Breakdown */}
@@ -1280,10 +1254,8 @@ export default function HomePage() {
             />
           ) : (
             <PortfolioBalanceCard
-              totalPortfolioValue={totalPortfolioValue}
+              avantisBalance={avantisBalance}
               totalProfits={totalProfits}
-              dailyChange={dailyChange}
-              dailyChangePercentage={dailyChangePercentage}
               isBalanceVisible={isBalanceVisible}
               setIsBalanceVisible={setIsBalanceVisible}
               isConnected={isConnected}

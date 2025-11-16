@@ -56,6 +56,7 @@ export default function ChatPage() {
   const {
     isConnected,
     totalPortfolioValue,
+    avantisBalance,
   } = useIntegratedWallet()
 
   // Update trading phase based on session status
@@ -131,6 +132,26 @@ export default function ChatPage() {
           return
         }
         
+        // Check minimum Avantis balance requirement ($10)
+        if (avantisBalance < 10) {
+          setMessages([{
+            type: "bot",
+            content: `⚠️ **Insufficient Balance**\n\nYour current Avantis trading balance is **$${avantisBalance.toFixed(2)}**. The minimum required balance to start trading is **$10.00**.\n\n**Please deposit at least $${(10 - avantisBalance).toFixed(2)} more** to your Avantis trading vault before starting a trading session.\n\n💡 You can deposit funds from the Home page using your Base wallet.`,
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          }])
+          return
+        }
+        
+        // Check if investment amount exceeds available balance
+        if (investmentNum > avantisBalance) {
+          setMessages([{
+            type: "bot",
+            content: `⚠️ **Investment Amount Exceeds Balance**\n\nYou're trying to invest **$${investmentNum}** but your Avantis balance is only **$${avantisBalance.toFixed(2)}**.\n\n**Please either:**\n• Reduce your investment amount to $${avantisBalance.toFixed(2)} or less\n• Deposit more funds to your Avantis trading vault\n\n💡 You can deposit funds from the Home page.`,
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          }])
+          return
+        }
+        
         // Start real trading
         setMessages([{
           type: "bot",
@@ -185,7 +206,7 @@ export default function ChatPage() {
         }])
       }
     }
-  }, [searchParams, tradingSession, isConnected, totalPortfolioValue, startTrading, clearSession])
+  }, [searchParams, tradingSession, isConnected, totalPortfolioValue, avantisBalance, startTrading, clearSession])
 
   // Default conversation if no parameters
   useEffect(() => {
