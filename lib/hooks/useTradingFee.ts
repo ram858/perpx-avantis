@@ -35,13 +35,13 @@ export function useTradingFee() {
 
   // Fetch trading wallet with private key when needed
   useEffect(() => {
+    // Only fetch if we have both token AND a trading wallet exists in context
+    // This prevents fetching during initial wallet creation
+    if (!token || !tradingWallet?.address) {
+      return;
+    }
+    
     const fetchTradingWalletWithKey = async () => {
-      if (!token) {
-        console.log('[useTradingFee] No token, skipping wallet fetch');
-        return;
-      }
-      
-      // Always try to fetch if we have a token, even if tradingWallet is not yet loaded in context
       console.log('[useTradingFee] Fetching trading wallet with private key...');
       
       try {
@@ -66,8 +66,11 @@ export function useTradingFee() {
             setTradingWalletWithKey(data.wallet);
             console.log('[useTradingFee] ✅ Successfully loaded trading wallet with private key:', data.wallet.address);
           } else {
-            console.error('[useTradingFee] ❌ Wallet returned but no private key:', data);
+            console.log('[useTradingFee] ⚠️ Wallet exists but no private key yet (may be creating)');
           }
+        } else if (response.status === 404) {
+          // Wallet not found yet - this is OK during initial creation
+          console.log('[useTradingFee] ⚠️ Trading wallet not found yet (may be creating)');
         } else {
           const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
           console.error('[useTradingFee] ❌ API request failed:', response.status, errorData);
@@ -77,8 +80,13 @@ export function useTradingFee() {
       }
     };
 
-    fetchTradingWalletWithKey();
-  }, [token]);
+    // Add a small delay to prevent race conditions during wallet creation
+    const timeoutId = setTimeout(() => {
+      fetchTradingWalletWithKey();
+    }, 1000);
+    
+    return () => clearTimeout(timeoutId);
+  }, [token, tradingWallet?.address]);
 
   // Use trading wallet with private key if available, otherwise fall back to primary wallet
   const walletForFee = tradingWalletWithKey || tradingWallet || primaryWallet;
