@@ -87,7 +87,9 @@ export default function ChatPage() {
   useEffect(() => {
     const profit = searchParams.get('profit')
     const investment = searchParams.get('investment')
-    const mode = searchParams.get('mode') // 'real' or 'simulation'
+    const mode = searchParams.get('mode')
+    const lossThreshold = searchParams.get('lossThreshold')
+    const maxPositions = searchParams.get('maxPositions') // 'real' or 'simulation'
     const view = searchParams.get('view') // 'positions' for viewing existing trades
     
     // Handle view=positions case (viewing existing trades)
@@ -139,7 +141,8 @@ export default function ChatPage() {
         startTrading({
           profitGoal: profitNum,
           maxBudget: investmentNum,
-          maxPerSession: 5
+          maxPerSession: maxPositions ? parseInt(maxPositions) : 3,
+          lossThreshold: lossThreshold ? parseFloat(lossThreshold) : 10
         }).then(() => {
           setMessages(prev => [...prev, {
             type: "bot",
@@ -165,7 +168,8 @@ export default function ChatPage() {
         startTrading({
           profitGoal: profitNum,
           maxBudget: investmentNum,
-          maxPerSession: 5
+          maxPerSession: maxPositions ? parseInt(maxPositions) : 3,
+          lossThreshold: lossThreshold ? parseFloat(lossThreshold) : 10
         }).catch(error => {
           setMessages(prev => [...prev, {
             type: "bot",

@@ -67,6 +67,7 @@ export function useTradingSession() {
     targetProfit?: number;
     maxPerSession?: number;
     leverage?: number;
+    lossThreshold?: number;
   }) => {
     setIsLoading(true);
     setError(null);
@@ -86,8 +87,9 @@ export function useTradingSession() {
       const session = await startTradingAPI({
         totalBudget: config.maxBudget || config.investmentAmount || 50,
         profitGoal: config.profitGoal || config.targetProfit || 10,
-        maxPositions: config.maxPerSession || 5,
-        leverage: config.leverage || 1
+        maxPositions: config.maxPerSession || 3,
+        leverage: config.leverage || 1,
+        lossThreshold: config.lossThreshold || 10
       });
 
       // Create session state

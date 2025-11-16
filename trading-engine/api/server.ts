@@ -32,7 +32,8 @@ app.post('/api/trading/start', async (req, res) => {
     const { 
       maxBudget, 
       profitGoal, 
-      maxPerSession, 
+      maxPerSession,
+      lossThreshold = 10, // Default 10% loss threshold
       hyperliquidApiWallet, 
       userPhoneNumber, 
       walletAddress,
@@ -84,10 +85,17 @@ app.post('/api/trading/start', async (req, res) => {
       });
     }
 
+    if (lossThreshold < 1 || lossThreshold > 50) {
+      return res.status(400).json({ 
+        error: 'lossThreshold must be between 1% and 50%' 
+      });
+    }
+
     const sessionId = await sessionManager.startSession({
       maxBudget: parseFloat(maxBudget),
       profitGoal: parseFloat(profitGoal),
       maxPerSession: parseInt(maxPerSession),
+      lossThreshold: parseFloat(lossThreshold),
       userPhoneNumber: userPhoneNumber || undefined, // Optional for Base Accounts
       walletAddress,
       isBaseAccount: Boolean(isBaseAccount)
@@ -97,7 +105,7 @@ app.post('/api/trading/start', async (req, res) => {
     res.json({ 
       sessionId, 
       status: 'started',
-      config: { maxBudget, profitGoal, maxPerSession },
+      config: { maxBudget, profitGoal, maxPerSession, lossThreshold },
       user: { phoneNumber: userPhoneNumber, walletAddress, isBaseAccount }
     });
   } catch (error) {

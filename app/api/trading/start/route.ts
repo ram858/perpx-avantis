@@ -81,7 +81,8 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         maxBudget: config.totalBudget || config.investmentAmount || config.maxBudget,
         profitGoal: config.profitGoal || config.targetProfit,
-        maxPerSession: config.maxPositions || config.maxPerSession || 5,
+        maxPerSession: config.maxPositions || config.maxPerSession || 3,
+        lossThreshold: config.lossThreshold || 10,
         avantisApiWallet: privateKey, // May be null for Base Accounts
         userFid: payload.fid,
         walletAddress: walletAddress, // Base Account address or trading wallet address

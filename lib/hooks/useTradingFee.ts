@@ -203,14 +203,25 @@ export function useTradingFee() {
       // Determine payment method based on wallet type
       let result: FeePaymentResult;
 
+      // Check if we have any wallet available
+      if (!walletForFee?.address && !txData.isBaseAccount) {
+        throw new Error('No wallet available. Please connect your wallet first.');
+      }
+
       if (txData.isBaseAccount && isBaseContext && sdk) {
-        // Use Base Account SDK
+        // Prioritize Base Account SDK for Base Accounts
+        console.log('[useTradingFee] Using Base Account SDK for fee payment');
         result = await payFeeWithBaseAccount(txData);
       } else if (walletForFee?.privateKey) {
-        // Use trading wallet with private key
+        // Use trading wallet with private key for automated trading
+        console.log('[useTradingFee] Using trading wallet with private key for fee payment');
         result = await payFeeWithFallbackWallet(txData);
+      } else if (txData.isBaseAccount) {
+        // Base Account but no SDK context - provide helpful error
+        throw new Error('Base Account detected but SDK not available. Please open the app inside the Farcaster/Base mini app context.');
       } else {
-        throw new Error('No payment method available. Please ensure your trading wallet is properly set up with funds.');
+        // No private key and not a Base Account - need to create trading wallet
+        throw new Error('Trading wallet not set up. Please deposit funds to create your trading wallet first.');
       }
 
       if (!result.success) {

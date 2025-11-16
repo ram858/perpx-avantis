@@ -8,6 +8,7 @@ export interface TradingConfig {
   profitGoal: number;
   maxPositions: number;
   leverage?: number;
+  lossThreshold?: number;
 }
 
 export interface TradingSession {

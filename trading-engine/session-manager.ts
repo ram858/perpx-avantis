@@ -18,6 +18,7 @@ export interface TradingConfig {
   maxBudget: number;
   profitGoal: number;
   maxPerSession: number;
+  lossThreshold?: number; // Loss threshold percentage (default 10%)
   userPhoneNumber?: string;
   walletAddress?: string;
   userFid?: number; // Base Account FID

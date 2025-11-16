@@ -222,6 +222,9 @@ const TradingCard = ({
   const [depositAsset, setDepositAsset] = useState<'USDC' | 'ETH'>('USDC')
   const [depositAmount, setDepositAmount] = useState('')
   const [hasSuccessfulDeposit, setHasSuccessfulDeposit] = useState(false)
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false)
+  const [lossThreshold, setLossThreshold] = useState('10')
+  const [maxPositions, setMaxPositions] = useState('3')
 
   const explorerBaseUrl = process.env.NEXT_PUBLIC_AVANTIS_NETWORK === 'base-testnet'
     ? 'https://sepolia.basescan.org'
@@ -250,7 +253,9 @@ const TradingCard = ({
     const params = new URLSearchParams({
       profit: targetProfit,
       investment: investmentAmount,
-      mode: 'real' // Use real trading mode
+      mode: 'real', // Use real trading mode
+      lossThreshold: lossThreshold,
+      maxPositions: maxPositions
     })
     
     router.push(`/chat?${params.toString()}`)
@@ -313,6 +318,79 @@ const TradingCard = ({
                 className="bg-[#2a2a2a] border-[#444] text-white text-sm"
                 placeholder="50"
               />
+            </div>
+          </div>
+        )}
+        
+        {/* Advance Settings Button */}
+        {!hasActivePositions && (
+          <div className="flex justify-end">
+            <button
+              onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+              className="text-[#8759ff] hover:text-[#7C3AED] text-sm font-medium transition-colors"
+            >
+              {showAdvancedSettings ? 'Hide' : 'Advance setting'}
+            </button>
+          </div>
+        )}
+        
+        {/* Advanced Settings Panel */}
+        {!hasActivePositions && showAdvancedSettings && (
+          <div className="space-y-3 p-4 bg-[#1f2937] border border-[#374151] rounded-lg">
+            <div>
+              <label className="block text-[#9ca3af] text-xs font-medium mb-1">
+                Loss Threshold
+              </label>
+              <div className="relative">
+                <select
+                  value={lossThreshold}
+                  onChange={(e) => setLossThreshold(e.target.value)}
+                  className="w-full bg-[#2a2a2a] border-[#444] text-white text-sm rounded-md px-3 py-2 appearance-none cursor-pointer"
+                >
+                  <option value="5">5%</option>
+                  <option value="10">10%</option>
+                  <option value="15">15%</option>
+                  <option value="20">20%</option>
+                  <option value="25">25%</option>
+                </select>
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
+                  <svg width="12" height="8" viewBox="0 0 12 8" fill="none" className="text-[#9ca3af]">
+                    <path d="M1 1L6 6L11 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                </div>
+              </div>
+            </div>
+            
+            <div>
+              <label className="block text-[#9ca3af] text-xs font-medium mb-2">
+                Max No. of Positions
+              </label>
+              <div className="space-y-2">
+                <Input
+                  type="number"
+                  value={maxPositions}
+                  onChange={(e) => setMaxPositions(e.target.value)}
+                  className="bg-[#2a2a2a] border-[#444] text-white text-sm"
+                  placeholder="3"
+                  min="1"
+                  max="10"
+                />
+                <div className="flex gap-2">
+                  {[1, 3, 5, 10].map((num) => (
+                    <button
+                      key={num}
+                      onClick={() => setMaxPositions(num.toString())}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        maxPositions === num.toString()
+                          ? 'bg-[#8759ff] text-white'
+                          : 'bg-[#2a2a2a] text-[#9ca3af] hover:bg-[#374151]'
+                      }`}
+                    >
+                      {num}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -756,12 +834,13 @@ const WalletInfoCard = ({
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
+          {/* Full Address - Commented out as copy functionality exists above */}
+          {/* <div className="flex items-center justify-between">
             <span className="text-[#9ca3af] text-sm">Full Address:</span>
             <code className="text-white text-xs font-mono bg-[#374151] px-2 py-1 rounded break-all">
               {walletToDisplay.address}
             </code>
-          </div>
+          </div> */} 
           
           <div className="flex items-center justify-between">
             <span className="text-[#9ca3af] text-sm">Chain:</span>
