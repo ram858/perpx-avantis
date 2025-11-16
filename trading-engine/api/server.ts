@@ -35,7 +35,9 @@ app.post('/api/trading/start', async (req, res) => {
       maxPerSession,
       lossThreshold = 10, // Default 10% loss threshold
       hyperliquidApiWallet, 
+      avantisApiWallet, // Avantis private key (same as hyperliquidApiWallet for Avantis trading)
       userPhoneNumber, 
+      userFid, // FID for Base Account users
       walletAddress,
       isBaseAccount = true // Flag for Base Account sessions
     } = req.body;
@@ -57,14 +59,17 @@ app.post('/api/trading/start', async (req, res) => {
       console.log(`[API] Starting Base Account session for wallet ${walletAddress}`);
     } else {
       // For traditional wallets, both private key and wallet address are required
-      if (!hyperliquidApiWallet || !userPhoneNumber || !walletAddress) {
+      // Prioritize avantisApiWallet (for Avantis trading), fallback to hyperliquidApiWallet
+      const privateKey = avantisApiWallet || hyperliquidApiWallet;
+      if (!privateKey || !walletAddress) {
         return res.status(400).json({ 
-          error: 'Missing wallet data: hyperliquidApiWallet, userPhoneNumber, walletAddress are required for traditional wallets' 
+          error: 'Missing wallet data: avantisApiWallet (or hyperliquidApiWallet) and walletAddress are required for traditional wallets' 
         });
       }
-      // Set the Hyperliquid private key for this session
-      process.env.HYPERLIQUID_PK = hyperliquidApiWallet;
-      console.log(`[API] Set HYPERLIQUID_PK for user ${userPhoneNumber} with wallet ${walletAddress}`);
+      // Store private key in session config - DO NOT set global env vars (multi-user issue)
+      // The private key will be passed to Avantis service per-request
+      console.log(`[API] Starting trading session for user ${userPhoneNumber || userFid || 'unknown'} with wallet ${walletAddress}`);
+      console.log(`[API] Private key will be passed to Avantis service per-request (not stored globally)`);
     }
 
     if (maxBudget < 10 || maxBudget > 10000000) {
@@ -91,6 +96,9 @@ app.post('/api/trading/start', async (req, res) => {
       });
     }
 
+    // Store private key in session config (not in global env)
+    const privateKey = avantisApiWallet || hyperliquidApiWallet;
+    
     const sessionId = await sessionManager.startSession({
       maxBudget: parseFloat(maxBudget),
       profitGoal: parseFloat(profitGoal),
@@ -98,7 +106,8 @@ app.post('/api/trading/start', async (req, res) => {
       lossThreshold: parseFloat(lossThreshold),
       userPhoneNumber: userPhoneNumber || undefined, // Optional for Base Accounts
       walletAddress,
-      isBaseAccount: Boolean(isBaseAccount)
+      isBaseAccount: Boolean(isBaseAccount),
+      privateKey: !isBaseAccount ? privateKey : undefined // Store private key per-session
     });
 
     console.log(`[API] Started trading session ${sessionId} for ${isBaseAccount ? 'Base Account' : 'traditional wallet'}`);

@@ -152,9 +152,11 @@ export class WebTradingBot {
           closePosition
         });
 
-        // Get market regime (use BTC as default) - use 4h and 6h timeframes as expected by guessMarketRegime
-        const btcOHLCV4h = await getCachedOHLCV('BTC', '4h', 300).catch(() => null);
-        const btcOHLCV6h = await getCachedOHLCV('BTC', '6h', 300).catch(() => null);
+        // Get market regime (use BTC as default) - parallelize data fetching for speed
+        const [btcOHLCV4h, btcOHLCV6h] = await Promise.all([
+          getCachedOHLCV('BTC', '4h', 300).catch(() => null),
+          getCachedOHLCV('BTC', '6h', 300).catch(() => null)
+        ]);
         const regimeResult = (btcOHLCV4h && btcOHLCV6h) ? await guessMarketRegime('BTC', btcOHLCV4h, btcOHLCV6h) : { regime: 'neutral' };
         const marketRegime = regimeResult.regime;
         log('WEB_BOT', `Market regime: ${marketRegime}`);
@@ -166,17 +168,18 @@ export class WebTradingBot {
           const slotsLeft = maxPerSession - positions.length;
           let entriesThis = 0;
 
-          for (const symbol of tokens) {
-            if (entriesThis >= slotsLeft) break;
-
+          // Parallelize symbol evaluation for faster execution (limit to available slots)
+          const symbolsToEvaluate = tokens.slice(0, Math.min(slotsLeft * 2, tokens.length)); // Evaluate more symbols in parallel
+          const symbolPromises = symbolsToEvaluate.map(async (symbol) => {
             try {
-              // Get OHLCV data for signal evaluation - use 4h and 6h as expected by runSignalCheckAndOpen
-              const ohlcv4h = await getCachedOHLCV(symbol, '4h', 300).catch(() => null);
-              const ohlcv6h = await getCachedOHLCV(symbol, '6h', 300).catch(() => null);
+              // Parallelize OHLCV data fetching for speed
+              const [ohlcv4h, ohlcv6h] = await Promise.all([
+                getCachedOHLCV(symbol, '4h', 300).catch(() => null),
+                getCachedOHLCV(symbol, '6h', 300).catch(() => null)
+              ]);
               
               if (!ohlcv4h || !ohlcv6h || ohlcv4h.close.length < 30 || ohlcv6h.close.length < 30) {
-                log('WEB_BOT', `Skipping ${symbol}: insufficient data (4h: ${ohlcv4h?.close.length || 0}, 6h: ${ohlcv6h?.close.length || 0})`);
-                continue;
+                return null; // Skip silently for speed
               }
 
               // Calculate budget per position
@@ -195,22 +198,35 @@ export class WebTradingBot {
                 regimeOverride: marketRegime
               });
 
-              const { positionOpened, signalScore, reason } = result;
-              
-              if (positionOpened) {
-                entriesThis++;
-                log('WEB_BOT', `✅ ${symbol} opened | Score=${signalScore} | Count=${entriesThis}`);
-              } else {
-                log('WEB_BOT', `${symbol} => ❌ No trade | Reason: ${reason}`);
-              }
+              return { symbol, result };
             } catch (error) {
               log('WEB_BOT', `Error evaluating ${symbol}: ${error instanceof Error ? error.message : String(error)}`);
+              return null;
+            }
+          });
+
+          // Wait for all evaluations to complete
+          const evaluationResults = await Promise.all(symbolPromises);
+          
+          // Process results and open positions (respecting slot limit)
+          for (const evalResult of evaluationResults) {
+            if (!evalResult) continue;
+            if (entriesThis >= slotsLeft) break;
+            
+            const { symbol, result } = evalResult;
+            const { positionOpened, signalScore, reason } = result;
+            
+            if (positionOpened) {
+              entriesThis++;
+              log('WEB_BOT', `✅ ${symbol} opened | Score=${signalScore} | Count=${entriesThis}`);
+            } else {
+              log('WEB_BOT', `${symbol} => ❌ No trade | Reason: ${reason}`);
             }
           }
         }
 
-        // Wait before next cycle
-        await delay(10000); // 10 seconds between cycles to reduce server load
+        // Wait before next cycle - reduced for faster execution
+        await delay(5000); // 5 seconds between cycles (optimized for speed)
 
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);

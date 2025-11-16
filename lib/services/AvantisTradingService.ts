@@ -106,14 +106,20 @@ export class AvantisTradingService {
         tradingEngineConfig.avantisApiWallet = userWallet.privateKey;
       }
 
-      // Start trading session via trading engine API
+      // Start trading session via trading engine API with timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout for faster feedback
+      
       const response = await fetch(`${this.tradingEngineUrl}/api/trading/start`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(tradingEngineConfig),
+        signal: controller.signal,
       });
+      
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -293,14 +299,35 @@ export class AvantisTradingService {
     }
   }
 
-  async closePosition(pairIndex: number): Promise<TradingResult> {
+  async closePosition(pairIndex: number, privateKey?: string, fid?: number): Promise<TradingResult> {
     try {
+      // If private key provided, use it; otherwise try to get from wallet service
+      let walletPrivateKey = privateKey;
+      
+      if (!walletPrivateKey && fid) {
+        const wallet = await this.walletService.getWalletWithKey(fid, 'ethereum');
+        walletPrivateKey = wallet?.privateKey;
+      }
+      
+      if (!walletPrivateKey) {
+        return {
+          success: false,
+          message: 'Private key required to close position. Please ensure your trading wallet is set up.'
+        };
+      }
+      
+      console.log(`[AvantisTradingService] Closing position ${pairIndex} with wallet: ${walletPrivateKey.slice(0, 10)}...`);
+      
       const response = await fetch(`${this.tradingEngineUrl}/api/close-position`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ pairIndex }), // Changed from symbol to pairIndex
+        body: JSON.stringify({ 
+          pairIndex,
+          privateKey: walletPrivateKey,
+          userFid: fid
+        }),
       });
 
       if (!response.ok) {

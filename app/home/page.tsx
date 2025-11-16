@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth/AuthContext"
 import { useTrading } from "@/lib/hooks/useTrading"
 import { useTradingProfits } from "@/lib/hooks/useTradingProfits"
 import { usePositions } from "@/lib/hooks/usePositions"
+import { useTradingSession } from "@/lib/hooks/useTradingSession"
 import { ProtectedRoute } from "@/components/ProtectedRoute"
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { NavigationHeader } from "@/components/NavigationHeader"
@@ -190,6 +191,7 @@ const TradingCard = ({
   isBaseContextAvailable,
   holdings = [],
   ethBalanceFormatted = '0',
+  onViewTrades,
 }: {
   targetProfit: string
   setTargetProfit: (value: string) => void
@@ -206,6 +208,7 @@ const TradingCard = ({
   isBaseContextAvailable: boolean
   holdings?: TokenBalance[]
   ethBalanceFormatted?: string
+  onViewTrades?: () => Promise<void>
 }) => {
   const [isTrading, setIsTrading] = useState(false)
   const { positionData, isLoading: positionsLoading } = usePositions()
@@ -251,15 +254,6 @@ const TradingCard = ({
     router.push(`/chat?${params.toString()}`)
   }
 
-  const handleViewTrades = async () => {
-    // Redirect to chat page to view ongoing trades
-    const params = new URLSearchParams({
-      mode: 'real',
-      view: 'positions' // Add a parameter to indicate we're viewing positions
-    })
-    
-    router.push(`/chat?${params.toString()}`)
-  }
 
 
   return (
@@ -404,7 +398,7 @@ const TradingCard = ({
         )}
         
         <Button 
-          onClick={hasActivePositions ? handleViewTrades : handleStartTrading}
+          onClick={hasActivePositions ? (onViewTrades || (() => {})) : handleStartTrading}
           disabled={isTrading || avantisBalance === 0 || positionsLoading}
           className="w-full bg-[#8759ff] hover:bg-[#7C3AED] text-white font-semibold py-3 rounded-xl disabled:opacity-50"
         >
@@ -1105,8 +1099,38 @@ export default function HomePage() {
 
   const { isLoading: isTradingLoading, error: tradingError } = useTrading()
   const { totalProfits } = useTradingProfits()
+  const { tradingSession, refreshSessionStatus } = useTradingSession()
+  const router = useRouter()
 
   const { signAndSendTransaction, waitForTransaction, isAvailable: isBaseTxAvailable } = useBaseAccountTransactions()
+  
+  // Handle viewing trades - check for active session
+  const handleViewTrades = useCallback(async () => {
+    // Check if there's an active session first
+    if (tradingSession && tradingSession.status === 'running') {
+      const params = new URLSearchParams({
+        mode: 'real',
+        view: 'positions',
+        sessionId: tradingSession.sessionId
+      });
+      router.push(`/chat?${params.toString()}`);
+    } else {
+      // Redirect to chat page to view ongoing trades
+      const params = new URLSearchParams({
+        mode: 'real',
+        view: 'positions' // Add a parameter to indicate we're viewing positions
+      });
+      router.push(`/chat?${params.toString()}`);
+    }
+  }, [tradingSession, router]);
+  
+  // Refresh session status when component mounts or when positions change
+  const { positionData } = usePositions()
+  useEffect(() => {
+    if (isConnected && positionData && positionData.openPositions > 0) {
+      refreshSessionStatus();
+    }
+  }, [isConnected, positionData?.openPositions, refreshSessionStatus]);
 
   // Auto-create wallet if user doesn't have one - optimized with useCallback
   useEffect(() => {
@@ -1327,6 +1351,36 @@ export default function HomePage() {
             />
           )}
 
+          {/* Active Trading Session Banner - Show if session is running */}
+          {isConnected && tradingSession && tradingSession.status === 'running' && (
+            <Card className="bg-gradient-to-r from-[#8759ff]/20 to-[#7c4dff]/20 border-[#8759ff] p-4 rounded-2xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                  <div>
+                    <h3 className="text-white font-semibold">Active Trading Session</h3>
+                    <p className="text-[#9ca3af] text-sm">
+                      Session: {tradingSession.sessionId.slice(0, 8)}... • PnL: ${tradingSession.totalPnL.toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => {
+                    const params = new URLSearchParams({
+                      mode: 'real',
+                      view: 'positions',
+                      sessionId: tradingSession.sessionId
+                    });
+                    router.push(`/chat?${params.toString()}`);
+                  }}
+                  className="bg-[#8759ff] hover:bg-[#7c4dff] text-white text-sm px-4 py-2"
+                >
+                  View Session
+                </Button>
+              </div>
+            </Card>
+          )}
+
           {/* Start Trading Card - Show when wallet is connected */}
           {isConnected && primaryWallet && (
             <TradingCard
@@ -1345,6 +1399,7 @@ export default function HomePage() {
               isBaseContextAvailable={isBaseTxAvailable}
               holdings={holdings}
               ethBalanceFormatted={ethBalanceFormatted}
+              onViewTrades={handleViewTrades}
             />
           )}
 

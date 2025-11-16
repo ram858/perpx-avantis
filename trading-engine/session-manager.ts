@@ -23,6 +23,7 @@ export interface TradingConfig {
   walletAddress?: string;
   userFid?: number; // Base Account FID
   isBaseAccount?: boolean; // Flag indicating Base Account (no private key)
+  privateKey?: string; // Private key for traditional wallets (stored per-session, not globally)
 }
 
 export interface SessionStatus {

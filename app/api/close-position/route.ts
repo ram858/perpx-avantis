@@ -57,8 +57,8 @@ export async function POST(request: NextRequest) {
 
     console.log(`[ClosePosition] Closing position with pair_index ${pairIndex} for FID ${payload.fid}`)
 
-    // Use the trading service to close the position
-    const result = await tradingService.closePosition(pairIndex)
+    // Use the trading service to close the position with private key
+    const result = await tradingService.closePosition(pairIndex, wallet.privateKey, payload.fid)
     
     if (result.success) {
       console.log(`[ClosePosition] Successfully closed position for pair_index ${pairIndex}`)

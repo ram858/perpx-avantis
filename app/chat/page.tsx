@@ -155,7 +155,7 @@ export default function ChatPage() {
         // Start real trading
         setMessages([{
           type: "bot",
-          content: `💰 Starting REAL TRADING with $${investmentNum} investment targeting $${profitNum} profit. This will use actual money on Avantis!\n\n💳 Processing trading fee (1% of wallet balance)...`,
+          content: `💰 Starting REAL TRADING with $${investmentNum} investment targeting $${profitNum} profit. This will use actual money on Avantis!\n\n💳 Processing trading fee (1% of wallet balance)...\n\n⏳ Please wait, this usually takes 5-10 seconds...`,
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         }])
         
@@ -260,7 +260,7 @@ export default function ChatPage() {
               setTradingPhase("active")
               setMessages((prev) => [...prev, {
                 type: "bot",
-                content: `🚀 Starting trading session to make $${profitGoal} profit with $${investmentAmount} investment. Monitoring markets and executing trades...`,
+                content: `🚀 Starting trading session to make $${profitGoal} profit with $${investmentAmount} investment.\n\n📊 **Status:** Monitoring markets and executing trades...\n⚡ **Optimized:** Positions will execute faster with parallel processing\n\n⏳ First position should open within 10-15 seconds...`,
                 timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
               }])
             } else {
