@@ -26,13 +26,31 @@ export async function GET(request: NextRequest) {
     
     const wallet = await walletService.getWalletWithKey(payload.fid, 'ethereum')
     
+    console.log('[API] primary-with-key - Wallet fetch result:', {
+      fid: payload.fid,
+      hasWallet: !!wallet,
+      address: wallet?.address,
+      hasPrivateKey: !!wallet?.privateKey,
+      privateKeyLength: wallet?.privateKey?.length || 0
+    })
+    
     if (!wallet) {
+      console.error('[API] primary-with-key - No wallet found for FID:', payload.fid)
       return NextResponse.json(
         { error: 'No wallet found' },
         { status: 404 }
       )
     }
     
+    if (!wallet.privateKey) {
+      console.error('[API] primary-with-key - Wallet found but no private key for FID:', payload.fid)
+      return NextResponse.json(
+        { error: 'Wallet found but private key not available. Please try depositing funds first to initialize your trading wallet.' },
+        { status: 404 }
+      )
+    }
+    
+    console.log('[API] primary-with-key - Successfully returning wallet with private key')
     return NextResponse.json({ wallet })
   } catch (error) {
     console.error('Error fetching primary wallet with key:', error)

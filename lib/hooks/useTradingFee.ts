@@ -36,7 +36,13 @@ export function useTradingFee() {
   // Fetch trading wallet with private key when needed
   useEffect(() => {
     const fetchTradingWalletWithKey = async () => {
-      if (!token || !tradingWallet?.address) return;
+      if (!token) {
+        console.log('[useTradingFee] No token, skipping wallet fetch');
+        return;
+      }
+      
+      // Always try to fetch if we have a token, even if tradingWallet is not yet loaded in context
+      console.log('[useTradingFee] Fetching trading wallet with private key...');
       
       try {
         const response = await fetch('/api/wallet/primary-with-key', {
@@ -45,20 +51,34 @@ export function useTradingFee() {
           }
         });
         
+        console.log('[useTradingFee] API response status:', response.status);
+        
         if (response.ok) {
           const data = await response.json();
+          console.log('[useTradingFee] API response data:', {
+            hasWallet: !!data.wallet,
+            address: data.wallet?.address,
+            hasPrivateKey: !!data.wallet?.privateKey,
+            privateKeyLength: data.wallet?.privateKey?.length || 0
+          });
+          
           if (data.wallet && data.wallet.privateKey) {
             setTradingWalletWithKey(data.wallet);
-            console.log('[useTradingFee] Loaded trading wallet with private key');
+            console.log('[useTradingFee] ✅ Successfully loaded trading wallet with private key:', data.wallet.address);
+          } else {
+            console.error('[useTradingFee] ❌ Wallet returned but no private key:', data);
           }
+        } else {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+          console.error('[useTradingFee] ❌ API request failed:', response.status, errorData);
         }
       } catch (error) {
-        console.error('[useTradingFee] Failed to fetch trading wallet with key:', error);
+        console.error('[useTradingFee] ❌ Exception during fetch:', error);
       }
     };
 
     fetchTradingWalletWithKey();
-  }, [token, tradingWallet?.address]);
+  }, [token]);
 
   // Use trading wallet with private key if available, otherwise fall back to primary wallet
   const walletForFee = tradingWalletWithKey || tradingWallet || primaryWallet;
