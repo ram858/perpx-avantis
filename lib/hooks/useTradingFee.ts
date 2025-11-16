@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useBaseMiniApp } from './useBaseMiniApp';
 import { useIntegratedWallet } from '../wallet/IntegratedWalletContext';
@@ -19,15 +19,49 @@ export interface FeePaymentResult {
   currency: 'ETH' | 'USDC';
 }
 
+interface WalletWithKey {
+  address: string;
+  privateKey?: string;
+  chain: string;
+}
+
 export function useTradingFee() {
   const { token } = useAuth();
   const { sdk, isBaseContext } = useBaseMiniApp();
   const { primaryWallet, tradingWallet } = useIntegratedWallet();
   const [isPayingFee, setIsPayingFee] = useState(false);
   const [feeError, setFeeError] = useState<string | null>(null);
+  const [tradingWalletWithKey, setTradingWalletWithKey] = useState<WalletWithKey | null>(null);
 
-  // Use trading wallet if available (has private key), otherwise fall back to primary wallet
-  const walletForFee = tradingWallet || primaryWallet;
+  // Fetch trading wallet with private key when needed
+  useEffect(() => {
+    const fetchTradingWalletWithKey = async () => {
+      if (!token || !tradingWallet?.address) return;
+      
+      try {
+        const response = await fetch('/api/wallet/primary-with-key', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.wallet && data.wallet.privateKey) {
+            setTradingWalletWithKey(data.wallet);
+            console.log('[useTradingFee] Loaded trading wallet with private key');
+          }
+        }
+      } catch (error) {
+        console.error('[useTradingFee] Failed to fetch trading wallet with key:', error);
+      }
+    };
+
+    fetchTradingWalletWithKey();
+  }, [token, tradingWallet?.address]);
+
+  // Use trading wallet with private key if available, otherwise fall back to primary wallet
+  const walletForFee = tradingWalletWithKey || tradingWallet || primaryWallet;
 
   /**
    * Get fee payment transaction data from API
@@ -197,14 +231,26 @@ export function useTradingFee() {
     setFeeError(null);
 
     try {
+      console.log('[useTradingFee] Starting fee payment...');
+      console.log('[useTradingFee] Wallet info:', {
+        hasWalletForFee: !!walletForFee,
+        walletAddress: walletForFee?.address,
+        hasPrivateKey: !!walletForFee?.privateKey,
+        hasTradingWalletWithKey: !!tradingWalletWithKey,
+        tradingWalletWithKeyAddress: tradingWalletWithKey?.address,
+        hasPrivateKeyInTradingWallet: !!tradingWalletWithKey?.privateKey
+      });
+
       // Get transaction data from API
       const txData = await getFeeTransactionData();
+      console.log('[useTradingFee] Transaction data received:', { isBaseAccount: txData.isBaseAccount });
 
       // Determine payment method based on wallet type
       let result: FeePaymentResult;
 
       // Check if we have any wallet available
       if (!walletForFee?.address && !txData.isBaseAccount) {
+        console.error('[useTradingFee] No wallet available');
         throw new Error('No wallet available. Please connect your wallet first.');
       }
 
@@ -215,13 +261,18 @@ export function useTradingFee() {
       } else if (walletForFee?.privateKey) {
         // Use trading wallet with private key for automated trading
         console.log('[useTradingFee] Using trading wallet with private key for fee payment');
+        console.log('[useTradingFee] Wallet address:', walletForFee.address);
         result = await payFeeWithFallbackWallet(txData);
       } else if (txData.isBaseAccount) {
         // Base Account but no SDK context - provide helpful error
+        console.error('[useTradingFee] Base Account without SDK context');
         throw new Error('Base Account detected but SDK not available. Please open the app inside the Farcaster/Base mini app context.');
       } else {
         // No private key and not a Base Account - need to create trading wallet
-        throw new Error('Trading wallet not set up. Please deposit funds to create your trading wallet first.');
+        console.error('[useTradingFee] No private key available for trading wallet');
+        console.error('[useTradingFee] WalletForFee:', walletForFee);
+        console.error('[useTradingFee] TradingWalletWithKey:', tradingWalletWithKey);
+        throw new Error('Trading wallet private key not loaded. Please try refreshing the page or contact support if the issue persists.');
       }
 
       if (!result.success) {
