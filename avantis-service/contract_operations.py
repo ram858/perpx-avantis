@@ -449,20 +449,30 @@ async def get_balance_via_contract(
             # Traditional wallet - can use SDK methods
             if hasattr(trader_client, 'get_usdc_balance'):
                 try:
-                    usdc_balance = await trader_client.get_usdc_balance()
+                    if inspect.iscoroutinefunction(trader_client.get_usdc_balance):
+                        usdc_balance = await trader_client.get_usdc_balance()
+                    else:
+                        usdc_balance = trader_client.get_usdc_balance()
                 except:
                     pass
             
             if hasattr(trader_client, 'get_usdc_allowance_for_trading'):
                 try:
-                    usdc_allowance = await trader_client.get_usdc_allowance_for_trading()
+                    if inspect.iscoroutinefunction(trader_client.get_usdc_allowance_for_trading):
+                        usdc_allowance = await trader_client.get_usdc_allowance_for_trading()
+                    else:
+                        usdc_allowance = trader_client.get_usdc_allowance_for_trading()
                 except:
                     pass
         else:
             # Base Account - read from contract directly
             # Try to read balance from contract
             try:
-                await trader_client.load_contracts()
+                if hasattr(trader_client, 'load_contracts'):
+                    if inspect.iscoroutinefunction(trader_client.load_contracts):
+                        await trader_client.load_contracts()
+                    else:
+                        trader_client.load_contracts()
                 # Read USDC balance for the address
                 # This would need to be implemented based on actual contract structure
                 logger.debug("Reading balance from contract for Base Account")
