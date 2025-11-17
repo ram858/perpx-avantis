@@ -2,6 +2,7 @@
 from typing import Optional, Dict, Any
 from decimal import Decimal
 import logging
+import inspect
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,11 @@ async def open_position_via_contract(
     """
     try:
         # Ensure contracts are loaded
-        await trader_client.load_contracts()
+        if hasattr(trader_client, 'load_contracts'):
+            if inspect.iscoroutinefunction(trader_client.load_contracts):
+                await trader_client.load_contracts()
+            else:
+                trader_client.load_contracts()
         
         # Convert collateral to wei (USDC has 6 decimals)
         collateral_wei = int(Decimal(str(collateral_amount)) * Decimal(10**6))
@@ -65,15 +70,26 @@ async def open_position_via_contract(
             for function_name in function_names:
                 try:
                     # Try to write to contract
-                    tx_hash = await trader_client.write_contract(
-                        contract_name=contract_name,
-                        function_name=function_name,
-                        pairIndex=function_params['pairIndex'],
-                        collateralAmount=function_params['collateralAmount'],
-                        leverage=function_params['leverage'],
-                        isLong=function_params['isLong'],
-                        **({k: v for k, v in function_params.items() if k not in ['pairIndex', 'collateralAmount', 'leverage', 'isLong']})
-                    )
+                    if inspect.iscoroutinefunction(trader_client.write_contract):
+                        tx_hash = await trader_client.write_contract(
+                            contract_name=contract_name,
+                            function_name=function_name,
+                            pairIndex=function_params['pairIndex'],
+                            collateralAmount=function_params['collateralAmount'],
+                            leverage=function_params['leverage'],
+                            isLong=function_params['isLong'],
+                            **({k: v for k, v in function_params.items() if k not in ['pairIndex', 'collateralAmount', 'leverage', 'isLong']})
+                        )
+                    else:
+                        tx_hash = trader_client.write_contract(
+                            contract_name=contract_name,
+                            function_name=function_name,
+                            pairIndex=function_params['pairIndex'],
+                            collateralAmount=function_params['collateralAmount'],
+                            leverage=function_params['leverage'],
+                            isLong=function_params['isLong'],
+                            **({k: v for k, v in function_params.items() if k not in ['pairIndex', 'collateralAmount', 'leverage', 'isLong']})
+                        )
                     
                     if tx_hash:
                         result = {
@@ -94,14 +110,33 @@ async def open_position_via_contract(
         if not result:
             # If contract methods don't work, try direct SDK method if available
             if hasattr(trader_client, 'open_position'):
-                result = await trader_client.open_position(
-                    pair_index=pair_index,
-                    collateral_amount=collateral_amount,
-                    leverage=leverage,
-                    is_long=is_long,
-                    take_profit=take_profit,
-                    stop_loss=stop_loss
-                )
+                try:
+                    # Check if it's async or sync
+                    if inspect.iscoroutinefunction(trader_client.open_position):
+                        result = await trader_client.open_position(
+                            pair_index=pair_index,
+                            collateral_amount=collateral_amount,
+                            leverage=leverage,
+                            is_long=is_long,
+                            take_profit=take_profit,
+                            stop_loss=stop_loss
+                        )
+                    else:
+                        # Synchronous method
+                        result = trader_client.open_position(
+                            pair_index=pair_index,
+                            collateral_amount=collateral_amount,
+                            leverage=leverage,
+                            is_long=is_long,
+                            take_profit=take_profit,
+                            stop_loss=stop_loss
+                        )
+                except Exception as sdk_error:
+                    logger.warning(f"SDK open_position method failed: {sdk_error}")
+                    raise ValueError(
+                        f"Could not open position: SDK method failed. "
+                        f"Last contract error: {last_error}, SDK error: {sdk_error}"
+                    )
             else:
                 raise ValueError(
                     f"Could not open position: No suitable contract method found. "
@@ -131,7 +166,11 @@ async def close_position_via_contract(
     """
     try:
         # Ensure contracts are loaded
-        await trader_client.load_contracts()
+        if hasattr(trader_client, 'load_contracts'):
+            if inspect.iscoroutinefunction(trader_client.load_contracts):
+                await trader_client.load_contracts()
+            else:
+                trader_client.load_contracts()
         
         # Try different contract function combinations
         contract_names = ['Trading', 'PerpetualTrading', 'AvantisTrading', 'TradingContract']
@@ -143,11 +182,18 @@ async def close_position_via_contract(
         for contract_name in contract_names:
             for function_name in function_names:
                 try:
-                    tx_hash = await trader_client.write_contract(
-                        contract_name=contract_name,
-                        function_name=function_name,
-                        pairIndex=pair_index
-                    )
+                    if inspect.iscoroutinefunction(trader_client.write_contract):
+                        tx_hash = await trader_client.write_contract(
+                            contract_name=contract_name,
+                            function_name=function_name,
+                            pairIndex=pair_index
+                        )
+                    else:
+                        tx_hash = trader_client.write_contract(
+                            contract_name=contract_name,
+                            function_name=function_name,
+                            pairIndex=pair_index
+                        )
                     
                     if tx_hash:
                         result = {
@@ -168,7 +214,19 @@ async def close_position_via_contract(
         if not result:
             # Try direct SDK method if available
             if hasattr(trader_client, 'close_position'):
-                result = await trader_client.close_position(pair_index=pair_index)
+                try:
+                    # Check if it's async or sync
+                    if inspect.iscoroutinefunction(trader_client.close_position):
+                        result = await trader_client.close_position(pair_index=pair_index)
+                    else:
+                        # Synchronous method
+                        result = trader_client.close_position(pair_index=pair_index)
+                except Exception as sdk_error:
+                    logger.warning(f"SDK close_position method failed: {sdk_error}")
+                    raise ValueError(
+                        f"Could not close position: SDK method failed. "
+                        f"Last contract error: {last_error}, SDK error: {sdk_error}"
+                    )
             else:
                 raise ValueError(
                     f"Could not close position: No suitable contract method found. "
@@ -249,7 +307,11 @@ async def get_positions_via_contract(
     """
     try:
         # Ensure contracts are loaded
-        await trader_client.load_contracts()
+        if hasattr(trader_client, 'load_contracts'):
+            if inspect.iscoroutinefunction(trader_client.load_contracts):
+                await trader_client.load_contracts()
+            else:
+                trader_client.load_contracts()
         
         # Get user address
         user_address = address
@@ -275,12 +337,20 @@ async def get_positions_via_contract(
             for function_name in function_names:
                 try:
                     # Read positions for the user address
-                    positions_data = await trader_client.read_contract(
-                        contract_name=contract_name,
-                        function_name=function_name,
-                        user=user_address,
-                        decode=True
-                    )
+                    if inspect.iscoroutinefunction(trader_client.read_contract):
+                        positions_data = await trader_client.read_contract(
+                            contract_name=contract_name,
+                            function_name=function_name,
+                            user=user_address,
+                            decode=True
+                        )
+                    else:
+                        positions_data = trader_client.read_contract(
+                            contract_name=contract_name,
+                            function_name=function_name,
+                            user=user_address,
+                            decode=True
+                        )
                     
                     if positions_data:
                         # Parse positions data
@@ -304,7 +374,16 @@ async def get_positions_via_contract(
         if positions is None:
             # Try direct SDK method if available
             if hasattr(trader_client, 'get_positions'):
-                positions = await trader_client.get_positions()
+                try:
+                    # Check if it's async or sync
+                    if inspect.iscoroutinefunction(trader_client.get_positions):
+                        positions = await trader_client.get_positions()
+                    else:
+                        # Synchronous method
+                        positions = trader_client.get_positions()
+                except Exception as sdk_error:
+                    logger.warning(f"SDK get_positions method failed: {sdk_error}")
+                    return []
             else:
                 logger.warning(f"Could not retrieve positions: No suitable contract method found. Last error: {last_error}")
                 return []
