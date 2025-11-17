@@ -81,7 +81,13 @@ export async function openAvantisPosition(params: OpenPositionParams): Promise<{
     console.log(`[AVANTIS] Transaction Hash: ${result.tx_hash}`);
     console.log(`[AVANTIS] Pair Index: ${result.pair_index}`);
     console.log(`[AVANTIS] Symbol: ${result.symbol || params.symbol}`);
-    console.log(`[AVANTIS] This position will appear in Avantis dashboard`);
+    console.log(`[AVANTIS] Direction: ${params.is_long ? 'LONG' : 'SHORT'}`);
+    console.log(`[AVANTIS] Collateral: $${params.collateral}`);
+    console.log(`[AVANTIS] Leverage: ${params.leverage}x`);
+    console.log(`[AVANTIS] ==========================================`);
+    console.log(`[AVANTIS] 📊 THIS POSITION IS NOW LIVE ON AVANTIS DASHBOARD`);
+    console.log(`[AVANTIS] 📊 Connect your backend wallet to avantisfi.com to see it`);
+    console.log(`[AVANTIS] 📊 The position will appear in your "Current Positions" section`);
     console.log(`[AVANTIS] ==========================================`);
     
     return {

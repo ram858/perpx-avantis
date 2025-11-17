@@ -21,9 +21,8 @@ export interface TradingConfig {
   lossThreshold?: number; // Loss threshold percentage (default 10%)
   userPhoneNumber?: string;
   walletAddress?: string;
-  userFid?: number; // Base Account FID
-  isBaseAccount?: boolean; // Flag indicating Base Account (no private key)
-  privateKey?: string; // Private key for traditional wallets (stored per-session, not globally)
+  userFid?: number; // User FID for identification
+  privateKey?: string; // Private key for trading wallet (stored per-session, not globally)
 }
 
 export interface SessionStatus {
@@ -43,8 +42,7 @@ export class TradingSessionManager {
     config: TradingConfig;
     status: SessionStatus;
     subscribers: Set<WebSocket>;
-    walletAddress?: string; // Store wallet address for Base Account queries
-    isBaseAccount?: boolean; // Flag for Base Account sessions
+    walletAddress?: string; // Store wallet address for queries
   }> = new Map();
 
   constructor() {
@@ -74,19 +72,13 @@ export class TradingSessionManager {
         config
       },
       subscribers: new Set<WebSocket>(),
-      walletAddress: config.walletAddress, // Store for Base Account queries
-      isBaseAccount: config.isBaseAccount || false // Store Base Account flag
+      walletAddress: config.walletAddress, // Store wallet address for queries
     };
 
     this.sessions.set(sessionId, session);
     
     console.log(`[SESSION_MANAGER] Starting session ${sessionId} with config:`, config);
-    
-    // Log Base Account session info
-    if (config.isBaseAccount) {
-      console.log(`[SESSION_MANAGER] Base Account session ${sessionId} with address ${config.walletAddress}`);
-      console.log(`[SESSION_MANAGER] Note: Automated trading disabled - transactions must be signed via Base Account SDK`);
-    }
+    console.log(`[SESSION_MANAGER] Trading session ${sessionId} with wallet ${config.walletAddress}`);
 
     // Start monitoring the session immediately
     this.startSessionMonitoring(sessionId);
@@ -108,13 +100,7 @@ export class TradingSessionManager {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    // For Base Account sessions, query Avantis API instead of bot status
-    if (session.isBaseAccount && session.walletAddress) {
-      this.monitorBaseAccountSession(sessionId, session.walletAddress);
-      return;
-    }
-
-    // For traditional wallet sessions, monitor bot status
+    // Monitor bot status for trading wallet sessions
     const monitorInterval = setInterval(() => {
       const botStatus = this.tradingBot.getStatus();
       const session = this.sessions.get(sessionId);
@@ -144,70 +130,6 @@ export class TradingSessionManager {
         }, 30000);
       }
     }, 5000); // Check every 5 seconds (reduced from 1 second for performance)
-  }
-
-  private monitorBaseAccountSession(sessionId: string, walletAddress: string) {
-    const avantisApiUrl = process.env.AVANTIS_API_URL || 'http://localhost:8000';
-    let lastUpdate = Date.now();
-    
-    // Update every 10 seconds for Base Account sessions (less frequent for performance)
-    const monitorInterval = setInterval(async () => {
-      const session = this.sessions.get(sessionId);
-      if (!session) {
-        clearInterval(monitorInterval);
-        return;
-      }
-
-      try {
-        // Fetch positions and PnL from Avantis service
-        const [positionsResponse, pnlResponse] = await Promise.all([
-          fetch(`${avantisApiUrl}/api/positions?address=${walletAddress}`).catch(() => null),
-          fetch(`${avantisApiUrl}/api/total-pnl?address=${walletAddress}`).catch(() => null),
-        ]);
-
-        let pnl = 0;
-        let openPositions = 0;
-
-        if (positionsResponse?.ok) {
-          const positionsData = await positionsResponse.json() as {
-            count?: number;
-            positions?: Array<unknown>;
-          };
-          if (typeof positionsData.count === 'number') {
-            openPositions = positionsData.count;
-          } else if (Array.isArray(positionsData.positions)) {
-            openPositions = positionsData.positions.length;
-          }
-        }
-
-        if (pnlResponse?.ok) {
-          const pnlData = await pnlResponse.json() as { total_pnl?: number };
-          if (typeof pnlData.total_pnl === 'number') {
-            pnl = pnlData.total_pnl;
-          }
-        }
-
-        // Update session status
-        session.status = {
-          ...session.status,
-          pnl,
-          openPositions,
-          lastUpdate: new Date()
-        };
-
-        this.broadcastUpdate(sessionId);
-        lastUpdate = Date.now();
-      } catch (error) {
-        console.error(`[SESSION_MANAGER] Error monitoring Base Account session ${sessionId}:`, error);
-        // Don't clear interval on error, just log it
-      }
-    }, 10000); // Update every 10 seconds for Base Accounts
-
-    // Store interval ID for cleanup
-    const currentSession = this.sessions.get(sessionId);
-    if (currentSession) {
-      (currentSession as any).monitorInterval = monitorInterval;
-    }
   }
 
 
@@ -273,19 +195,11 @@ export class TradingSessionManager {
   }
 
   /**
-   * Get wallet address for a session (for Base Account queries)
+   * Get wallet address for a session
    */
   getSessionWalletAddress(sessionId: string): string | undefined {
     const session = this.sessions.get(sessionId);
     return session?.walletAddress || session?.config.walletAddress;
-  }
-
-  /**
-   * Check if a session is using Base Account
-   */
-  isSessionBaseAccount(sessionId: string): boolean {
-    const session = this.sessions.get(sessionId);
-    return session?.isBaseAccount || false;
   }
 
   getSessionStatus(sessionId: string): SessionStatus | null {
@@ -307,10 +221,8 @@ export class TradingSessionManager {
         clearInterval((session as any).monitorInterval);
       }
       
-      // Stop bot only for non-Base Account sessions
-      if (!session.isBaseAccount) {
-        this.tradingBot.stopTrading();
-      }
+      // Stop trading bot
+      this.tradingBot.stopTrading();
       
       this.updateSessionStatus(sessionId, { status: 'stopped', lastUpdate: new Date() });
       return true;

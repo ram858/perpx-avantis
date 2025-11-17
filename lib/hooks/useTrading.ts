@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { useAuth } from '../auth/AuthContext';
+import { useUILogger } from './useUILogger';
 
 export interface TradingConfig {
   totalBudget: number;
@@ -35,6 +36,7 @@ export interface TradingPosition {
 
 export function useTrading() {
   const { token } = useAuth();
+  const { addLog } = useUILogger();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -114,17 +116,26 @@ export function useTrading() {
   const startTrading = useCallback(async (config: TradingConfig): Promise<TradingSession> => {
     setIsLoading(true);
     setError(null);
+    
+    addLog('info', 'Starting trading session...', config);
 
     try {
+      addLog('info', 'Calling /api/trading/start endpoint...');
       const result = await makeRequest('/api/trading/start', {
         method: 'POST',
         body: JSON.stringify(config),
       });
 
+      addLog('info', 'Trading API response received', { hasSessionId: !!result.sessionId });
+
       // Check if we have a sessionId (successful response)
       if (!result.sessionId) {
-        throw new Error(result.error || 'Failed to start trading');
+        const errorMsg = result.error || 'Failed to start trading';
+        addLog('error', 'Trading start failed - no session ID', { error: errorMsg, result });
+        throw new Error(errorMsg);
       }
+
+      addLog('success', `Trading session started successfully: ${result.sessionId.slice(0, 8)}...`);
 
       // Return a basic session object
       return {
@@ -137,12 +148,17 @@ export function useTrading() {
       };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to start trading';
+      addLog('error', 'Trading start error', { 
+        error: errorMessage,
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined
+      });
       setError(errorMessage);
       throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }
-  }, [makeRequest]);
+  }, [makeRequest, addLog]);
 
   const stopTrading = useCallback(async (sessionId: string): Promise<void> => {
     setIsLoading(true);

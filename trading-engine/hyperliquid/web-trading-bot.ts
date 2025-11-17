@@ -75,9 +75,12 @@ export class WebTradingBot {
     // Log trading platform
     if (config.privateKey) {
       log('AVANTIS', `✅ Trading on AVANTIS platform with private key: ${config.privateKey.slice(0, 10)}...${config.privateKey.slice(-4)}`);
-      log('AVANTIS', `Positions will be opened on real Avantis dashboard`);
+      log('AVANTIS', `✅ Positions will be opened on REAL Avantis dashboard`);
+      log('AVANTIS', `✅ Make sure your backend wallet is connected to Avantis dashboard to see positions`);
+      log('AVANTIS', `✅ All positions opened will appear in your Avantis dashboard in real-time`);
     } else {
       log('WARN', `⚠️ No private key provided - using Hyperliquid fallback (testing mode)`);
+      log('ERROR', `❌ Cannot open positions on Avantis without private key!`);
     }
 
     try {
@@ -130,7 +133,13 @@ export class WebTradingBot {
     if (this.config.privateKey) {
       try {
         const avantisPositions = await getAvantisPositions(this.config.privateKey);
-        log('WEB_BOT', `Initial Avantis positions: ${avantisPositions.length}`);
+        log('AVANTIS', `📊 Found ${avantisPositions.length} existing position(s) on Avantis dashboard`);
+        if (avantisPositions.length > 0) {
+          log('AVANTIS', `📊 These positions are visible in your Avantis dashboard`);
+          avantisPositions.forEach((pos, idx) => {
+            log('AVANTIS', `   Position ${idx + 1}: ${pos.symbol} ${pos.is_long ? 'LONG' : 'SHORT'} | PnL: $${pos.pnl.toFixed(2)}`);
+          });
+        }
         initialPositions = avantisPositions;
       } catch (err) {
         log('WARN', `Failed to get Avantis positions, falling back to Hyperliquid: ${err}`);
@@ -294,7 +303,12 @@ export class WebTradingBot {
                     log('AVANTIS', `   Symbol: ${symbol} | Direction: ${isLong ? 'LONG' : 'SHORT'}`);
                     log('AVANTIS', `   Transaction: ${avantisResult.tx_hash?.slice(0, 16)}...`);
                     log('AVANTIS', `   Pair Index: ${avantisResult.pair_index}`);
-                    log('AVANTIS', `   This position will appear in your Avantis dashboard when connected with MetaMask`);
+                    log('AVANTIS', `   Collateral: $${perPositionBudget.toFixed(2)} | Leverage: ${leverage}x`);
+                    log('AVANTIS', `   ==========================================`);
+                    log('AVANTIS', `   📊 POSITION IS NOW LIVE ON AVANTIS DASHBOARD`);
+                    log('AVANTIS', `   📊 Visit avantisfi.com and connect your backend wallet`);
+                    log('AVANTIS', `   📊 The position will appear in "Current Positions" section`);
+                    log('AVANTIS', `   ==========================================`);
                     return { 
                       symbol, 
                       result: { 

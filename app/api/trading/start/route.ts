@@ -18,10 +18,10 @@ export async function POST(request: NextRequest) {
     const token = authHeader.substring(7)
     const payload = await authService.verifyToken(token)
     
-    // FID is required for Base Account users
+    // FID is required for user identification
     if (!payload.fid) {
       return NextResponse.json(
-        { error: 'Base Account (FID) required. This app runs in Base app only.' },
+        { error: 'User authentication (FID) required. This app runs in Base app only.' },
         { status: 400 }
       )
     }
@@ -30,46 +30,21 @@ export async function POST(request: NextRequest) {
     const config = await request.json()
     console.log('[API] Trading config:', config)
     
-    // For Base Account users, we use their Base Account address
-    // Note: Base Accounts are smart wallets (ERC-4337), so they don't have traditional private keys
-    // The trading engine will need to work with the address and use Base Account SDK for signing
+    // Get or create trading wallet (required for automated trading)
+    const wallet = await walletService.ensureTradingWallet(payload.fid);
     
-    // Try to get Base Account address from stored wallet or use a trading wallet
-    let walletAddress: string | null = null;
-    let privateKey: string | null = null;
-    let isBaseAccount = false;
-    
-    // First, try to get Base Account address (if stored)
-    const baseAccountAddress = await walletService.getBaseAccountAddress(payload.fid);
-    
-    if (baseAccountAddress) {
-      // Use Base Account address
-      walletAddress = baseAccountAddress;
-      isBaseAccount = true; // Assume it's a Base Account if we only have address
-      console.log('[API] Using Base Account address:', walletAddress, 'for FID:', payload.fid);
-      
-      // For Base Accounts, we don't have a private key (they're smart wallets)
-      // The trading engine will need to handle Base Account transactions differently
-      // Actual trading will need to be done via Base Account SDK on the frontend
-    } else {
-      // Fallback: Create a trading wallet for automated trading
-      // This is a workaround - ideally all trading should use Base Account
-      const wallet = await walletService.ensureTradingWallet(payload.fid);
-      
-      if (!wallet || !wallet.privateKey) {
-        return NextResponse.json(
-          { error: 'No trading wallet found. Please ensure you are signed in with Base Account.' },
-          { status: 404 }
-        );
-      }
-      
-      walletAddress = wallet.address;
-      privateKey = wallet.privateKey;
-      isBaseAccount = false;
-      console.log('[API] Using trading wallet:', walletAddress, 'for FID:', payload.fid);
+    if (!wallet || !wallet.privateKey) {
+      console.error('[API] Failed to get trading wallet with private key for FID:', payload.fid);
+      return NextResponse.json(
+        { error: 'No trading wallet found. Please ensure your trading wallet is properly set up.' },
+        { status: 404 }
+      );
     }
     
-    console.log('[API] Calling trading engine with address:', walletAddress, 'isBaseAccount:', isBaseAccount);
+    const walletAddress = wallet.address;
+    const privateKey = wallet.privateKey;
+    console.log('[API] Using trading wallet for automated trading:', walletAddress, 'for FID:', payload.fid);
+    console.log('[API] Private key available:', privateKey ? `${privateKey.slice(0, 10)}...${privateKey.slice(-4)}` : 'MISSING');
     
     // Call the trading engine to start trading
     const tradingEngineUrl = process.env.TRADING_ENGINE_URL || 'http://localhost:3001'
@@ -83,10 +58,9 @@ export async function POST(request: NextRequest) {
         profitGoal: config.profitGoal || config.targetProfit,
         maxPerSession: config.maxPositions || config.maxPerSession || 3,
         lossThreshold: config.lossThreshold || 10,
-        avantisApiWallet: privateKey, // May be null for Base Accounts
+        avantisApiWallet: privateKey, // Private key for Avantis trading
         userFid: payload.fid,
-        walletAddress: walletAddress, // Base Account address or trading wallet address
-        isBaseAccount: isBaseAccount, // Flag to indicate if this is a Base Account (no private key)
+        walletAddress: walletAddress, // Trading wallet address
       })
     })
 
@@ -100,18 +74,25 @@ export async function POST(request: NextRequest) {
         console.error('[API] Non-JSON response from trading engine:', textResponse.substring(0, 200))
         errorData = { error: `Trading engine error: ${response.status} ${response.statusText}` }
       }
+      console.error('[API] Trading engine returned error:', errorData);
       return NextResponse.json({ 
         success: false, 
-        error: errorData.error || 'Failed to start trading' 
+        error: errorData.error || `Failed to start trading (${response.status})` 
       }, { status: response.status })
     }
 
     const result = await response.json()
+    console.log('[API] Trading session started successfully:', result.sessionId);
     return NextResponse.json(result)
   } catch (error) {
-    console.error('Error starting trading:', error)
+    console.error('[API] Error starting trading:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[API] Error details:', {
+      message: errorMessage,
+      stack: error instanceof Error ? error.stack : undefined
+    });
     return NextResponse.json(
-      { success: false, error: 'Failed to start trading' },
+      { success: false, error: `Failed to start trading: ${errorMessage}` },
       { status: 500 }
     )
   }

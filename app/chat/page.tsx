@@ -156,7 +156,7 @@ export default function ChatPage() {
         const progressMessageId = Date.now().toString();
         setMessages([{
           type: "bot",
-          content: `💰 **Starting REAL TRADING**\n\n📊 Investment: $${investmentNum}\n🎯 Target Profit: $${profitNum}\n\n⏳ **Initializing...**\n\n🔄 Step 1: Preparing fee payment...`,
+          content: `💰 **Starting REAL TRADING**\n\n📊 Investment: $${investmentNum}\n🎯 Target Profit: $${profitNum}\n\n⏳ **Initializing...**\n\n🔄 Starting trading session...`,
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         }])
         
@@ -172,17 +172,12 @@ export default function ChatPage() {
             if (lastMessage && lastMessage.type === "bot") {
               let content = lastMessage.content;
               
-              // Update the relevant step
-              if (step === 'fee') {
-                content = content.replace(/🔄 Step 1:.*/, `✅ Step 1: ${message}`);
-                content += `\n🔄 Step 2: Starting session...`;
-              } else if (step === 'balance') {
-                content = content.replace(/🔄 Step 2:.*/, `✅ Step 2: ${message}`);
-              } else if (step === 'session') {
-                content = content.replace(/🔄 Step 2:.*/, `✅ Step 2: ${message}`);
-                content += `\n\n🚀 **Trading session is now active!**\n\n📈 Monitoring markets and executing trades...`;
+              // Update the relevant step (fee step is skipped now)
+              if (step === 'session') {
+                content = content.replace(/🔄 Starting trading session\.\.\./, `✅ ${message}`);
+                content += `\n\n🚀 **Trading session is now active!**\n\n📈 Monitoring markets and executing trades on Avantis...`;
               } else if (step === 'complete') {
-                content = content.replace(/🔄 Step.*/, '');
+                content = content.replace(/🔄.*/, '');
                 content += `\n\n${message}`;
               }
               
@@ -193,15 +188,17 @@ export default function ChatPage() {
         }).then(() => {
           setMessages(prev => [...prev, {
             type: "bot",
-            content: `✅ **Trading session started successfully!**\n\n📊 The bot is now actively monitoring markets and will open positions when profitable opportunities are detected.\n\n💡 You can monitor your positions and PnL in real-time above.`,
+            content: `✅ **Trading session started successfully!**\n\n📊 The bot is now actively monitoring markets and will open positions on Avantis when profitable opportunities are detected.\n\n💡 Positions will appear in your Avantis dashboard when opened.\n\n💡 You can monitor your positions and PnL in real-time above.`,
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           }])
         }).catch(error => {
+          console.error('[ChatPage] Trading start error:', error);
+          const errorMessage = error instanceof Error ? error.message : String(error);
           setMessages(prev => [...prev, {
             type: "bot",
-            content: `❌ **Failed to start trading**\n\n${error.message}\n\n${error.message.includes('Network') || error.message.includes('timeout') || error.message.includes('Failed to fetch') 
+            content: `❌ **Failed to start trading**\n\n${errorMessage}\n\n${errorMessage.includes('Network') || errorMessage.includes('timeout') || errorMessage.includes('Failed to fetch') 
               ? 'This appears to be a network issue. Please check your internet connection and try again.' 
-              : error.message.includes('already known') || error.message.includes('nonce')
+              : errorMessage.includes('already known') || errorMessage.includes('nonce')
               ? 'Transaction error detected. Please wait a moment and try again.'
               : 'Please check your balance and try again.'}`,
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),

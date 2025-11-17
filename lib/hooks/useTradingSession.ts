@@ -138,7 +138,7 @@ export function useTradingSession() {
 
       // Step 3: Start trading session (this should return quickly)
       onProgress?.('session', 'Starting trading session...');
-      const session = await startTradingAPI({
+      console.log('[useTradingSession] Starting trading session with config:', {
         totalBudget: config.maxBudget || config.investmentAmount || 50,
         profitGoal: config.profitGoal || config.targetProfit || 10,
         maxPositions: config.maxPerSession || 3,
@@ -146,30 +146,45 @@ export function useTradingSession() {
         lossThreshold: config.lossThreshold || 10
       });
       
-      onProgress?.('session', `✅ Session started: ${session.id.slice(0, 8)}...`);
-
-      // Create session state
-      const sessionState: TradingSessionState = {
-        id: session.id,
-        sessionId: session.id,
-        status: session.status,
-        startTime: session.startTime,
-        totalPnL: session.totalPnL,
-        positions: session.positions || 0,
-        cycle: 0,
-        openPositions: 0,
-        pnl: session.totalPnL,
-        config: {
-          profitGoal: config.profitGoal || config.targetProfit || 10,
-          maxBudget: config.maxBudget || config.investmentAmount || 50,
-          maxPerSession: config.maxPerSession || 5,
+      try {
+        const session = await startTradingAPI({
           totalBudget: config.maxBudget || config.investmentAmount || 50,
-        }
-      };
+          profitGoal: config.profitGoal || config.targetProfit || 10,
+          maxPositions: config.maxPerSession || 3,
+          leverage: config.leverage || 1,
+          lossThreshold: config.lossThreshold || 10
+        });
+        
+        console.log('[useTradingSession] Session started successfully:', session.id);
+          onProgress?.('session', `✅ Session started: ${session.id.slice(0, 8)}...`);
 
-      setTradingSession(sessionState);
-      onProgress?.('complete', '✅ Trading session ready!');
-      return session.id;
+        // Create session state
+        const sessionState: TradingSessionState = {
+          id: session.id,
+          sessionId: session.id,
+          status: session.status,
+          startTime: session.startTime,
+          totalPnL: session.totalPnL,
+          positions: session.positions || 0,
+          cycle: 0,
+          openPositions: 0,
+          pnl: session.totalPnL,
+          config: {
+            profitGoal: config.profitGoal || config.targetProfit || 10,
+            maxBudget: config.maxBudget || config.investmentAmount || 50,
+            maxPerSession: config.maxPerSession || 5,
+            totalBudget: config.maxBudget || config.investmentAmount || 50,
+          }
+        };
+
+        setTradingSession(sessionState);
+        onProgress?.('complete', '✅ Trading session ready!');
+        console.log('[useTradingSession] Trading session ready, positions will open on Avantis');
+        return session.id;
+      } catch (sessionError) {
+        console.error('[useTradingSession] Error starting session:', sessionError);
+        throw sessionError;
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to start trading';
       setError(errorMessage);

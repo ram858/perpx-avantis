@@ -35,11 +35,10 @@ app.post('/api/trading/start', async (req, res) => {
       maxPerSession,
       lossThreshold = 10, // Default 10% loss threshold
       hyperliquidApiWallet, 
-      avantisApiWallet, // Avantis private key (same as hyperliquidApiWallet for Avantis trading)
+      avantisApiWallet, // Avantis private key (required for automated trading)
       userPhoneNumber, 
-      userFid, // FID for Base Account users
+      userFid, // FID for user identification
       walletAddress,
-      isBaseAccount = true // Flag for Base Account sessions
     } = req.body;
 
     // Validate input
@@ -49,28 +48,16 @@ app.post('/api/trading/start', async (req, res) => {
       });
     }
 
-    // For Base Account sessions, walletAddress is required but no private key
-    if (isBaseAccount) {
-      if (!walletAddress) {
-        return res.status(400).json({ 
-          error: 'walletAddress is required for Base Account sessions' 
-        });
-      }
-      console.log(`[API] Starting Base Account session for wallet ${walletAddress}`);
-    } else {
-      // For traditional wallets, both private key and wallet address are required
-      // Prioritize avantisApiWallet (for Avantis trading), fallback to hyperliquidApiWallet
-      const privateKey = avantisApiWallet || hyperliquidApiWallet;
-      if (!privateKey || !walletAddress) {
-        return res.status(400).json({ 
-          error: 'Missing wallet data: avantisApiWallet (or hyperliquidApiWallet) and walletAddress are required for traditional wallets' 
-        });
-      }
-      // Store private key in session config - DO NOT set global env vars (multi-user issue)
-      // The private key will be passed to Avantis service per-request
-      console.log(`[API] Starting trading session for user ${userPhoneNumber || userFid || 'unknown'} with wallet ${walletAddress}`);
-      console.log(`[API] Private key will be passed to Avantis service per-request (not stored globally)`);
+    // Private key and wallet address are required for automated trading
+    const privateKey = avantisApiWallet || hyperliquidApiWallet;
+    if (!privateKey || !walletAddress) {
+      return res.status(400).json({ 
+        error: 'Missing required wallet data: avantisApiWallet (or hyperliquidApiWallet) and walletAddress are required' 
+      });
     }
+
+    console.log(`[API] Starting trading session for user ${userPhoneNumber || userFid || 'unknown'} with wallet ${walletAddress}`);
+    console.log(`[API] Private key will be passed to Avantis service per-request (not stored globally)`);
 
     if (maxBudget < 10 || maxBudget > 10000000) {
       return res.status(400).json({ 
@@ -95,27 +82,23 @@ app.post('/api/trading/start', async (req, res) => {
         error: 'lossThreshold must be between 1% and 50%' 
       });
     }
-
-    // Store private key in session config (not in global env)
-    const privateKey = avantisApiWallet || hyperliquidApiWallet;
     
     const sessionId = await sessionManager.startSession({
       maxBudget: parseFloat(maxBudget),
       profitGoal: parseFloat(profitGoal),
       maxPerSession: parseInt(maxPerSession),
       lossThreshold: parseFloat(lossThreshold),
-      userPhoneNumber: userPhoneNumber || undefined, // Optional for Base Accounts
+      userPhoneNumber: userPhoneNumber || undefined,
       walletAddress,
-      isBaseAccount: Boolean(isBaseAccount),
-      privateKey: !isBaseAccount ? privateKey : undefined // Store private key per-session
+      privateKey: privateKey // Store private key per-session for Avantis trading
     });
 
-    console.log(`[API] Started trading session ${sessionId} for ${isBaseAccount ? 'Base Account' : 'traditional wallet'}`);
+    console.log(`[API] Started trading session ${sessionId} for wallet ${walletAddress}`);
     res.json({ 
       sessionId, 
       status: 'started',
       config: { maxBudget, profitGoal, maxPerSession, lossThreshold },
-      user: { phoneNumber: userPhoneNumber, walletAddress, isBaseAccount }
+      user: { phoneNumber: userPhoneNumber, walletAddress }
     });
   } catch (error) {
     console.error('[API] Error starting trading session:', error);

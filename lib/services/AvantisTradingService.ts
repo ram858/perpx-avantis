@@ -12,7 +12,7 @@ export interface TradingConfig {
 export interface TradingSession {
   id: string;
   userId: string;
-  fid: number; // Farcaster ID for Base Account users
+  fid: number; // Farcaster ID for user identification
   config: TradingConfig;
   status: 'running' | 'completed' | 'stopped' | 'error';
   startTime: Date;
@@ -57,35 +57,18 @@ export class AvantisTradingService {
       'http://localhost:3001';
   }
 
-  async startTradingSession(fid: number, config: TradingConfig, useBaseAccount: boolean = false): Promise<TradingResult> {
+  async startTradingSession(fid: number, config: TradingConfig): Promise<TradingResult> {
     
     try {
-      let userWallet: BaseAccountWallet | null = null;
-      let isBaseAccount = false;
-
-      if (useBaseAccount) {
-        // For Base Accounts, get the Base Account address (no private key)
-        userWallet = await this.walletService.getOrCreateWallet(fid, 'ethereum');
-        isBaseAccount = !userWallet?.privateKey || userWallet.privateKey.length === 0;
-        
-        if (!userWallet || !userWallet.address) {
-          console.error(`[AvantisTradingService] No Base Account address found for FID ${fid}`);
-          return {
-            success: false,
-            message: 'No Base Account address found. Please authenticate with Base Account first.'
-          };
-        }
-      } else {
-        // For traditional wallets or fallback wallets, get wallet with private key
-        userWallet = await this.walletService.getWalletWithKey(fid, 'ethereum');
-        
-        if (!userWallet || !userWallet.privateKey) {
-          console.error(`[AvantisTradingService] No trading wallet found for FID ${fid}`);
-          return {
-            success: false,
-            message: 'No trading wallet found. Please create a fallback trading wallet for automated trading, or use Base Account for manual transactions.'
-          };
-        }
+      // Get trading wallet with private key (required for automated trading)
+      const userWallet = await this.walletService.getWalletWithKey(fid, 'ethereum');
+      
+      if (!userWallet || !userWallet.privateKey) {
+        console.error(`[AvantisTradingService] No trading wallet found for FID ${fid}`);
+        return {
+          success: false,
+          message: 'No trading wallet found. Please ensure your trading wallet is properly set up.'
+        };
       }
 
       // Private key is already decrypted from storage
@@ -98,13 +81,8 @@ export class AvantisTradingService {
         maxPerSession: config.maxPositions,
         userFid: fid,
         walletAddress: userWallet.address,
-        isBaseAccount: isBaseAccount,
+        avantisApiWallet: privateKey, // Private key for Avantis trading
       };
-
-      // Only include private key if not a Base Account
-      if (!isBaseAccount && userWallet.privateKey) {
-        tradingEngineConfig.avantisApiWallet = userWallet.privateKey;
-      }
 
       // Start trading session via trading engine API with timeout and retry logic
       let lastError: Error | null = null;
