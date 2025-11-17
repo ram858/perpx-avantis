@@ -14,6 +14,7 @@ import {
   account,
   priceFeeds
 } from './hyperliquid';
+import { openAvantisPosition, getAvantisPositions } from '../avantis-trading';
 
 import { checkAndCloseForTP } from './tpsl';
 import { guessMarketRegime } from './regime';
@@ -22,6 +23,7 @@ import { getBudgetAndLeverage, validateAndCapBudget } from './BudgetAndLeverage'
 import { winRateTracker } from './winRateTracker';
 import { getAIPOS } from './aiStorage';
 import { recordLiquidatedTrades, recordExistingPositionsAsTrades } from './hyperliquid';
+import { evaluateSignalOnly } from './strategyEngine';
 
 const MAX_CYCLES = 10000;
 
@@ -39,6 +41,7 @@ export interface TradingConfig {
   profitGoal: number;
   maxPerSession: number;
   sessionId: string;
+  privateKey?: string; // Private key for Avantis trading
 }
 
 export interface TradingResult {
@@ -68,6 +71,14 @@ export class WebTradingBot {
 
     log('WEB_BOT', `Starting trading session ${this.sessionId}`);
     log('WEB_BOT', `Config: Budget=$${config.maxBudget}, Goal=$${config.profitGoal}, MaxPos=${config.maxPerSession}`);
+    
+    // Log trading platform
+    if (config.privateKey) {
+      log('AVANTIS', `✅ Trading on AVANTIS platform with private key: ${config.privateKey.slice(0, 10)}...${config.privateKey.slice(-4)}`);
+      log('AVANTIS', `Positions will be opened on real Avantis dashboard`);
+    } else {
+      log('WARN', `⚠️ No private key provided - using Hyperliquid fallback (testing mode)`);
+    }
 
     try {
       // Initialize blockchain connection (non-blocking for faster startup)
@@ -114,8 +125,20 @@ export class WebTradingBot {
     const validatedBudget = await validateAndCapBudget(maxBudget, maxPerSession);
     log('WEB_BOT', `Validated budget: $${validatedBudget}`);
 
-    // Get initial positions and record them
-    const initialPositions = await getPositions();
+    // Get initial positions - try Avantis first if private key available
+    let initialPositions: any[] = [];
+    if (this.config.privateKey) {
+      try {
+        const avantisPositions = await getAvantisPositions(this.config.privateKey);
+        log('WEB_BOT', `Initial Avantis positions: ${avantisPositions.length}`);
+        initialPositions = avantisPositions;
+      } catch (err) {
+        log('WARN', `Failed to get Avantis positions, falling back to Hyperliquid: ${err}`);
+        initialPositions = await getPositions();
+      }
+    } else {
+      initialPositions = await getPositions();
+    }
     log('WEB_BOT', `Initial positions: ${initialPositions.length}`);
 
     // Main trading loop
@@ -129,8 +152,19 @@ export class WebTradingBot {
           return { shouldRestart: false, reason: 'user_stopped', pnl: 0, finalStatus: 'stopped' };
         }
 
-        // Get current PnL
-        const totalPnL = await getTotalPnL();
+        // Get current PnL - try Avantis first if private key available
+        let totalPnL = 0;
+        if (this.config.privateKey) {
+          try {
+            const avantisPositions = await getAvantisPositions(this.config.privateKey);
+            totalPnL = avantisPositions.reduce((sum, pos) => sum + (pos.pnl || 0), 0);
+          } catch (err) {
+            log('WARN', `Failed to get Avantis PnL, falling back to Hyperliquid: ${err}`);
+            totalPnL = await getTotalPnL();
+          }
+        } else {
+          totalPnL = await getTotalPnL();
+        }
         this.pnl = totalPnL;
         this.cycle = sessionCount;
         log('WEB_BOT', `Cycle ${sessionCount}: Total PnL: $${totalPnL.toFixed(2)}`);
@@ -149,8 +183,18 @@ export class WebTradingBot {
           return { shouldRestart: false, reason: 'stop_loss_triggered', pnl: totalPnL, finalStatus: 'completed' };
         }
 
-        // Get current positions
-        const positions = await getPositions();
+        // Get current positions - try Avantis first if private key available
+        let positions: any[] = [];
+        if (this.config.privateKey) {
+          try {
+            positions = await getAvantisPositions(this.config.privateKey);
+          } catch (err) {
+            log('WARN', `Failed to get Avantis positions, falling back to Hyperliquid: ${err}`);
+            positions = await getPositions();
+          }
+        } else {
+          positions = await getPositions();
+        }
         this.openPositions = positions.length;
         log('WEB_BOT', `Open positions: ${positions.length}`);
 
@@ -200,15 +244,103 @@ export class WebTradingBot {
 
               log('WEB_BOT', `Evaluating ${symbol} | Budget=$${perPositionBudget.toFixed(2)} | Leverage=${leverage}x`);
 
-              // Run signal check and potentially open new positions
-              const result = await runSignalCheckAndOpen({
-                symbol,
-                perPositionBudget,
+              // First, evaluate signal to get direction (but don't execute on Hyperliquid)
+              // We'll use the signal logic but execute on Avantis instead
+              const ohlcv4h = await getCachedOHLCV(symbol, "4h", 300).catch(() => null);
+              const ohlcv6h = await getCachedOHLCV(symbol, "6h", 300).catch(() => null);
+              
+              if (!ohlcv4h || !ohlcv6h || ohlcv4h.close.length < 10 || ohlcv6h.close.length < 10) {
+                return null;
+              }
+
+              // Evaluate signal to get direction
+              const signalResult = await evaluateSignalOnly(symbol, ohlcv4h, {
+                regimeOverride: marketRegime as any,
                 leverage,
-                regimeOverride: marketRegime
+                bypassBacktestCheck: true
               });
 
-              return { symbol, result };
+              const { direction, signalScore, passed, reason: signalReason } = signalResult;
+
+              if (!direction || !passed) {
+                return { 
+                  symbol, 
+                  result: { 
+                    positionOpened: false, 
+                    marketRegime, 
+                    reason: signalReason || "signal_not_passed", 
+                    signalScore 
+                  } 
+                };
+              }
+
+              // If we have a private key, open position on Avantis (real trading)
+              if (this.config.privateKey) {
+                try {
+                  const isLong = direction === "long";
+                  log('AVANTIS', `🚀 Opening ${symbol} ${isLong ? 'LONG' : 'SHORT'} on REAL AVANTIS PLATFORM...`);
+                  log('AVANTIS', `   Collateral: $${perPositionBudget.toFixed(2)} | Leverage: ${leverage}x`);
+                  
+                  const avantisResult = await openAvantisPosition({
+                    symbol,
+                    collateral: perPositionBudget,
+                    leverage,
+                    is_long: isLong,
+                    private_key: this.config.privateKey
+                  });
+
+                  if (avantisResult.success) {
+                    log('AVANTIS', `✅✅✅ Position SUCCESSFULLY opened on Avantis Dashboard!`);
+                    log('AVANTIS', `   Symbol: ${symbol} | Direction: ${isLong ? 'LONG' : 'SHORT'}`);
+                    log('AVANTIS', `   Transaction: ${avantisResult.tx_hash?.slice(0, 16)}...`);
+                    log('AVANTIS', `   Pair Index: ${avantisResult.pair_index}`);
+                    log('AVANTIS', `   This position will appear in your Avantis dashboard when connected with MetaMask`);
+                    return { 
+                      symbol, 
+                      result: { 
+                        positionOpened: true, 
+                        marketRegime, 
+                        reason: "executed_on_avantis", 
+                        signalScore,
+                        avantisTxHash: avantisResult.tx_hash,
+                        avantisPairIndex: avantisResult.pair_index
+                      } 
+                    };
+                  } else {
+                    log('AVANTIS', `❌ Failed to open position on Avantis: ${avantisResult.error}`);
+                    return { 
+                      symbol, 
+                      result: { 
+                        positionOpened: false, 
+                        marketRegime, 
+                        reason: `avantis_error: ${avantisResult.error}`, 
+                        signalScore 
+                      } 
+                    };
+                  }
+                } catch (avantisError) {
+                  log('AVANTIS', `❌ Exception opening position on Avantis: ${avantisError}`);
+                  return { 
+                    symbol, 
+                    result: { 
+                      positionOpened: false, 
+                      marketRegime, 
+                      reason: `avantis_exception: ${avantisError}`, 
+                      signalScore 
+                    } 
+                  };
+                }
+              } else {
+                // No private key - fallback to Hyperliquid (for testing/development)
+                log('WARN', `⚠️ No private key available - using Hyperliquid fallback for ${symbol} (positions won't appear on Avantis)`);
+                const result = await runSignalCheckAndOpen({
+                  symbol,
+                  perPositionBudget,
+                  leverage,
+                  regimeOverride: marketRegime
+                });
+                return { symbol, result };
+              }
             } catch (error) {
               log('WEB_BOT', `Error evaluating ${symbol}: ${error instanceof Error ? error.message : String(error)}`);
               return null;
@@ -250,7 +382,18 @@ export class WebTradingBot {
     }
 
     // If we reach here, the session completed normally
-    const finalPnL = await getTotalPnL();
+    let finalPnL = 0;
+    if (this.config.privateKey) {
+      try {
+        const avantisPositions = await getAvantisPositions(this.config.privateKey);
+        finalPnL = avantisPositions.reduce((sum, pos) => sum + (pos.pnl || 0), 0);
+      } catch (err) {
+        log('WARN', `Failed to get final Avantis PnL, falling back to Hyperliquid: ${err}`);
+        finalPnL = await getTotalPnL();
+      }
+    } else {
+      finalPnL = await getTotalPnL();
+    }
     log('WEB_BOT', `Session ${this.sessionId} completed after ${sessionCount} cycles. Final PnL: $${finalPnL.toFixed(2)}`);
     
     return { shouldRestart: false, reason: 'max_cycles_reached', pnl: finalPnL, finalStatus: 'completed' };

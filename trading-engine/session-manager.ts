@@ -54,10 +54,11 @@ export class TradingSessionManager {
   async startSession(config: TradingConfig): Promise<string> {
     const sessionId = `session_${Date.now()}`;
     
-    // Create config with sessionId
+    // Create config with sessionId and private key
     const botConfig = {
       ...config,
-      sessionId
+      sessionId,
+      privateKey: config.privateKey // Pass private key to bot for Avantis trading
     };
     
     // Create session record immediately (before bot initialization)

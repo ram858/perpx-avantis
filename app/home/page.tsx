@@ -899,12 +899,6 @@ const WalletInfoCard = ({
               </div>
               {showPrivateKey && (
                 <div className="space-y-2">
-                  <div className="bg-red-900/20 border border-red-500/50 rounded p-2">
-                    <p className="text-red-400 text-xs font-semibold mb-1">⚠️ SECURITY WARNING</p>
-                    <p className="text-red-300 text-xs">
-                      Never share your private key. Anyone with access can control your wallet and funds.
-                    </p>
-                  </div>
                   <div className="flex items-center space-x-2">
                     <code className="text-white text-xs font-mono bg-[#374151] px-2 py-1 rounded break-all flex-1">
                       {walletToDisplay.privateKey}
