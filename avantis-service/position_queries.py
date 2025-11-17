@@ -136,47 +136,58 @@ async def get_total_pnl(
 
 @retry_on_network_error()
 async def get_usdc_allowance(
-    private_key: Optional[str] = None,
-    address: Optional[str] = None
+    private_key: str
 ) -> float:
     """
-    Get current USDC allowance for trading for a user.
+    💳 SAFE ALLOWANCE FETCHING (NO WRONG ABI CALLS)
+    
+    Safely fetch USDC allowance.
+    WILL NOT call any unknown SDK function that may be wrong.
     
     Args:
-        private_key: User's private key (for traditional wallets)
-        address: User's address (for Base Accounts - required if no private_key)
+        private_key: User's private key (required - backend wallet)
         
     Returns:
         USDC allowance amount
     """
-    if not private_key and not address:
-        raise ValueError("Either private_key or address must be provided")
+    if not private_key:
+        raise ValueError("private_key is required")
     
     try:
-        client = get_avantis_client(private_key=private_key, address=address)
+        client = get_avantis_client(private_key=private_key)
         trader_client = client.get_client()
+        
+        import inspect
+        
+        # Allowed safe functions
+        safe_methods = [
+            "get_usdc_allowance_for_trading",
+            "get_usdc_allowance",
+        ]
+        
+        for m in safe_methods:
+            if hasattr(trader_client, m):
+                method = getattr(trader_client, m)
+                
+                try:
+                    if inspect.iscoroutinefunction(method):
+                        allowance = await method()
+                    else:
+                        allowance = method()
+                    
+                    # Convert wei to USDC
+                    return float(allowance) / 1e6
+                    
+                except Exception:
+                    continue  # try next safe method
+        
+        # Final fallback — read from balance_contract
         user_address = client.get_address()
-        
-        # Get allowance using SDK method (requires signer) or from balance info
-        if trader_client.has_signer():
-            if hasattr(trader_client, 'get_usdc_allowance_for_trading'):
-                try:
-                    allowance_wei = await trader_client.get_usdc_allowance_for_trading()
-                    return float(allowance_wei) / 1e6  # Convert from wei
-                except:
-                    pass
-            elif hasattr(trader_client, 'get_usdc_allowance'):
-                try:
-                    return await trader_client.get_usdc_allowance()
-                except:
-                    pass
-        
-        # Fallback: get from balance info
         balance_info = await get_balance_via_contract(trader_client, address=user_address)
         return balance_info.get("usdc_allowance", 0)
         
     except Exception as e:
-        logger.error(f"Error getting USDC allowance: {e}")
+        logger.error(f"Error getting safe USDC allowance: {e}")
         raise
 
 
@@ -186,7 +197,10 @@ async def approve_usdc(
     private_key: str
 ) -> Dict[str, Any]:
     """
-    Approve USDC for trading for a user.
+    🔐 SAFE APPROVAL (ONLY CALLS APPROVE — NEVER TRANSFER)
+    
+    Safely approve USDC for trading.
+    Ensures the SDK never calls a transfer() by mistake.
     
     Args:
         amount: Amount to approve (0 for unlimited)
@@ -199,20 +213,50 @@ async def approve_usdc(
         client = get_avantis_client(private_key=private_key)
         trader_client = client.get_client()
         
-        # Approve USDC using SDK method
-        amount_wei = int(amount * 1e6)  # Convert to wei (USDC has 6 decimals)
+        # USDC has 6 decimals
+        amount_wei = int(amount * 1e6)
         
-        if hasattr(trader_client, 'approve_usdc_for_trading'):
-            tx_hash = await trader_client.approve_usdc_for_trading(amount=amount_wei)
-        elif hasattr(trader_client, 'approve_usdc'):
-            tx_hash = await trader_client.approve_usdc(amount=amount)
+        logger.info(f"Requesting USDC approval of {amount} (wei={amount_wei})")
+        
+        import inspect
+        
+        # 1) SAFE APPROVAL CHAIN — Strictly controlled
+        safe_methods = [
+            "approve_usdc_for_trading",
+            "approve_usdc",
+        ]
+        
+        method_to_use = None
+        
+        # Find a SAFE approve function only
+        for m in safe_methods:
+            if hasattr(trader_client, m):
+                method_to_use = getattr(trader_client, m)
+                break
+        
+        # If no safe method exists → block the action
+        if method_to_use is None:
+            raise RuntimeError(
+                "No SAFE approval method found on TraderClient. "
+                "Refusing to call any fallback to prevent accidental transfer()."
+            )
+        
+        # Call safely (sync or async)
+        if inspect.iscoroutinefunction(method_to_use):
+            tx_hash = await method_to_use(amount=amount_wei)
         else:
-            raise ValueError("USDC approval method not available on TraderClient")
+            tx_hash = method_to_use(amount=amount_wei)
         
-        # Convert tx_hash to string if needed
-        tx_hash_str = tx_hash.hex() if hasattr(tx_hash, 'hex') else str(tx_hash)
+        if tx_hash is None:
+            raise RuntimeError("Approval returned None. Possible SDK issue.")
         
-        logger.info(f"Approved USDC: {amount} for address: {client.get_address()}")
+        # Convert tx_hash to string
+        if hasattr(tx_hash, "hex"):
+            tx_hash_str = tx_hash.hex()
+        else:
+            tx_hash_str = str(tx_hash)
+        
+        logger.info(f"SAFE Approval TX: {tx_hash_str}")
         
         return {
             "success": True,
@@ -222,6 +266,6 @@ async def approve_usdc(
         }
         
     except Exception as e:
-        logger.error(f"Error approving USDC: {e}")
+        logger.error(f"SAFE approval error: {e}")
         raise
 

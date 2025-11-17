@@ -277,22 +277,20 @@ async def api_get_total_pnl(
 
 @app.get("/api/usdc-allowance")
 async def api_get_usdc_allowance(
-    private_key: Optional[str] = Query(None, description="User's private key (for traditional wallets)"),
-    address: Optional[str] = Query(None, description="User's address (for Base Accounts)")
+    private_key: str = Query(..., description="User's private key (required - backend wallet)")
 ):
     """
     Get current USDC allowance for a user.
     
-    For Base Accounts: provide address (no private key needed for read operations)
-    For traditional wallets: provide private_key
+    Requires private_key (backend wallet for trading).
     """
-    if not private_key and not address:
+    if not private_key:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Either private_key (traditional wallets) or address (Base Accounts) must be provided"
+            detail="private_key is required"
         )
     try:
-        allowance = await get_usdc_allowance(private_key=private_key, address=address)
+        allowance = await get_usdc_allowance(private_key=private_key)
         return {"allowance": allowance}
     except Exception as e:
         logger.error(f"Error in get_usdc_allowance: {e}", exc_info=True)

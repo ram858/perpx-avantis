@@ -9,6 +9,7 @@ from contract_operations import (
     close_position_via_contract,
     close_all_positions_via_contract
 )
+from position_queries import get_usdc_allowance, approve_usdc
 import logging
 
 logger = logging.getLogger(__name__)
@@ -43,19 +44,31 @@ async def open_position(
         raise ValueError("Private key is required. Each user must provide their own private key.")
     
     try:
-        # Get pair index for symbol
-        pair_index = get_pair_index(symbol)
-        if pair_index is None:
-            raise SymbolNotFoundError(f"Symbol {symbol} not found in registry")
-        
         # Get Avantis client
         client = get_avantis_client(private_key=private_key)
         trader_client = client.get_client()
         
+        # Get pair index using SDK's official method (preferred) or fallback to our registry
+        pair_index = None
+        try:
+            # Try SDK's official method first
+            if hasattr(trader_client, 'pairs_cache') and hasattr(trader_client.pairs_cache, 'get_pair_index'):
+                pair_index = await trader_client.pairs_cache.get_pair_index(f"{symbol}/USD")
+                logger.info(f"✅ Got pair index from SDK: {pair_index} for {symbol}/USD")
+        except Exception as sdk_error:
+            logger.warning(f"SDK pair index lookup failed: {sdk_error}. Using fallback registry.")
+        
+        # Fallback to our own registry if SDK method failed
+        if pair_index is None:
+            pair_index = get_pair_index(symbol)
+            if pair_index is None:
+                raise SymbolNotFoundError(f"Symbol {symbol} not found in registry and SDK lookup failed")
+            logger.info(f"Using fallback pair index: {pair_index} for {symbol}")
+        
         # Check and approve USDC if needed
         await _ensure_usdc_approval(client, collateral)
         
-        # Open position using contract methods
+        # Open position using official SDK method
         result = await open_position_via_contract(
             trader_client=trader_client,
             pair_index=pair_index,
@@ -63,7 +76,8 @@ async def open_position(
             leverage=leverage,
             is_long=is_long,
             take_profit=tp,
-            stop_loss=sl
+            stop_loss=sl,
+            slippage_percentage=1.0  # Default 1% slippage
         )
         
         logger.info(f"Opened position: {symbol} | {('LONG' if is_long else 'SHORT')} | "
@@ -163,37 +177,45 @@ async def close_all_positions(
 
 async def _ensure_usdc_approval(client, amount: float) -> None:
     """
-    Ensure USDC is approved for trading.
+    🔐 SAFE USDC Approval Check
+    
+    Ensure USDC is approved for trading using safe functions.
+    Uses the safe get_usdc_allowance and approve_usdc functions.
     
     Args:
-        client: AvantisClient instance
+        client: AvantisClient instance (must have private_key)
         amount: Amount to approve
     """
     try:
-        trader_client = client.get_client()
+        # Get private key from client (required for safe functions)
+        if not client.private_key:
+            raise ValueError("Client must have private_key for safe USDC approval")
         
-        # Check current allowance using SDK method
-        if hasattr(trader_client, 'get_usdc_allowance_for_trading'):
-            allowance_wei = await trader_client.get_usdc_allowance_for_trading()
-            allowance = float(allowance_wei) / 1e6  # Convert from wei (USDC has 6 decimals)
-        elif hasattr(trader_client, 'get_usdc_allowance'):
-            allowance = await trader_client.get_usdc_allowance()
-        else:
-            # If method doesn't exist, assume we need approval
+        # Use safe function to check current allowance
+        try:
+            allowance = await get_usdc_allowance(private_key=client.private_key)
+        except Exception as e:
+            logger.warning(f"Could not check USDC allowance: {e}. Assuming approval needed.")
             allowance = 0
         
         if allowance < amount:
-            # Approve USDC using SDK method
-            logger.info(f"Approving USDC: {amount} (current allowance: {allowance})")
-            if hasattr(trader_client, 'approve_usdc_for_trading'):
-                amount_wei = int(amount * 1e6)  # Convert to wei
-                await trader_client.approve_usdc_for_trading(amount=amount_wei)
-            elif hasattr(trader_client, 'approve_usdc'):
-                await trader_client.approve_usdc(amount=amount)
-            else:
-                logger.warning("USDC approval method not available on TraderClient")
+            # Use safe function to approve USDC
+            logger.info(f"🔐 SAFE: Approving USDC: {amount} (current allowance: {allowance})")
+            
+            try:
+                result = await approve_usdc(
+                    amount=amount,
+                    private_key=client.private_key
+                )
+                logger.info(f"✅ SAFE USDC approval successful: {result.get('tx_hash', 'N/A')}")
+            except Exception as approval_error:
+                logger.error(f"❌ SAFE approval failed: {approval_error}")
+                raise ValueError(f"USDC approval failed: {approval_error}")
+        else:
+            logger.debug(f"USDC allowance sufficient: {allowance} >= {amount}")
             
     except Exception as e:
-        logger.warning(f"USDC approval check failed: {e}")
-        # Continue anyway - the trade will fail if approval is actually needed
+        logger.error(f"USDC approval check failed: {e}")
+        # Don't continue - approval is critical for trading
+        raise
 

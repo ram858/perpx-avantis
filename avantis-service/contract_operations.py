@@ -6,6 +6,14 @@ import inspect
 
 logger = logging.getLogger(__name__)
 
+# Try to import official SDK classes
+try:
+    from avantis_trader_sdk import TradeInput, TradeInputOrderType
+    SDK_AVAILABLE = True
+except ImportError:
+    SDK_AVAILABLE = False
+    logger.warning("Official SDK TradeInput classes not available. Falling back to direct contract calls.")
+
 
 async def open_position_via_contract(
     trader_client,
@@ -14,24 +22,95 @@ async def open_position_via_contract(
     leverage: int,
     is_long: bool,
     take_profit: Optional[float] = None,
-    stop_loss: Optional[float] = None
+    stop_loss: Optional[float] = None,
+    slippage_percentage: float = 1.0
 ) -> Dict[str, Any]:
     """
-    Open a trading position using contract methods.
+    ✅ OFFICIAL SDK METHOD: Open a trading position using the official Avantis SDK.
+    
+    Uses trader_client.trade.build_trade_open_tx() as per official SDK documentation:
+    https://sdk.avantisfi.com/trade.html#opening-a-trade
     
     Args:
         trader_client: TraderClient instance
         pair_index: Trading pair index
-        collateral_amount: Collateral amount in USDC (will be converted to wei)
+        collateral_amount: Collateral amount in USDC
         leverage: Leverage multiplier
         is_long: True for long, False for short
         take_profit: Optional take profit price
         stop_loss: Optional stop loss price
+        slippage_percentage: Slippage tolerance (default 1.0%)
         
     Returns:
-        Dictionary with transaction hash and position details
+        Dictionary with transaction receipt and position details
     """
     try:
+        # Get trader address
+        if not trader_client.has_signer():
+            raise ValueError("TraderClient must have a signer to open positions")
+        
+        trader_address = trader_client.get_signer().get_ethereum_address()
+        
+        # Try official SDK method first
+        if SDK_AVAILABLE and hasattr(trader_client, 'trade') and hasattr(trader_client.trade, 'build_trade_open_tx'):
+            try:
+                logger.info(f"🚀 Using OFFICIAL SDK method to open position")
+                
+                # Create TradeInput object (official SDK structure)
+                trade_input = TradeInput(
+                    trader=trader_address,
+                    open_price=None,  # None for market orders (uses current price)
+                    pair_index=pair_index,
+                    collateral_in_trade=collateral_amount,
+                    is_long=is_long,
+                    leverage=leverage,
+                    index=0,  # Trade index for the pair (0 for first trade)
+                    tp=take_profit if take_profit else 0,
+                    sl=stop_loss if stop_loss else 0,
+                    timestamp=0,  # 0 for now
+                )
+                
+                # Build trade transaction using official SDK method
+                open_transaction = await trader_client.trade.build_trade_open_tx(
+                    trade_input,
+                    TradeInputOrderType.MARKET_ZERO_FEE,  # Use zero fee perpetuals
+                    slippage_percentage
+                )
+                
+                # Sign and get receipt (transaction is automatically sent and mined)
+                receipt = await trader_client.sign_and_get_receipt(open_transaction)
+                
+                # Extract transaction hash from receipt
+                tx_hash = receipt.get('transactionHash') if isinstance(receipt, dict) else receipt.transactionHash if hasattr(receipt, 'transactionHash') else None
+                
+                if tx_hash:
+                    # Convert to hex string if needed
+                    if hasattr(tx_hash, 'hex'):
+                        tx_hash_str = tx_hash.hex()
+                    elif isinstance(tx_hash, bytes):
+                        tx_hash_str = tx_hash.hex()
+                    else:
+                        tx_hash_str = str(tx_hash)
+                    
+                    logger.info(f"✅ Position opened successfully using OFFICIAL SDK method: {tx_hash_str}")
+                    
+                    return {
+                        'tx_hash': tx_hash_str,
+                        'pair_index': pair_index,
+                        'status': 'confirmed' if receipt.get('status') == 1 else 'pending',
+                        'receipt': receipt,
+                        'method': 'official_sdk'
+                    }
+                else:
+                    raise ValueError("Transaction hash not found in receipt")
+                    
+            except Exception as sdk_error:
+                logger.warning(f"Official SDK method failed: {sdk_error}. Falling back to direct contract call.")
+                # Fall through to fallback method
+        
+        # Fallback: Direct contract call (if SDK method not available or failed)
+        logger.info(f"Using fallback method: direct contract call")
+        
         # Ensure contracts are loaded
         if hasattr(trader_client, 'load_contracts'):
             if inspect.iscoroutinefunction(trader_client.load_contracts):
@@ -39,111 +118,53 @@ async def open_position_via_contract(
             else:
                 trader_client.load_contracts()
         
-        # Convert collateral to wei (USDC has 6 decimals)
-        collateral_wei = int(Decimal(str(collateral_amount)) * Decimal(10**6))
+        # Try direct write_contract with known contract names
+        contract_names = ['Trading', 'TradingCallbacks', 'TradingStorage']
+        function_names = ['openTrade', 'openMarketTrade']
         
-        # Prepare contract function parameters
-        # Based on typical perpetual trading contract structure
-        function_params = {
-            'pairIndex': pair_index,
-            'collateralAmount': collateral_wei,
-            'leverage': leverage,
-            'isLong': is_long,
-        }
-        
-        # Add optional parameters if provided
-        if take_profit is not None:
-            function_params['takeProfit'] = int(Decimal(str(take_profit)) * Decimal(10**8))  # Price precision
-        
-        if stop_loss is not None:
-            function_params['stopLoss'] = int(Decimal(str(stop_loss)) * Decimal(10**8))  # Price precision
-        
-        # Call the trading contract to open position
-        # Common contract names: 'Trading', 'PerpetualTrading', 'AvantisTrading'
-        contract_names = ['Trading', 'PerpetualTrading', 'AvantisTrading', 'TradingContract']
-        function_names = ['openPosition', 'openTrade', 'createPosition']
-        
-        result = None
         last_error = None
-        
         for contract_name in contract_names:
             for function_name in function_names:
                 try:
-                    # Try to write to contract
-                    if inspect.iscoroutinefunction(trader_client.write_contract):
-                        tx_hash = await trader_client.write_contract(
-                            contract_name=contract_name,
-                            function_name=function_name,
-                            pairIndex=function_params['pairIndex'],
-                            collateralAmount=function_params['collateralAmount'],
-                            leverage=function_params['leverage'],
-                            isLong=function_params['isLong'],
-                            **({k: v for k, v in function_params.items() if k not in ['pairIndex', 'collateralAmount', 'leverage', 'isLong']})
-                        )
-                    else:
-                        tx_hash = trader_client.write_contract(
-                            contract_name=contract_name,
-                            function_name=function_name,
-                            pairIndex=function_params['pairIndex'],
-                            collateralAmount=function_params['collateralAmount'],
-                            leverage=function_params['leverage'],
-                            isLong=function_params['isLong'],
-                            **({k: v for k, v in function_params.items() if k not in ['pairIndex', 'collateralAmount', 'leverage', 'isLong']})
-                        )
+                    # Build transaction parameters
+                    # Note: Parameter format may vary - this is a fallback
+                    receipt = await trader_client.write_contract(
+                        contract_name,
+                        function_name,
+                        pair_index,
+                        collateral_amount,
+                        leverage,
+                        is_long,
+                        take_profit if take_profit else 0,
+                        stop_loss if stop_loss else 0
+                    )
+                    
+                    # Extract transaction hash
+                    tx_hash = receipt.get('transactionHash') if isinstance(receipt, dict) else receipt.transactionHash if hasattr(receipt, 'transactionHash') else None
                     
                     if tx_hash:
-                        result = {
-                            'tx_hash': tx_hash.hex() if hasattr(tx_hash, 'hex') else str(tx_hash),
+                        tx_hash_str = tx_hash.hex() if hasattr(tx_hash, 'hex') else str(tx_hash)
+                        logger.info(f"Position opened via fallback method {contract_name}.{function_name}: {tx_hash_str}")
+                        
+                        return {
+                            'tx_hash': tx_hash_str,
                             'pair_index': pair_index,
-                            'status': 'pending'
+                            'status': 'confirmed' if receipt.get('status') == 1 else 'pending',
+                            'receipt': receipt,
+                            'method': 'fallback_contract'
                         }
-                        logger.info(f"Position opened via {contract_name}.{function_name}: {result['tx_hash']}")
-                        break
+                        
                 except Exception as e:
                     last_error = e
-                    logger.debug(f"Failed to use {contract_name}.{function_name}: {e}")
+                    logger.debug(f"Fallback {contract_name}.{function_name} failed: {e}")
                     continue
-            
-            if result:
-                break
         
-        if not result:
-            # If contract methods don't work, try direct SDK method if available
-            if hasattr(trader_client, 'open_position'):
-                try:
-                    # Check if it's async or sync
-                    if inspect.iscoroutinefunction(trader_client.open_position):
-                        result = await trader_client.open_position(
-                            pair_index=pair_index,
-                            collateral_amount=collateral_amount,
-                            leverage=leverage,
-                            is_long=is_long,
-                            take_profit=take_profit,
-                            stop_loss=stop_loss
-                        )
-                    else:
-                        # Synchronous method
-                        result = trader_client.open_position(
-                            pair_index=pair_index,
-                            collateral_amount=collateral_amount,
-                            leverage=leverage,
-                            is_long=is_long,
-                            take_profit=take_profit,
-                            stop_loss=stop_loss
-                        )
-                except Exception as sdk_error:
-                    logger.warning(f"SDK open_position method failed: {sdk_error}")
-                    raise ValueError(
-                        f"Could not open position: SDK method failed. "
-                        f"Last contract error: {last_error}, SDK error: {sdk_error}"
-                    )
-            else:
-                raise ValueError(
-                    f"Could not open position: No suitable contract method found. "
-                    f"Last error: {last_error}"
-                )
-        
-        return result
+        # If all methods failed
+        raise ValueError(
+            f"Could not open position: All methods failed. "
+            f"Official SDK error: {sdk_error if 'sdk_error' in locals() else 'N/A'}, "
+            f"Fallback error: {last_error}"
+        )
         
     except Exception as e:
         logger.error(f"Error opening position via contract: {e}", exc_info=True)
