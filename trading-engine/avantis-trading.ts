@@ -49,7 +49,9 @@ export async function openAvantisPosition(params: OpenPositionParams): Promise<{
       };
     }
     
-    const response = await fetch(`${AVANTIS_API_URL}/api/open-position`, {
+    // Remove trailing slash from AVANTIS_API_URL if present
+    const baseUrl = AVANTIS_API_URL.endsWith('/') ? AVANTIS_API_URL.slice(0, -1) : AVANTIS_API_URL;
+    const response = await fetch(`${baseUrl}/api/open-position`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -66,7 +68,7 @@ export async function openAvantisPosition(params: OpenPositionParams): Promise<{
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+      const errorData = await response.json().catch(() => ({ detail: response.statusText })) as { detail?: string };
       console.error(`[AVANTIS] ❌ Failed to open position: ${errorData.detail || response.statusText}`);
       console.error(`[AVANTIS] Response status: ${response.status}`);
       return {
@@ -75,7 +77,12 @@ export async function openAvantisPosition(params: OpenPositionParams): Promise<{
       };
     }
 
-    const result = await response.json();
+    const result = await response.json() as {
+      tx_hash?: string;
+      pair_index?: number;
+      symbol?: string;
+      message?: string;
+    };
     console.log(`[AVANTIS] ==========================================`);
     console.log(`[AVANTIS] ✅✅✅ POSITION OPENED SUCCESSFULLY ON AVANTIS!`);
     console.log(`[AVANTIS] Transaction Hash: ${result.tx_hash}`);
@@ -117,7 +124,9 @@ export async function closeAvantisPosition(params: ClosePositionParams): Promise
   try {
     console.log(`[AVANTIS] Closing position: pair_index=${params.pair_index}`);
     
-    const response = await fetch(`${AVANTIS_API_URL}/api/close-position`, {
+    // Remove trailing slash from AVANTIS_API_URL if present
+    const baseUrl = AVANTIS_API_URL.endsWith('/') ? AVANTIS_API_URL.slice(0, -1) : AVANTIS_API_URL;
+    const response = await fetch(`${baseUrl}/api/close-position`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -129,7 +138,7 @@ export async function closeAvantisPosition(params: ClosePositionParams): Promise
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+      const errorData = await response.json().catch(() => ({ detail: response.statusText })) as { detail?: string };
       console.error(`[AVANTIS] Failed to close position: ${errorData.detail || response.statusText}`);
       return {
         success: false,
@@ -137,7 +146,7 @@ export async function closeAvantisPosition(params: ClosePositionParams): Promise
       };
     }
 
-    const result = await response.json();
+    const result = await response.json() as { tx_hash?: string; message?: string };
     console.log(`[AVANTIS] Position closed successfully: ${JSON.stringify(result)}`);
     
     return {
@@ -168,7 +177,9 @@ export async function getAvantisPositions(privateKey: string): Promise<Array<{
   pnl: number;
 }>> {
   try {
-    const response = await fetch(`${AVANTIS_API_URL}/api/positions?private_key=${encodeURIComponent(privateKey)}`, {
+    // Remove trailing slash from AVANTIS_API_URL if present
+    const baseUrl = AVANTIS_API_URL.endsWith('/') ? AVANTIS_API_URL.slice(0, -1) : AVANTIS_API_URL;
+    const response = await fetch(`${baseUrl}/api/positions?private_key=${encodeURIComponent(privateKey)}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -180,7 +191,16 @@ export async function getAvantisPositions(privateKey: string): Promise<Array<{
       return [];
     }
 
-    const result = await response.json();
+    const result = await response.json() as { positions?: Array<{
+      pair_index: number;
+      symbol: string;
+      is_long: boolean;
+      collateral: number;
+      leverage: number;
+      entry_price: number;
+      current_price: number;
+      pnl: number;
+    }> };
     return result.positions || [];
   } catch (error) {
     console.error(`[AVANTIS] Error getting positions:`, error);

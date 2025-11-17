@@ -3,10 +3,11 @@ export interface TradingConfig {
     maxBudget: number;
     profitGoal: number;
     maxPerSession: number;
+    lossThreshold?: number;
     userPhoneNumber?: string;
     walletAddress?: string;
     userFid?: number;
-    isBaseAccount?: boolean;
+    privateKey?: string;
 }
 export interface SessionStatus {
     sessionId: string;
@@ -24,19 +25,14 @@ export declare class TradingSessionManager {
     constructor();
     startSession(config: TradingConfig): Promise<string>;
     private startSessionMonitoring;
-    private monitorBaseAccountSession;
     private updateSessionStatus;
     private broadcastUpdate;
     subscribeToUpdates(sessionId: string, ws: WebSocket): void;
     unsubscribeFromUpdates(sessionId: string, ws: WebSocket): void;
     /**
-     * Get wallet address for a session (for Base Account queries)
+     * Get wallet address for a session
      */
     getSessionWalletAddress(sessionId: string): string | undefined;
-    /**
-     * Check if a session is using Base Account
-     */
-    isSessionBaseAccount(sessionId: string): boolean;
     getSessionStatus(sessionId: string): SessionStatus | null;
     getAllSessions(): SessionStatus[];
     stopSession(sessionId: string): boolean;

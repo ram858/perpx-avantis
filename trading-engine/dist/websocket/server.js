@@ -133,7 +133,24 @@ class TradingWebSocketServer {
     }
 }
 exports.TradingWebSocketServer = TradingWebSocketServer;
-// Graceful shutdown
+// Main entry point - start WebSocket server if run directly
+// For ts-node, we check if this is the main module
+if (require.main === module || (process.argv[1] && process.argv[1].includes('websocket/server'))) {
+    const port = parseInt(process.env.WEBSOCKET_PORT || process.env.PORT || '3002', 10);
+    const { TradingSessionManager } = require('../session-manager');
+    const sessionManager = new TradingSessionManager();
+    const wsServer = new TradingWebSocketServer(port, sessionManager);
+    console.log(`[WEBSOCKET] Server starting on port ${port}...`);
+    // Graceful shutdown
+    const shutdown = () => {
+        console.log('[WEBSOCKET] Shutting down gracefully...');
+        wsServer.close();
+        process.exit(0);
+    };
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+}
+// Graceful shutdown (for when imported)
 process.on('SIGTERM', () => {
     console.log('[WEBSOCKET] Received SIGTERM, shutting down gracefully');
     process.exit(0);

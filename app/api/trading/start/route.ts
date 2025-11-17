@@ -66,12 +66,14 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       let errorData;
+      // Read response as text first, then try to parse as JSON
+      // This avoids "Body has already been read" error
+      const responseText = await response.text();
       try {
-        errorData = await response.json()
+        errorData = JSON.parse(responseText);
       } catch (parseError) {
         // If response is not JSON (e.g., HTML error page), create a generic error
-        const textResponse = await response.text()
-        console.error('[API] Non-JSON response from trading engine:', textResponse.substring(0, 200))
+        console.error('[API] Non-JSON response from trading engine:', responseText.substring(0, 200))
         errorData = { error: `Trading engine error: ${response.status} ${response.statusText}` }
       }
       console.error('[API] Trading engine returned error:', errorData);

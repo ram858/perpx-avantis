@@ -45,7 +45,7 @@ const port = process.env.API_PORT || 3001;
 // Middleware
 app.use((0, cors_1.default)({
     origin: process.env.NODE_ENV === 'production'
-        ? ['https://yourdomain.com']
+        ? ['https://avantis.superapp.gg']
         : ['http://localhost:3000', 'http://localhost:3001'],
     credentials: true
 }));
@@ -64,34 +64,25 @@ app.get('/api/health', (req, res) => {
 // Start trading session
 app.post('/api/trading/start', async (req, res) => {
     try {
-        const { maxBudget, profitGoal, maxPerSession, hyperliquidApiWallet, userPhoneNumber, walletAddress, isBaseAccount = false // Flag for Base Account sessions
-         } = req.body;
+        const { maxBudget, profitGoal, maxPerSession, lossThreshold = 10, // Default 10% loss threshold
+        hyperliquidApiWallet, avantisApiWallet, // Avantis private key (required for automated trading)
+        userPhoneNumber, userFid, // FID for user identification
+        walletAddress, } = req.body;
         // Validate input
         if (!maxBudget || !profitGoal || !maxPerSession) {
             return res.status(400).json({
                 error: 'Missing required parameters: maxBudget, profitGoal, maxPerSession'
             });
         }
-        // For Base Account sessions, walletAddress is required but no private key
-        if (isBaseAccount) {
-            if (!walletAddress) {
-                return res.status(400).json({
-                    error: 'walletAddress is required for Base Account sessions'
-                });
-            }
-            console.log(`[API] Starting Base Account session for wallet ${walletAddress}`);
+        // Private key and wallet address are required for automated trading
+        const privateKey = avantisApiWallet || hyperliquidApiWallet;
+        if (!privateKey || !walletAddress) {
+            return res.status(400).json({
+                error: 'Missing required wallet data: avantisApiWallet (or hyperliquidApiWallet) and walletAddress are required'
+            });
         }
-        else {
-            // For traditional wallets, both private key and wallet address are required
-            if (!hyperliquidApiWallet || !userPhoneNumber || !walletAddress) {
-                return res.status(400).json({
-                    error: 'Missing wallet data: hyperliquidApiWallet, userPhoneNumber, walletAddress are required for traditional wallets'
-                });
-            }
-            // Set the Hyperliquid private key for this session
-            process.env.HYPERLIQUID_PK = hyperliquidApiWallet;
-            console.log(`[API] Set HYPERLIQUID_PK for user ${userPhoneNumber} with wallet ${walletAddress}`);
-        }
+        console.log(`[API] Starting trading session for user ${userPhoneNumber || userFid || 'unknown'} with wallet ${walletAddress}`);
+        console.log(`[API] Private key will be passed to Avantis service per-request (not stored globally)`);
         if (maxBudget < 10 || maxBudget > 10000000) {
             return res.status(400).json({
                 error: 'maxBudget must be between $10 and $10,000,000'
@@ -107,20 +98,26 @@ app.post('/api/trading/start', async (req, res) => {
                 error: 'maxPerSession must be between 1 and 20'
             });
         }
+        if (lossThreshold < 1 || lossThreshold > 50) {
+            return res.status(400).json({
+                error: 'lossThreshold must be between 1% and 50%'
+            });
+        }
         const sessionId = await sessionManager.startSession({
             maxBudget: parseFloat(maxBudget),
             profitGoal: parseFloat(profitGoal),
             maxPerSession: parseInt(maxPerSession),
-            userPhoneNumber: userPhoneNumber || undefined, // Optional for Base Accounts
+            lossThreshold: parseFloat(lossThreshold),
+            userPhoneNumber: userPhoneNumber || undefined,
             walletAddress,
-            isBaseAccount: Boolean(isBaseAccount)
+            privateKey: privateKey // Store private key per-session for Avantis trading
         });
-        console.log(`[API] Started trading session ${sessionId} for ${isBaseAccount ? 'Base Account' : 'traditional wallet'}`);
+        console.log(`[API] Started trading session ${sessionId} for wallet ${walletAddress}`);
         res.json({
             sessionId,
             status: 'started',
-            config: { maxBudget, profitGoal, maxPerSession },
-            user: { phoneNumber: userPhoneNumber, walletAddress, isBaseAccount }
+            config: { maxBudget, profitGoal, maxPerSession, lossThreshold },
+            user: { phoneNumber: userPhoneNumber, walletAddress }
         });
     }
     catch (error) {
@@ -202,15 +199,6 @@ app.post('/api/trading/stop/:sessionId', (req, res) => {
 app.post('/api/close-all-positions', async (req, res) => {
     try {
         const { privateKey, phoneNumber, sessionId } = req.body;
-        // Check if this is a Base Account session
-        if (sessionId) {
-            const isBaseAccount = sessionManager.isSessionBaseAccount(sessionId);
-            if (isBaseAccount) {
-                return res.status(400).json({
-                    error: 'Base Account sessions cannot use this endpoint. Use /api/trading/prepare-transaction with action="close" for each position.'
-                });
-            }
-        }
         if (!privateKey) {
             return res.status(400).json({
                 error: 'Private key is required for traditional wallets'
@@ -313,97 +301,10 @@ app.post('/api/trading/prepare-transaction', async (req, res) => {
         if (!status) {
             return res.status(404).json({ error: 'Session not found' });
         }
-        const isBaseAccount = sessionManager.isSessionBaseAccount(sessionId);
-        if (!isBaseAccount) {
-            return res.status(400).json({
-                error: 'This endpoint is only for Base Account sessions. Use regular trading endpoints for traditional wallets.'
-            });
-        }
-        const walletAddress = sessionManager.getSessionWalletAddress(sessionId);
-        if (!walletAddress) {
-            return res.status(400).json({ error: 'Wallet address not found for session' });
-        }
-        // Get Avantis API URL from environment
-        const avantisApiUrl = process.env.AVANTIS_API_URL || 'http://localhost:8000';
-        let avantisResponse = null;
-        try {
-            if (action === 'open') {
-                if (!symbol || !collateral || !leverage || is_long === undefined) {
-                    return res.status(400).json({
-                        error: 'Missing required parameters for open action: symbol, collateral, leverage, is_long'
-                    });
-                }
-                // Call Avantis service prepare endpoint
-                const response = await fetch(`${avantisApiUrl}/api/prepare/open-position`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        symbol,
-                        collateral: parseFloat(collateral),
-                        leverage: parseInt(leverage),
-                        is_long: Boolean(is_long),
-                        address: walletAddress,
-                        tp: tp ? parseFloat(tp) : undefined,
-                        sl: sl ? parseFloat(sl) : undefined,
-                    }),
-                });
-                if (!response.ok) {
-                    const errorData = await response
-                        .json()
-                        .catch(() => ({ detail: response.statusText }));
-                    throw new Error(errorData.detail || `Avantis API error: ${response.statusText}`);
-                }
-                avantisResponse = await response.json();
-            }
-            else if (action === 'close') {
-                if (!pair_index) {
-                    return res.status(400).json({
-                        error: 'Missing required parameter for close action: pair_index'
-                    });
-                }
-                // Call Avantis service prepare endpoint
-                const response = await fetch(`${avantisApiUrl}/api/prepare/close-position`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        pair_index: parseInt(pair_index),
-                        address: walletAddress,
-                    }),
-                });
-                if (!response.ok) {
-                    const errorData = await response
-                        .json()
-                        .catch(() => ({ detail: response.statusText }));
-                    throw new Error(errorData.detail || `Avantis API error: ${response.statusText}`);
-                }
-                avantisResponse = await response.json();
-            }
-            else {
-                return res.status(400).json({ error: 'Invalid action. Must be "open" or "close"' });
-            }
-            // Return transaction data from Avantis service
-            if (!avantisResponse) {
-                throw new Error('Empty response from Avantis service');
-            }
-            res.json({
-                success: true,
-                transaction: avantisResponse.transaction,
-                params: avantisResponse.params,
-                address: avantisResponse.address,
-                note: avantisResponse.note || 'Sign this transaction via Base Account SDK on the frontend',
-            });
-        }
-        catch (avantisError) {
-            console.error('[API] Error calling Avantis service:', avantisError);
-            return res.status(502).json({
-                error: 'Failed to prepare transaction with Avantis service',
-                details: avantisError instanceof Error ? avantisError.message : 'Unknown error'
-            });
-        }
+        // This endpoint is deprecated - all trading now uses trading wallet with private key
+        return res.status(400).json({
+            error: 'This endpoint is deprecated. All trading now uses trading wallet with private key. Use regular trading endpoints.'
+        });
     }
     catch (error) {
         console.error('[API] Error preparing transaction:', error);

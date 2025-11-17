@@ -1,18 +1,6 @@
 import WebSocket from 'ws';
-// Dynamic import to avoid build errors during Avantis migration
-let WebTradingBot: any;
-try {
-  const hyperliquidModule = require('./hyperliquid/web-trading-bot');
-  WebTradingBot = hyperliquidModule.WebTradingBot;
-} catch (error) {
-  console.warn('[SESSION_MANAGER] Hyperliquid module not available, using placeholder');
-  // Placeholder class for when Hyperliquid is not available
-  WebTradingBot = class PlaceholderTradingBot {
-    async startTrading() { console.log('[PLACEHOLDER] Trading bot placeholder'); }
-    async stop() { console.log('[PLACEHOLDER] Stop placeholder'); }
-    getStatus() { return { pnl: 0, positions: [] }; }
-  };
-}
+// Import the real trading bot
+import { WebTradingBot } from './hyperliquid/web-trading-bot';
 
 export interface TradingConfig {
   maxBudget: number;
@@ -64,13 +52,14 @@ export class TradingSessionManager {
       config,
       status: {
         sessionId,
-        status: 'running' as const,
+        status: 'running' as 'running' | 'stopped' | 'completed' | 'error',
         pnl: 0,
         openPositions: 0,
         cycle: 0,
         lastUpdate: new Date(),
-        config
-      },
+        config,
+        error: undefined
+      } as SessionStatus,
       subscribers: new Set<WebSocket>(),
       walletAddress: config.walletAddress, // Store wallet address for queries
     };
@@ -85,11 +74,15 @@ export class TradingSessionManager {
     
     // Start the trading bot asynchronously (don't await - return sessionId immediately)
     // This allows the API to respond faster while bot initializes in background
-    this.tradingBot.startTrading(botConfig).catch(error => {
+    this.tradingBot.startTrading(botConfig).catch((error: unknown) => {
       console.error(`[SESSION_MANAGER] Error starting bot for session ${sessionId}:`, error);
       // Update session status to error
-      session.status.status = 'error';
-      session.status.error = error instanceof Error ? error.message : 'Unknown error';
+      const errorStatus: SessionStatus = {
+        ...session.status,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+      session.status = errorStatus;
     });
 
     // Return sessionId immediately (bot initializes in background)

@@ -128,26 +128,28 @@ export class WebTradingBot {
     const validatedBudget = await validateAndCapBudget(maxBudget, maxPerSession);
     log('WEB_BOT', `Validated budget: $${validatedBudget}`);
 
-    // Get initial positions - try Avantis first if private key available
-    let initialPositions: any[] = [];
-    if (this.config.privateKey) {
-      try {
-        const avantisPositions = await getAvantisPositions(this.config.privateKey);
-        log('AVANTIS', `📊 Found ${avantisPositions.length} existing position(s) on Avantis dashboard`);
-        if (avantisPositions.length > 0) {
-          log('AVANTIS', `📊 These positions are visible in your Avantis dashboard`);
-          avantisPositions.forEach((pos, idx) => {
-            log('AVANTIS', `   Position ${idx + 1}: ${pos.symbol} ${pos.is_long ? 'LONG' : 'SHORT'} | PnL: $${pos.pnl.toFixed(2)}`);
-          });
+        // Get initial positions - use Avantis only (no Hyperliquid fallback)
+        let initialPositions: any[] = [];
+        if (this.config && this.config.privateKey) {
+          try {
+            const avantisPositions = await getAvantisPositions(this.config.privateKey);
+            log('AVANTIS', `📊 Found ${avantisPositions.length} existing position(s) on Avantis dashboard`);
+            if (avantisPositions.length > 0) {
+              log('AVANTIS', `📊 These positions are visible in your Avantis dashboard at https://www.avantisfi.com`);
+              avantisPositions.forEach((pos, idx) => {
+                log('AVANTIS', `   Position ${idx + 1}: ${pos.symbol} ${pos.is_long ? 'LONG' : 'SHORT'} | PnL: $${pos.pnl.toFixed(2)}`);
+              });
+            }
+            initialPositions = avantisPositions;
+          } catch (err) {
+            log('ERROR', `Failed to get Avantis positions: ${err}`);
+            // Don't fallback to Hyperliquid - we only use Avantis
+            initialPositions = [];
+          }
+        } else {
+          log('WARN', `No private key available - cannot fetch initial Avantis positions`);
+          initialPositions = [];
         }
-        initialPositions = avantisPositions;
-      } catch (err) {
-        log('WARN', `Failed to get Avantis positions, falling back to Hyperliquid: ${err}`);
-        initialPositions = await getPositions();
-      }
-    } else {
-      initialPositions = await getPositions();
-    }
     log('WEB_BOT', `Initial positions: ${initialPositions.length}`);
 
     // Main trading loop
@@ -161,18 +163,21 @@ export class WebTradingBot {
           return { shouldRestart: false, reason: 'user_stopped', pnl: 0, finalStatus: 'stopped' };
         }
 
-        // Get current PnL - try Avantis first if private key available
+        // Get current PnL - use Avantis only (no Hyperliquid fallback)
         let totalPnL = 0;
-        if (this.config.privateKey) {
+        if (this.config && this.config.privateKey) {
           try {
             const avantisPositions = await getAvantisPositions(this.config.privateKey);
             totalPnL = avantisPositions.reduce((sum, pos) => sum + (pos.pnl || 0), 0);
+            log('AVANTIS', `💰 Total PnL from Avantis: $${totalPnL.toFixed(2)}`);
           } catch (err) {
-            log('WARN', `Failed to get Avantis PnL, falling back to Hyperliquid: ${err}`);
-            totalPnL = await getTotalPnL();
+            log('ERROR', `Failed to get Avantis PnL: ${err}`);
+            // Don't fallback to Hyperliquid - we only use Avantis
+            totalPnL = 0;
           }
         } else {
-          totalPnL = await getTotalPnL();
+          log('WARN', `No private key available - cannot fetch Avantis PnL`);
+          totalPnL = 0;
         }
         this.pnl = totalPnL;
         this.cycle = sessionCount;
@@ -192,28 +197,32 @@ export class WebTradingBot {
           return { shouldRestart: false, reason: 'stop_loss_triggered', pnl: totalPnL, finalStatus: 'completed' };
         }
 
-        // Get current positions - try Avantis first if private key available
+        // Get current positions - use Avantis only (no Hyperliquid fallback)
         let positions: any[] = [];
-        if (this.config.privateKey) {
+        if (this.config && this.config.privateKey) {
           try {
             positions = await getAvantisPositions(this.config.privateKey);
+            log('AVANTIS', `📊 Fetched ${positions.length} position(s) from Avantis dashboard`);
           } catch (err) {
-            log('WARN', `Failed to get Avantis positions, falling back to Hyperliquid: ${err}`);
-            positions = await getPositions();
+            log('ERROR', `Failed to get Avantis positions: ${err}`);
+            // Don't fallback to Hyperliquid - we only use Avantis
+            positions = [];
           }
         } else {
-          positions = await getPositions();
+          log('WARN', `No private key available - cannot fetch Avantis positions`);
+          positions = [];
         }
         this.openPositions = positions.length;
         log('WEB_BOT', `Open positions: ${positions.length}`);
 
-        // Check for take profit on existing positions
-        await checkAndCloseForTP({
-          client,
-          account,
-          profitGoal,
-          closePosition
-        });
+        // Check for take profit on existing positions - Skip for Avantis-only trading
+        // TP/SL is handled by Avantis platform directly
+        // await checkAndCloseForTP({
+        //   client,
+        //   account,
+        //   profitGoal,
+        //   closePosition
+        // });
 
         // Get market regime (use BTC as default) - parallelize data fetching for speed
         const [btcOHLCV4h, btcOHLCV6h] = await Promise.all([
@@ -241,7 +250,7 @@ export class WebTradingBot {
                 getCachedOHLCV(symbol, '6h', 300).catch(() => null)
               ]);
               
-              if (!ohlcv4h || !ohlcv6h || ohlcv4h.close.length < 30 || ohlcv6h.close.length < 30) {
+              if (!ohlcv4h || !ohlcv6h || ohlcv4h.close.length < 10 || ohlcv6h.close.length < 10) {
                 return null; // Skip silently for speed
               }
 
@@ -253,14 +262,8 @@ export class WebTradingBot {
 
               log('WEB_BOT', `Evaluating ${symbol} | Budget=$${perPositionBudget.toFixed(2)} | Leverage=${leverage}x`);
 
-              // First, evaluate signal to get direction (but don't execute on Hyperliquid)
+              // Evaluate signal to get direction (using already fetched OHLCV data)
               // We'll use the signal logic but execute on Avantis instead
-              const ohlcv4h = await getCachedOHLCV(symbol, "4h", 300).catch(() => null);
-              const ohlcv6h = await getCachedOHLCV(symbol, "6h", 300).catch(() => null);
-              
-              if (!ohlcv4h || !ohlcv6h || ohlcv4h.close.length < 10 || ohlcv6h.close.length < 10) {
-                return null;
-              }
 
               // Evaluate signal to get direction
               const signalResult = await evaluateSignalOnly(symbol, ohlcv4h, {
@@ -284,7 +287,7 @@ export class WebTradingBot {
               }
 
               // If we have a private key, open position on Avantis (real trading)
-              if (this.config.privateKey) {
+              if (this.config && this.config.privateKey) {
                 try {
                   const isLong = direction === "long";
                   log('AVANTIS', `🚀 Opening ${symbol} ${isLong ? 'LONG' : 'SHORT'} on REAL AVANTIS PLATFORM...`);
@@ -298,7 +301,7 @@ export class WebTradingBot {
                     private_key: this.config.privateKey
                   });
 
-                  if (avantisResult.success) {
+                  if (avantisResult && avantisResult.success) {
                     log('AVANTIS', `✅✅✅ Position SUCCESSFULLY opened on Avantis Dashboard!`);
                     log('AVANTIS', `   Symbol: ${symbol} | Direction: ${isLong ? 'LONG' : 'SHORT'}`);
                     log('AVANTIS', `   Transaction: ${avantisResult.tx_hash?.slice(0, 16)}...`);
