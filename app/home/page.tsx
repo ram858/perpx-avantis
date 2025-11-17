@@ -574,7 +574,7 @@ const TradingCard = ({
           <div className="flex items-center justify-between text-sm mt-1">
             <span className="text-[#9ca3af]">Wallet:</span>
             <span className="text-white font-medium">
-              {primaryWallet?.address.slice(0, 6)}...{primaryWallet?.address.slice(-4)}
+              {tradingWalletAddress ? `${tradingWalletAddress.slice(0, 6)}...${tradingWalletAddress.slice(-4)}` : '—'}
             </span>
           </div>
           <div className="flex items-center justify-between text-sm mt-1">
@@ -643,13 +643,13 @@ const WalletInfoCard = ({
     }
   }, [tradingWallet, tradingWalletWithKey])
   
-  // Fetch trading wallet ONLY ONCE on mount or when explicitly needed
+  // Fetch trading wallet with private key ONLY ONCE on mount or when explicitly needed
   useEffect(() => {
     // Don't fetch if:
-    // 1. We already have wallet info
+    // 1. We already have wallet info with private key
     // 2. We don't have a token
     // 3. We've already attempted to fetch (prevents infinite loops when no wallet exists)
-    if (tradingWalletWithKey || !token || hasAttemptedFetch) return
+    if ((tradingWalletWithKey?.privateKey) || !token || hasAttemptedFetch) return
     
     // Only fetch once
     let isMounted = true
@@ -659,7 +659,8 @@ const WalletInfoCard = ({
       setFetchError(null)
       
       try {
-        const response = await fetch('/api/wallet/user-wallets', {
+        // Fetch wallet with private key for MetaMask connection
+        const response = await fetch('/api/wallet/primary-with-key', {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -669,12 +670,11 @@ const WalletInfoCard = ({
         
         if (response.ok) {
           const data = await response.json()
-          const tradingWallet = data.wallets?.find((w: any) => w.walletType === 'trading')
-          if (tradingWallet && isMounted) {
+          if (data.wallet && isMounted) {
             setTradingWalletWithKey({
-              address: tradingWallet.address,
-              chain: tradingWallet.chain || 'ethereum',
-              privateKey: undefined
+              address: data.wallet.address,
+              chain: data.wallet.chain || 'ethereum',
+              privateKey: data.wallet.privateKey
             })
             setFetchError(null)
             setHasAttemptedFetch(true)
@@ -683,10 +683,16 @@ const WalletInfoCard = ({
             setFetchError(null) // Don't show error, it's expected
             setHasAttemptedFetch(true) // Mark as attempted to prevent refetch loop
           }
+        } else if (response.status === 404) {
+          // Wallet not found yet - this is OK during initial creation
+          if (isMounted) {
+            setFetchError(null)
+            setHasAttemptedFetch(true)
+          }
         } else {
           const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
           if (isMounted) {
-            setFetchError(`Failed to fetch wallets: ${errorData.error || 'Unknown error'}`)
+            setFetchError(`Failed to fetch wallet: ${errorData.error || 'Unknown error'}`)
             setHasAttemptedFetch(true)
           }
         }
@@ -707,7 +713,7 @@ const WalletInfoCard = ({
     return () => {
       isMounted = false
     }
-  }, [token, tradingWalletWithKey, hasAttemptedFetch]) // Depend on hasAttemptedFetch to prevent loops
+  }, [token, tradingWalletWithKey?.privateKey, hasAttemptedFetch]) // Depend on privateKey to refetch if missing
 
   const walletToDisplay = tradingWalletWithKey || tradingWallet
 
@@ -943,6 +949,15 @@ const WalletInfoCard = ({
                 : 'Your backend trading wallet is ready but has no funds. Add funds to start trading.'
               }
             </p>
+            
+            {walletToDisplay.privateKey && (
+              <div className="mt-2 p-2 bg-blue-900/20 border border-blue-500/50 rounded">
+                <p className="text-blue-400 text-xs font-semibold mb-1">🔑 MetaMask Connection</p>
+                <p className="text-blue-300 text-xs">
+                  You can copy your private key above and import it into MetaMask to connect this wallet externally.
+                </p>
+              </div>
+            )}
             
             {/* Debug Info Section */}
             <div className="mt-3 p-2 bg-[#1f2937] border border-[#374151] rounded text-xs">

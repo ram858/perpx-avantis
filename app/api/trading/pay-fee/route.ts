@@ -92,22 +92,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get user's wallet address
-    const baseWalletAddress = await walletService.getBaseAccountAddress(payload.fid);
+    // IMPORTANT: Only use trading wallet for fee payment, never use Base Account wallet
+    // Get trading wallet - this is the wallet that should pay fees
     const tradingWallet = await walletService.ensureTradingWallet(payload.fid);
 
-    const walletAddress = baseWalletAddress || tradingWallet?.address || null;
-
-    if (!walletAddress) {
+    if (!tradingWallet?.address) {
       return NextResponse.json(
-        { error: 'No wallet found for user' },
+        { error: 'Trading wallet not found. Please set up your trading wallet first.' },
         { status: 400 }
       );
     }
 
-    // Get wallet with private key (for fallback wallets)
-    const wallet = tradingWallet || (await walletService.getWalletWithKey(payload.fid, 'ethereum'));
-    const isBaseAccount = !wallet?.privateKey || wallet.privateKey.length === 0;
+    // Get trading wallet with private key
+    const wallet = await walletService.getWalletWithKey(payload.fid, 'ethereum');
+    
+    // Ensure we have a trading wallet with private key
+    if (!wallet?.privateKey || wallet.privateKey.length === 0) {
+      return NextResponse.json(
+        { error: 'Trading wallet private key not available. Cannot pay fee.' },
+        { status: 400 }
+      );
+    }
+    
+    const walletAddress = tradingWallet.address;
+    const isBaseAccount = false; // Always use trading wallet, never Base Account for fees
 
     // Calculate total wallet balance (ETH + tokens + Avantis)
     const totalWalletBalance = await calculateTotalWalletBalance(payload.fid, walletAddress);

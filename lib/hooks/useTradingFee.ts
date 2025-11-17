@@ -431,31 +431,42 @@ export function useTradingFee() {
         walletWithKey = await fetchWalletWithKeyOnDemand();
       }
 
-      // Update walletForFee with the fetched wallet
-      const effectiveWallet = walletWithKey || tradingWallet || primaryWallet;
+      // IMPORTANT: Only use trading wallet for fee payment, never fall back to primaryWallet (Farcaster)
+      // Update walletForFee with the fetched wallet - but ONLY trading wallet
+      const effectiveWallet = walletWithKey || tradingWallet;
       
       addLog('info', 'Wallet status check', {
         hasWallet: !!effectiveWallet,
         walletAddress: effectiveWallet?.address ? `${effectiveWallet.address.slice(0, 10)}...` : 'none',
         hasPrivateKey: !!effectiveWallet?.privateKey,
         hasTradingWalletWithKey: !!walletWithKey,
-        hasTradingWallet: !!tradingWallet
+        hasTradingWallet: !!tradingWallet,
+        usingTradingWallet: true // Always use trading wallet
       });
 
-      // Check if we have any wallet available
-      if (!effectiveWallet?.address && !txData.isBaseAccount) {
-        addLog('error', 'No wallet available');
-        throw new Error('No wallet available. Please connect your wallet first.');
+      // Check if we have trading wallet available
+      if (!effectiveWallet?.address) {
+        addLog('error', 'No trading wallet available for fee payment');
+        throw new Error('Trading wallet not available. Please ensure your trading wallet is set up.');
+      }
+      
+      // Ensure we have private key for trading wallet
+      if (!effectiveWallet?.privateKey) {
+        addLog('error', 'Trading wallet private key not available');
+        throw new Error('Trading wallet private key not available. Cannot pay fee.');
       }
 
-      // Determine payment method
+      // Determine payment method - always use trading wallet with private key
       let result: FeePaymentResult;
 
+      // Since we always use trading wallet now, txData.isBaseAccount should always be false
+      // But keep this check for safety
       if (txData.isBaseAccount) {
-        // Base Account but no SDK context - provide helpful error
-        addLog('error', 'Base Account without SDK context');
-        throw new Error('Base Account detected but SDK not available. Please open the app inside the Farcaster/Base mini app context.');
-      } else if (effectiveWallet?.privateKey) {
+        addLog('error', 'Unexpected: Base Account detected but we should only use trading wallet');
+        throw new Error('Fee payment must use trading wallet. Please ensure your trading wallet is set up.');
+      }
+      
+      if (effectiveWallet?.privateKey) {
         // Use trading wallet with private key for automated trading
         addLog('info', `Using trading wallet with private key for fee payment: ${effectiveWallet.address.slice(0, 10)}...`);
         
@@ -475,12 +486,19 @@ export function useTradingFee() {
           throw new Error('Insufficient ETH balance to pay fee');
         }
 
+        // Get the current nonce to avoid "already known" errors
+        const nonce = await provider.getTransactionCount(wallet.address, 'pending');
+        addLog('info', `Using nonce ${nonce} for fee payment transaction`);
+
         const tx = await wallet.sendTransaction({
           to: FEE_RECIPIENT,
           value: ethAmount,
+          nonce: nonce, // Explicitly set nonce to avoid conflicts
         });
 
+        addLog('info', `Transaction sent: ${tx.hash}, waiting for confirmation...`);
         await tx.wait();
+        addLog('success', `Transaction confirmed: ${tx.hash}`);
 
         result = {
           success: true,

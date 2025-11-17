@@ -2,9 +2,12 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../auth/AuthContext';
+import { getStorageItem } from '../utils/safeStorage';
 
 export interface Position {
   coin: string;
+  symbol?: string; // Symbol name (e.g., "BTC")
+  pair_index?: number; // Avantis pair index (required for closing positions)
   size: string;
   side: 'long' | 'short';
   entryPrice: number;
@@ -102,29 +105,50 @@ export function usePositions() {
   const closePositionInProgressRef = useRef<Set<string>>(new Set());
   const closeAllInProgressRef = useRef(false);
 
-  const closePosition = useCallback(async (symbol: string): Promise<boolean> => {
+  const closePosition = useCallback(async (positionIdentifier: string | number): Promise<boolean> => {
     // TEMPORARY: Skip authentication for testing
     // if (!token) return false;
     
-    // Prevent duplicate close requests for the same symbol
-    if (closePositionInProgressRef.current.has(symbol)) {
-      console.log(`[usePositions] Close position already in progress for ${symbol}`);
+    // Prevent duplicate close requests
+    const identifier = String(positionIdentifier);
+    if (closePositionInProgressRef.current.has(identifier)) {
+      console.log(`[usePositions] Close position already in progress for ${identifier}`);
       return false;
     }
     
-    closePositionInProgressRef.current.add(symbol);
+    closePositionInProgressRef.current.add(identifier);
     
     try {
+      // Find the position to get pair_index
+      const position = positionData?.positions.find(p => 
+        p.coin === positionIdentifier || 
+        p.symbol === positionIdentifier ||
+        p.pair_index === positionIdentifier
+      );
+      
+      // Use pair_index if available, otherwise try to use the identifier as pair_index
+      const pair_index = position?.pair_index || (typeof positionIdentifier === 'number' ? positionIdentifier : undefined);
+      
+      if (!pair_index && typeof positionIdentifier !== 'number') {
+        console.error(`[usePositions] No pair_index found for position ${positionIdentifier}`);
+        throw new Error(`Position ${positionIdentifier} does not have a pair_index. Cannot close position.`);
+      }
+      
+      const token = getStorageItem('token', '');
+      
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout for close
       
       const response = await fetch('/api/close-position', {
         method: 'POST',
         headers: {
-          // 'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ symbol }),
+        body: JSON.stringify({ 
+          pair_index: pair_index || (typeof positionIdentifier === 'number' ? positionIdentifier : undefined),
+          symbol: position?.coin || position?.symbol || (typeof positionIdentifier === 'string' ? positionIdentifier : undefined) // Include symbol for reference
+        }),
         signal: controller.signal,
       });
       
@@ -145,11 +169,11 @@ export function usePositions() {
       return result.success;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to close position';
-      console.error(`[usePositions] Error closing position ${symbol}:`, errorMessage);
+      console.error(`[usePositions] Error closing position ${identifier}:`, errorMessage);
       setError(errorMessage);
       return false;
     } finally {
-      closePositionInProgressRef.current.delete(symbol);
+      closePositionInProgressRef.current.delete(identifier);
     }
   }, [fetchPositions]); // Removed token dependency
 

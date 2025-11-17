@@ -93,6 +93,7 @@ export async function GET(request: NextRequest) {
           
           const formattedPositions = balanceData.positions.map(pos => ({
             coin: pos.symbol,
+            symbol: pos.symbol,
             pair_index: pos.pair_index,
             size: Math.abs(pos.size).toString(),
             side: pos.is_long ? 'long' : 'short',
@@ -129,6 +130,7 @@ export async function GET(request: NextRequest) {
         // Convert Avantis positions to our format
         const formattedPositions = positions.map(pos => ({
           coin: pos.symbol,
+          symbol: pos.symbol,
           pair_index: pos.pair_index,
           size: (pos.collateral * pos.leverage).toString(),
           side: pos.is_long ? 'long' : 'short',
