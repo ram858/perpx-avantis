@@ -397,6 +397,35 @@ const TradingCard = ({
           </div>
         )}
         
+        {/* Low Gas Warning */}
+        {(() => {
+          // Parse ETH balance from formatted string (e.g., "0.001 ETH" -> 0.001)
+          const ethBalanceNum = parseFloat(ethBalanceFormatted.replace(/[^0-9.]/g, '')) || 0;
+          // Consider low gas if less than 0.001 ETH (~$2-3 at current prices)
+          const isLowGas = ethBalanceNum < 0.001;
+          
+          if (isLowGas && tradingWalletAddress) {
+            return (
+              <div className="bg-yellow-900/20 border border-yellow-500/50 rounded-lg p-3">
+                <div className="flex items-start space-x-2">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-yellow-400 flex-shrink-0 mt-0.5">
+                    <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  <div className="flex-1">
+                    <p className="text-yellow-400 text-sm font-medium">
+                      You are running low on gas. Deposit ETH now into your EOA to ensure trades go through.
+                    </p>
+                    <p className="text-yellow-300 text-xs mt-1">
+                      Current ETH balance: {ethBalanceFormatted || '0.00 ETH'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+          return null;
+        })()}
+        
         <Button 
           onClick={hasActivePositions ? (onViewTrades || (() => {})) : handleStartTrading}
           disabled={isTrading || avantisBalance === 0 || positionsLoading}
