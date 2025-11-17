@@ -28,8 +28,14 @@ class Settings(BaseSettings):
     max_retries: int = 3
     retry_delay: float = 1.0  # seconds
     
-    # CORS configuration
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:3001"]
+    # CORS configuration (comma-separated string, will be split into list)
+    cors_origins: str = "http://localhost:3000,http://localhost:3001,https://avantis.superapp.gg"
+    
+    def get_cors_origins_list(self) -> list[str]:
+        """Parse comma-separated CORS origins string into list."""
+        if not self.cors_origins:
+            return ["http://localhost:3000", "http://localhost:3001"]
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
     
     class Config:
         env_file = ".env"
