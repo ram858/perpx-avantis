@@ -38,26 +38,77 @@ export function useTrading() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const makeRequest = useCallback(async (url: string, options: RequestInit = {}) => {
+  const makeRequest = useCallback(async (url: string, options: RequestInit = {}, retries = 2) => {
     if (!token) {
       throw new Error('Not authenticated. Please login with Base Account.');
     }
 
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        ...options.headers,
-      },
-    });
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+        
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            ...options.headers,
+          },
+        });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Request failed');
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          let errorData;
+          try {
+            errorData = await response.json();
+          } catch {
+            errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
+          }
+          
+          // Don't retry on client errors (4xx)
+          if (response.status >= 400 && response.status < 500) {
+            throw new Error(errorData.error || `Request failed with status ${response.status}`);
+          }
+          
+          // Retry on server errors (5xx) or network errors
+          if (attempt < retries) {
+            console.warn(`[useTrading] Request failed, retrying (${attempt + 1}/${retries})...`);
+            await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1))); // Exponential backoff
+            continue;
+          }
+          
+          throw new Error(errorData.error || `Request failed with status ${response.status}`);
+        }
+
+        return response.json();
+      } catch (error) {
+        // Handle network errors (AbortError, Failed to fetch, etc.)
+        if (error instanceof Error) {
+          if (error.name === 'AbortError') {
+            throw new Error('Request timeout. Please check your connection and try again.');
+          }
+          
+          if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+            if (attempt < retries) {
+              console.warn(`[useTrading] Network error, retrying (${attempt + 1}/${retries})...`);
+              await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1))); // Exponential backoff
+              continue;
+            }
+            throw new Error('Network error. Please check your internet connection and try again.');
+          }
+        }
+        
+        // If we've exhausted retries or it's not a retryable error, throw
+        if (attempt === retries) {
+          throw error;
+        }
+      }
     }
-
-    return response.json();
+    
+    throw new Error('Request failed after retries');
   }, [token]);
 
   const startTrading = useCallback(async (config: TradingConfig): Promise<TradingSession> => {

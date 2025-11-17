@@ -199,7 +199,11 @@ export default function ChatPage() {
         }).catch(error => {
           setMessages(prev => [...prev, {
             type: "bot",
-            content: `❌ **Failed to start trading**\n\n${error.message}\n\nPlease check your balance and try again.`,
+            content: `❌ **Failed to start trading**\n\n${error.message}\n\n${error.message.includes('Network') || error.message.includes('timeout') || error.message.includes('Failed to fetch') 
+              ? 'This appears to be a network issue. Please check your internet connection and try again.' 
+              : error.message.includes('already known') || error.message.includes('nonce')
+              ? 'Transaction error detected. Please wait a moment and try again.'
+              : 'Please check your balance and try again.'}`,
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           }])
         })

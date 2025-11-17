@@ -487,8 +487,17 @@ export function useTradingFee() {
         }
 
         // Get the current nonce to avoid "already known" errors
-        const nonce = await provider.getTransactionCount(wallet.address, 'pending');
+        // Use 'pending' to include pending transactions in the count
+        let nonce = await provider.getTransactionCount(wallet.address, 'pending');
         addLog('info', `Using nonce ${nonce} for fee payment transaction`);
+        
+        // Double-check nonce after a short delay to ensure we have the latest
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const latestNonce = await provider.getTransactionCount(wallet.address, 'pending');
+        if (latestNonce > nonce) {
+          nonce = latestNonce;
+          addLog('info', `Updated nonce to ${nonce} after delay`);
+        }
 
         const tx = await wallet.sendTransaction({
           to: FEE_RECIPIENT,

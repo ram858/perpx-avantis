@@ -114,27 +114,27 @@ export function useTradingSession() {
     setError(null);
 
     try {
-      // Step 1: Pay trading fee
-      onProgress?.('fee', 'Paying trading fee...');
-      console.log('[useTradingSession] Paying trading fee...');
-      const feeResult = await payTradingFee();
-      
-      if (!feeResult.success) {
-        throw new Error(feeResult.error || 'Failed to pay trading fee');
-      }
-      
-      onProgress?.('fee', `✅ Fee paid: ${feeResult.amount} ${feeResult.currency}`);
-      console.log(`[useTradingSession] Fee paid successfully: ${feeResult.amount} ${feeResult.currency} (tx: ${feeResult.transactionHash})`);
+      // Step 1: Pay trading fee - COMMENTED OUT FOR TESTING
+      // onProgress?.('fee', 'Paying trading fee...');
+      // console.log('[useTradingSession] Paying trading fee...');
+      // const feeResult = await payTradingFee();
+      // 
+      // if (!feeResult.success) {
+      //   throw new Error(feeResult.error || 'Failed to pay trading fee');
+      // }
+      // 
+      // onProgress?.('fee', `✅ Fee paid: ${feeResult.amount} ${feeResult.currency}`);
+      // console.log(`[useTradingSession] Fee paid successfully: ${feeResult.amount} ${feeResult.currency} (tx: ${feeResult.transactionHash})`);
 
-      // Step 2: Refresh balances (non-blocking)
-      onProgress?.('balance', 'Updating balances...');
-      refreshBalances(true).then(() => {
-        console.log('[useTradingSession] Balances refreshed after fee payment');
-        onProgress?.('balance', '✅ Balances updated');
-      }).catch((refreshError) => {
-        console.warn('[useTradingSession] Failed to refresh balances after fee payment:', refreshError);
-        // Don't fail the trading start if balance refresh fails
-      });
+      // Step 2: Refresh balances (non-blocking) - COMMENTED OUT SINCE NO FEE PAYMENT
+      // onProgress?.('balance', 'Updating balances...');
+      // refreshBalances(true).then(() => {
+      //   console.log('[useTradingSession] Balances refreshed after fee payment');
+      //   onProgress?.('balance', '✅ Balances updated');
+      // }).catch((refreshError) => {
+      //   console.warn('[useTradingSession] Failed to refresh balances after fee payment:', refreshError);
+      //   // Don't fail the trading start if balance refresh fails
+      // });
 
       // Step 3: Start trading session (this should return quickly)
       onProgress?.('session', 'Starting trading session...');

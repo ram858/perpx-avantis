@@ -106,70 +106,141 @@ export class AvantisTradingService {
         tradingEngineConfig.avantisApiWallet = userWallet.privateKey;
       }
 
-      // Start trading session via trading engine API with timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout for faster feedback
+      // Start trading session via trading engine API with timeout and retry logic
+      let lastError: Error | null = null;
+      const maxRetries = 2;
       
-      const response = await fetch(`${this.tradingEngineUrl}/api/trading/start`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(tradingEngineConfig),
-        signal: controller.signal,
-      });
-      
-      clearTimeout(timeoutId);
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+          
+          const response = await fetch(`${this.tradingEngineUrl}/api/trading/start`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(tradingEngineConfig),
+            signal: controller.signal,
+          });
+          
+          clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`[AvantisTradingService] Trading engine API error: ${errorText}`);
-        
-        // Check for specific Avantis wallet errors
-        if (errorText.includes('does not exist') || errorText.includes('not activated')) {
-          // Safely access environment variable (server-side only)
-          const network = typeof process !== 'undefined' && process.env?.AVANTIS_NETWORK;
-          const isTestnet = network === 'base-testnet';
-          const avantisUrl = isTestnet ? 'https://avantis-testnet.com' : 'https://avantis.com';
-          return {
-            success: false,
-            message: `Wallet not activated on Avantis ${isTestnet ? 'TESTNET' : 'MAINNET'}. Please visit ${avantisUrl} and connect your wallet (${userWallet.address}) to activate it for trading.`
+          if (!response.ok) {
+            let errorText: string;
+            try {
+              errorText = await response.text();
+            } catch {
+              errorText = `HTTP ${response.status}: ${response.statusText}`;
+            }
+            
+            console.error(`[AvantisTradingService] Trading engine API error (attempt ${attempt + 1}/${maxRetries + 1}): ${errorText}`);
+            
+            // Don't retry on client errors (4xx)
+            if (response.status >= 400 && response.status < 500) {
+              // Check for specific Avantis wallet errors
+              if (errorText.includes('does not exist') || errorText.includes('not activated')) {
+                const network = typeof process !== 'undefined' && process.env?.AVANTIS_NETWORK;
+                const isTestnet = network === 'base-testnet';
+                const avantisUrl = isTestnet ? 'https://avantis-testnet.com' : 'https://avantis.com';
+                return {
+                  success: false,
+                  message: `Wallet not activated on Avantis ${isTestnet ? 'TESTNET' : 'MAINNET'}. Please visit ${avantisUrl} and connect your wallet (${userWallet.address}) to activate it for trading.`
+                };
+              }
+              
+              return {
+                success: false,
+                message: `Trading engine error: ${errorText}`
+              };
+            }
+            
+            // Retry on server errors (5xx) or network errors
+            if (attempt < maxRetries) {
+              console.warn(`[AvantisTradingService] Retrying trading engine request (${attempt + 1}/${maxRetries})...`);
+              await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1))); // Exponential backoff
+              continue;
+            }
+            
+            return {
+              success: false,
+              message: `Trading engine error: ${errorText}`
+            };
+          }
+
+          // Success - break out of retry loop
+          const result = await response.json();
+          
+          if (!result.sessionId) {
+            return {
+              success: false,
+              message: 'Trading engine did not return session ID'
+            };
+          }
+
+          // Create local session record
+          const session: TradingSession = {
+            id: result.sessionId,
+            userId: `fid_${fid}`,
+            fid,
+            config,
+            status: 'running',
+            startTime: new Date(),
+            totalPnL: 0,
+            positions: []
           };
+
+          this.activeSessions.set(result.sessionId, session);
+
+          return {
+            success: true,
+            message: 'Trading session started successfully',
+            sessionId: result.sessionId
+          };
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          
+          // Handle network errors
+          if (error instanceof Error) {
+            if (error.name === 'AbortError') {
+              if (attempt < maxRetries) {
+                console.warn(`[AvantisTradingService] Request timeout, retrying (${attempt + 1}/${maxRetries})...`);
+                await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+                continue;
+              }
+              return {
+                success: false,
+                message: 'Request timeout. The trading engine may be slow. Please try again.'
+              };
+            }
+            
+            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+              if (attempt < maxRetries) {
+                console.warn(`[AvantisTradingService] Network error, retrying (${attempt + 1}/${maxRetries})...`);
+                await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+                continue;
+              }
+              return {
+                success: false,
+                message: 'Network error. Please check your internet connection and try again.'
+              };
+            }
+          }
+          
+          // If we've exhausted retries, return error
+          if (attempt === maxRetries) {
+            return {
+              success: false,
+              message: `Failed to start trading session: ${lastError.message}`
+            };
+          }
         }
-        
-        return {
-          success: false,
-          message: `Trading engine error: ${errorText}`
-        };
       }
-
-      const result = await response.json();
-
-      if (!result.sessionId) {
-        return {
-          success: false,
-          message: 'Trading engine did not return session ID'
-        };
-      }
-
-      // Create local session record
-      const session: TradingSession = {
-        id: result.sessionId,
-        userId: `fid_${fid}`,
-        fid,
-        config,
-        status: 'running',
-        startTime: new Date(),
-        totalPnL: 0,
-        positions: []
-      };
-
-      this.activeSessions.set(result.sessionId, session);
-
+      
+      // Should not reach here, but just in case
       return {
-        success: true,
-        message: 'Trading session started successfully',
-        sessionId: result.sessionId
+        success: false,
+        message: `Failed to start trading session: ${lastError?.message || 'Unknown error'}`
       };
 
     } catch (error) {
