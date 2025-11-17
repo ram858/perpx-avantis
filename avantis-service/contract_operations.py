@@ -52,6 +52,7 @@ async def open_position_via_contract(
         trader_address = trader_client.get_signer().get_ethereum_address()
         
         # Try official SDK method first
+        sdk_error = None
         if SDK_AVAILABLE and hasattr(trader_client, 'trade') and hasattr(trader_client.trade, 'build_trade_open_tx'):
             try:
                 logger.info(f"🚀 Using OFFICIAL SDK method to open position")
@@ -104,7 +105,8 @@ async def open_position_via_contract(
                 else:
                     raise ValueError("Transaction hash not found in receipt")
                     
-            except Exception as sdk_error:
+            except Exception as e:
+                sdk_error = e
                 logger.warning(f"Official SDK method failed: {sdk_error}. Falling back to direct contract call.")
                 # Fall through to fallback method
         
@@ -162,7 +164,7 @@ async def open_position_via_contract(
         # If all methods failed
         raise ValueError(
             f"Could not open position: All methods failed. "
-            f"Official SDK error: {sdk_error if 'sdk_error' in locals() else 'N/A'}, "
+            f"Official SDK error: {sdk_error if sdk_error else 'N/A'}, "
             f"Fallback error: {last_error}"
         )
         
