@@ -8,11 +8,16 @@ logger = logging.getLogger(__name__)
 
 # Try to import official SDK classes
 try:
-    from avantis_trader_sdk import TradeInput, TradeInputOrderType
+    from avantis_trader_sdk.types import TradeInput, TradeInputOrderType
     SDK_AVAILABLE = True
 except ImportError:
-    SDK_AVAILABLE = False
-    logger.warning("Official SDK TradeInput classes not available. Falling back to direct contract calls.")
+    try:
+        # Fallback: try direct import
+        from avantis_trader_sdk import TradeInput, TradeInputOrderType
+        SDK_AVAILABLE = True
+    except ImportError:
+        SDK_AVAILABLE = False
+        logger.warning("Official SDK TradeInput classes not available. Falling back to direct contract calls.")
 
 
 async def open_position_via_contract(

@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { WalletCreation } from './WalletCreation';
 import { WalletManagement } from './WalletManagement';
 import { NavigationHeader } from './NavigationHeader';
+import { TestnetFaucet } from './TestnetFaucet';
 
 interface WalletDashboardProps {
   className?: string;
@@ -144,6 +145,9 @@ export function WalletDashboard({ className = "" }: WalletDashboardProps) {
           <WalletManagement key={refreshKey} />
         )}
       </div>
+
+      {/* Testnet Faucet - Only shown on testnet */}
+      <TestnetFaucet />
 
       {/* Quick Actions */}
       <Card className="p-6 bg-[#1f2937] border-[#374151]">

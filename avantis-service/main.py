@@ -112,7 +112,11 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "avantis-trading-service",
-        "network": settings.avantis_network
+        "network": settings.avantis_network,
+        "network_name": settings.get_network_name(),
+        "is_testnet": settings.is_testnet(),
+        "block_explorer": settings.get_block_explorer_url(),
+        "usdc_address": settings.usdc_token_address
     }
 
 

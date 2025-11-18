@@ -170,6 +170,11 @@ export class RealBalanceService {
       const priceUSD = await this.getTokenPrice(token.symbol)
       const valueUSD = parseFloat(balanceFormatted) * priceUSD
 
+      // Log balance for debugging
+      if (token.symbol === 'USDC' && parseFloat(balanceFormatted) === 0) {
+        console.log(`[RealBalanceService] USDC balance is 0 for ${address} on Base network. Token contract: ${token.address}`)
+      }
+
       return {
         token,
         balance: balance.toString(),
@@ -178,7 +183,10 @@ export class RealBalanceService {
         priceUSD
       }
     } catch (error) {
-      console.error(`Error fetching ${token.symbol} balance:`, error)
+      console.error(`[RealBalanceService] Error fetching ${token.symbol} balance for ${address}:`, error)
+      if (error instanceof Error) {
+        console.error(`[RealBalanceService] Error details: ${error.message}`)
+      }
       return {
         token,
         balance: '0',

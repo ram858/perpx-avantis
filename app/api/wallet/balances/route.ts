@@ -52,14 +52,26 @@ export async function GET(request: NextRequest) {
     const balanceService = new RealBalanceService()
     const balance = await balanceService.getAllBalances(address)
 
+    console.log(`[API] Balance fetched for ${address}:`, {
+      totalValue: balance.totalPortfolioValue,
+      holdings: balance.holdings.map(h => ({
+        symbol: h.token.symbol,
+        balance: h.balanceFormatted,
+        valueUSD: h.valueUSD
+      }))
+    })
+
     return NextResponse.json({
       address,
       balance
     })
   } catch (error) {
     console.error('[API] Failed to fetch wallet balances:', error)
+    if (error instanceof Error) {
+      console.error('[API] Error details:', error.message, error.stack)
+    }
     return NextResponse.json(
-      { error: 'Failed to fetch wallet balances' },
+      { error: 'Failed to fetch wallet balances', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     )
   }

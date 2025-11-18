@@ -11,6 +11,7 @@ import { ToastProvider } from "@/components/ui/toast"
 import { BaseMiniAppProvider } from "@/components/BaseMiniAppProvider"
 import { UILoggerProvider } from "@/lib/hooks/useUILogger"
 import { UILogger } from "@/components/UILogger"
+import { NetworkIndicator } from "@/components/NetworkIndicator"
 import { Suspense } from "react"
 import "./globals.css"
 
@@ -91,6 +92,7 @@ export default function RootLayout({
             <UILoggerProvider>
               <AuthProvider>
                 <IntegratedWalletProvider>
+                <NetworkIndicator />
                 <Suspense
                   fallback={
                   <div className="min-h-screen bg-[#0d0d0d] flex flex-col items-center justify-center px-6 relative overflow-hidden">

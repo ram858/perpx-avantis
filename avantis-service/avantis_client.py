@@ -1,5 +1,6 @@
 """Core Avantis SDK client wrapper."""
 import os
+import logging
 from typing import Optional
 from avantis_trader_sdk import TraderClient  # Adjust import based on actual SDK
 from avantis_trader_sdk.signers.local_signer import LocalSigner
@@ -7,6 +8,8 @@ from web3 import Web3
 from web3 import AsyncWeb3
 from eth_account import Account
 from config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class AvantisClient:
@@ -66,6 +69,50 @@ class AvantisClient:
         
         # Initialize async Web3
         async_web3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(rpc_url))
+        
+        # Override SDK contract addresses for testnet if needed
+        # According to SDK docs: https://sdk.avantisfi.com/configuration.html
+        # The SDK uses mainnet addresses by default, so we need to override for testnet
+        if settings.is_testnet():
+            try:
+                import avantis_trader_sdk.config as sdk_config
+                import json
+                
+                # Check if testnet addresses are provided via config
+                testnet_addresses = None
+                if settings.avantis_testnet_contract_addresses:
+                    try:
+                        testnet_addresses = json.loads(settings.avantis_testnet_contract_addresses)
+                        logger.info("Using testnet addresses from configuration")
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Invalid testnet addresses JSON: {e}")
+                
+                # Check if testnet addresses exist in SDK config
+                if not testnet_addresses and hasattr(sdk_config, 'TESTNET_ADDRESSES'):
+                    testnet_addresses = sdk_config.TESTNET_ADDRESSES
+                    logger.info("Using SDK testnet contract addresses")
+                
+                if testnet_addresses:
+                    # Override SDK config with testnet addresses
+                    # Ensure USDC is set correctly
+                    if 'USDC' not in testnet_addresses:
+                        testnet_addresses['USDC'] = settings.usdc_token_address
+                    
+                    sdk_config.CONTRACT_ADDRESSES = testnet_addresses
+                    logger.info(f"✅ Overridden SDK config with testnet addresses: {list(testnet_addresses.keys())}")
+                else:
+                    # SDK doesn't have testnet addresses - this will likely fail
+                    logger.error(
+                        "❌ No testnet contract addresses configured! "
+                        "Set AVANTIS_TESTNET_CONTRACT_ADDRESSES environment variable. "
+                        "See find_testnet_addresses.py for instructions."
+                    )
+                    logger.warning(
+                        "Using mainnet addresses on testnet - this will likely fail. "
+                        "Contracts don't exist at mainnet addresses on Base Sepolia."
+                    )
+            except Exception as e:
+                logger.error(f"Could not override SDK config: {e}", exc_info=True)
         
         # Initialize Avantis TraderClient
         try:
