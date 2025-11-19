@@ -16,14 +16,19 @@ export interface ClosePositionParams {
     private_key: string;
 }
 /**
- * Open a position on Avantis
+ * Open a position on Avantis with retry logic and verification
  */
-export declare function openAvantisPosition(params: OpenPositionParams): Promise<{
+export declare function openAvantisPosition(params: OpenPositionParams, options?: {
+    skipBalanceCheck?: boolean;
+    skipVerification?: boolean;
+    maxRetries?: number;
+}): Promise<{
     success: boolean;
     tx_hash?: string;
     pair_index?: number;
     message?: string;
     error?: string;
+    verified?: boolean;
 }>;
 /**
  * Close a position on Avantis

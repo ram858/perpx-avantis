@@ -194,13 +194,35 @@ export default function ChatPage() {
         }).catch(error => {
           console.error('[ChatPage] Trading start error:', error);
           const errorMessage = error instanceof Error ? error.message : String(error);
+          
+          // Determine the appropriate error message based on error type
+          let userFriendlyMessage = '';
+          
+          if (errorMessage.includes('Trading engine is not accessible') || 
+              errorMessage.includes('Failed to connect to trading engine') ||
+              errorMessage.includes('ECONNREFUSED') ||
+              errorMessage.includes('fetch failed')) {
+            userFriendlyMessage = '🔌 **Trading Engine Connection Error**\n\nThe trading engine service is not accessible. This is a server connectivity issue, not a problem with your balance or wallet.\n\n**Possible causes:**\n• Trading engine service is not running\n• Network connectivity issues\n• Server configuration problem\n\nPlease contact support or try again later.';
+          } else if (errorMessage.includes('Trading engine request timed out') || 
+                     errorMessage.includes('timeout') || 
+                     errorMessage.includes('AbortError')) {
+            userFriendlyMessage = '⏱️ **Request Timeout**\n\nThe trading engine did not respond in time. This is a server connectivity issue.\n\n**Please try:**\n• Waiting a moment and trying again\n• Checking if the trading engine service is running\n• Contacting support if the issue persists';
+          } else if (errorMessage.includes('Network') || errorMessage.includes('Failed to fetch')) {
+            userFriendlyMessage = '🌐 **Network Connection Error**\n\nUnable to connect to the trading service. Please check your internet connection and try again.';
+          } else if (errorMessage.includes('already known') || errorMessage.includes('nonce')) {
+            userFriendlyMessage = '⚠️ **Transaction Error**\n\nA transaction conflict was detected. Please wait a moment and try again.';
+          } else if (errorMessage.includes('Insufficient') || errorMessage.includes('balance') || errorMessage.includes('Balance')) {
+            userFriendlyMessage = `💰 **Balance Issue**\n\n${errorMessage}\n\nPlease check your trading balance and deposit funds if needed.`;
+          } else if (errorMessage.includes('Missing required') || errorMessage.includes('required')) {
+            userFriendlyMessage = `⚠️ **Configuration Error**\n\n${errorMessage}\n\nPlease check your trading parameters and try again.`;
+          } else {
+            // For unknown errors, show the actual error message without suggesting balance check
+            userFriendlyMessage = `❌ **Error**\n\n${errorMessage}\n\nIf this issue persists, please contact support.`;
+          }
+          
           setMessages(prev => [...prev, {
             type: "bot",
-            content: `❌ **Failed to start trading**\n\n${errorMessage}\n\n${errorMessage.includes('Network') || errorMessage.includes('timeout') || errorMessage.includes('Failed to fetch') 
-              ? 'This appears to be a network issue. Please check your internet connection and try again.' 
-              : errorMessage.includes('already known') || errorMessage.includes('nonce')
-              ? 'Transaction error detected. Please wait a moment and try again.'
-              : 'Please check your balance and try again.'}`,
+            content: `❌ **Failed to start trading**\n\n${userFriendlyMessage}`,
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           }])
         })

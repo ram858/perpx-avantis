@@ -30,7 +30,7 @@ interface TokenBalance {
 }
 
 // Memoized components for better performance
-const WalletSetupCard = ({ isLoading, error, onRetry }: { isLoading: boolean; error: string | null; onRetry?: () => void }) => (
+const WalletSetupCard = ({ isLoading, error, onRetry, hasExistingWallet }: { isLoading: boolean; error: string | null; onRetry?: () => void; hasExistingWallet?: boolean }) => (
   <Card className="bg-[#1a1a1a] border-[#262626] p-4 sm:p-6 rounded-2xl text-center">
     <div className="space-y-4">
       <div className="w-12 h-12 bg-[#7c3aed] rounded-full flex items-center justify-center mx-auto">
@@ -43,13 +43,13 @@ const WalletSetupCard = ({ isLoading, error, onRetry }: { isLoading: boolean; er
       <div>
         <h2 className="text-white font-semibold text-lg mb-2">Setting Up Your Wallet</h2>
         <p className="text-[#9ca3af] text-sm mb-4">
-          {error ? 'Failed to create wallet' : 'Creating your personal trading wallet...'}
+          {error ? 'Failed to create wallet' : hasExistingWallet ? 'Loading your wallet...' : 'Creating your personal trading wallet...'}
         </p>
       </div>
       {isLoading && (
         <div className="flex items-center justify-center space-x-2">
           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-          <span className="text-white">Creating wallet...</span>
+          <span className="text-white">{hasExistingWallet ? 'Loading wallet...' : 'Creating wallet...'}</span>
         </div>
       )}
       {error && (
@@ -242,6 +242,24 @@ const TradingCard = ({
   const hasActivePositions = positionData && positionData.openPositions > 0
 
   const handleStartTrading = async () => {
+    // Validate that both fields are filled
+    if (!targetProfit || !investmentAmount) {
+      // You could show an error message here if needed
+      return;
+    }
+    
+    const profitNum = parseFloat(targetProfit);
+    const investmentNum = parseFloat(investmentAmount);
+    
+    // Validate numeric values
+    if (isNaN(profitNum) || profitNum <= 0) {
+      return;
+    }
+    
+    if (isNaN(investmentNum) || investmentNum <= 0) {
+      return;
+    }
+    
     // Redirect to chat page with trading parameters
     const params = new URLSearchParams({
       profit: targetProfit,
@@ -401,10 +419,12 @@ const TradingCard = ({
         {(() => {
           // Parse ETH balance from formatted string (e.g., "0.001 ETH" -> 0.001)
           const ethBalanceNum = parseFloat(ethBalanceFormatted.replace(/[^0-9.]/g, '')) || 0;
-          // Consider low gas if less than 0.001 ETH (~$2-3 at current prices)
-          const isLowGas = ethBalanceNum < 0.001;
+          // Minimum required gas: 0.001 ETH (~$2-3 at current prices)
+          const MIN_REQUIRED_GAS = 0.001;
+          const isLowGas = ethBalanceNum < MIN_REQUIRED_GAS;
           
           if (isLowGas && tradingWalletAddress) {
+            const requiredAmount = (MIN_REQUIRED_GAS - ethBalanceNum).toFixed(6);
             return (
               <div className="bg-yellow-900/20 border border-yellow-500/50 rounded-lg p-3">
                 <div className="flex items-start space-x-2">
@@ -418,6 +438,9 @@ const TradingCard = ({
                     <p className="text-yellow-300 text-xs mt-1">
                       Current ETH balance: {ethBalanceFormatted || '0.00 ETH'}
                     </p>
+                    <p className="text-yellow-300 text-xs mt-1">
+                      Minimum required: {MIN_REQUIRED_GAS} ETH {ethBalanceNum > 0 ? `(Deposit ${requiredAmount} ETH more)` : ''}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -428,7 +451,15 @@ const TradingCard = ({
         
         <Button 
           onClick={hasActivePositions ? (onViewTrades || (() => {})) : handleStartTrading}
-          disabled={isTrading || avantisBalance === 0 || positionsLoading}
+          disabled={
+            isTrading || 
+            avantisBalance === 0 || 
+            positionsLoading || 
+            !targetProfit || 
+            !investmentAmount || 
+            (targetProfit ? parseFloat(targetProfit) <= 0 : false) || 
+            (investmentAmount ? parseFloat(investmentAmount) <= 0 : false)
+          }
           className="w-full bg-[#8759ff] hover:bg-[#7C3AED] text-white font-semibold py-3 rounded-xl disabled:opacity-50"
         >
           {isTrading ? '🔄 Starting...' : hasActivePositions ? '👁️ View Trades' : '🚀 Start Trading'}
@@ -1107,8 +1138,8 @@ const HoldingsSection = ({ holdings }: { holdings: Array<{
 export default function HomePage() {
   const { user, token } = useAuth()
   const [isBalanceVisible, setIsBalanceVisible] = useState(true)
-  const [targetProfit, setTargetProfit] = useState("10")
-  const [investmentAmount, setInvestmentAmount] = useState("50")
+  const [targetProfit, setTargetProfit] = useState("")
+  const [investmentAmount, setInvestmentAmount] = useState("")
   const [isDepositing, setIsDepositing] = useState(false)
   const [depositError, setDepositError] = useState<string | null>(null)
   const [recentDepositHash, setRecentDepositHash] = useState<string | null>(null)
@@ -1401,6 +1432,7 @@ export default function HomePage() {
               isLoading={isLoading} 
               error={error} 
               onRetry={() => createWallet('ethereum')}
+              hasExistingWallet={allWallets && allWallets.length > 0}
             />
           ) : (
             <PortfolioBalanceCard

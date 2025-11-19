@@ -258,19 +258,130 @@ app.post('/api/close-all-positions', async (req, res) => {
         });
     }
 });
+// Close a single position (for traditional wallets with private key)
+app.post('/api/close-position', async (req, res) => {
+    try {
+        const { pairIndex, privateKey, userFid } = req.body;
+        if (!privateKey) {
+            return res.status(400).json({
+                error: 'Private key is required for traditional wallets'
+            });
+        }
+        if (!pairIndex && pairIndex !== 0) {
+            return res.status(400).json({
+                error: 'pairIndex is required'
+            });
+        }
+        console.log(`[API] Closing position ${pairIndex} for user ${userFid || 'unknown'}`);
+        // For Avantis: Call Avantis service
+        const avantisApiUrl = process.env.AVANTIS_API_URL || 'http://localhost:8000';
+        try {
+            const response = await fetch(`${avantisApiUrl}/api/close-position`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    pair_index: pairIndex,
+                    private_key: privateKey,
+                }),
+            });
+            if (!response.ok) {
+                const errorData = await response
+                    .json()
+                    .catch(() => ({ detail: response.statusText }));
+                throw new Error(errorData.detail || `Avantis API error: ${response.statusText}`);
+            }
+            const result = await response.json();
+            res.json({
+                success: true,
+                message: result.message || 'Position closed successfully',
+                tx_hash: result.tx_hash,
+                details: result
+            });
+        }
+        catch (avantisError) {
+            console.error('[API] Error calling Avantis service:', avantisError);
+            res.status(400).json({
+                success: false,
+                error: avantisError instanceof Error ? avantisError.message : 'Failed to close position'
+            });
+        }
+    }
+    catch (error) {
+        console.error('[API] Error closing position:', error);
+        res.status(500).json({
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error occurred'
+        });
+    }
+});
 // Get positions
 app.get('/api/positions', async (req, res) => {
     try {
-        // Import the hyperliquid module to get real positions
-        const { getPositions } = await Promise.resolve().then(() => __importStar(require('../hyperliquid/hyperliquid')));
-        const positions = await getPositions();
-        const totalPnL = positions.reduce((sum, pos) => sum + (pos.pnl || 0), 0);
-        const openPositions = positions.length;
-        res.json({
-            positions,
-            totalPnL,
-            openPositions
-        });
+        const { privateKey } = req.query;
+        // Private key is required for backend wallet trading
+        if (!privateKey) {
+            return res.status(400).json({
+                error: 'Private key is required for backend wallet trading',
+                positions: [],
+                totalPnL: 0,
+                openPositions: 0
+            });
+        }
+        // Get positions from Avantis service using private key
+        const avantisApiUrl = process.env.AVANTIS_API_URL || 'http://localhost:8000';
+        try {
+            const avantisResponse = await fetch(`${avantisApiUrl}/api/positions?private_key=${encodeURIComponent(privateKey)}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+            if (avantisResponse && avantisResponse.ok) {
+                const avantisData = await avantisResponse.json();
+                // Transform Avantis positions to match expected format
+                const positions = (avantisData.positions || []).map(pos => ({
+                    coin: pos.symbol,
+                    symbol: pos.symbol,
+                    pair_index: pos.pair_index,
+                    size: (pos.collateral * pos.leverage).toString(),
+                    side: pos.is_long ? 'long' : 'short',
+                    entryPrice: pos.entry_price,
+                    markPrice: pos.current_price,
+                    pnl: pos.pnl,
+                    roe: pos.pnl_percentage || (pos.entry_price > 0 ? (pos.pnl / (pos.collateral * pos.leverage)) * 100 : 0),
+                    positionValue: pos.collateral * pos.leverage,
+                    margin: pos.collateral.toString(),
+                    leverage: pos.leverage.toString(),
+                    liquidationPrice: pos.liquidation_price || null, // Include liquidation price from Avantis
+                    collateral: pos.collateral,
+                    takeProfit: pos.take_profit || null,
+                    stopLoss: pos.stop_loss || null
+                }));
+                const totalPnL = positions.reduce((sum, pos) => sum + (pos.pnl || 0), 0);
+                const openPositions = positions.length;
+                console.log(`[API] Retrieved ${openPositions} positions from Avantis`);
+                return res.json({
+                    positions,
+                    totalPnL,
+                    openPositions
+                });
+            }
+            else {
+                const errorText = await avantisResponse.text().catch(() => 'Unknown error');
+                throw new Error(`Avantis API error: ${errorText}`);
+            }
+        }
+        catch (avantisError) {
+            console.error('[API] Error fetching positions from Avantis:', avantisError);
+            res.status(500).json({
+                error: avantisError instanceof Error ? avantisError.message : 'Failed to fetch positions from Avantis',
+                positions: [],
+                totalPnL: 0,
+                openPositions: 0
+            });
+        }
     }
     catch (error) {
         console.error('[API] Error getting positions:', error);

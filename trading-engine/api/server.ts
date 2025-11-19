@@ -350,6 +350,9 @@ app.get('/api/positions', async (req, res) => {
           current_price: number;
           pnl: number;
           pnl_percentage: number;
+          liquidation_price?: number;
+          take_profit?: number;
+          stop_loss?: number;
         }> };
         
         // Transform Avantis positions to match expected format

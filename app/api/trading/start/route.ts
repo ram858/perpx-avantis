@@ -48,21 +48,56 @@ export async function POST(request: NextRequest) {
     
     // Call the trading engine to start trading
     const tradingEngineUrl = process.env.TRADING_ENGINE_URL || 'http://localhost:3001'
-    const response = await fetch(`${tradingEngineUrl}/api/trading/start`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        maxBudget: config.totalBudget || config.investmentAmount || config.maxBudget,
-        profitGoal: config.profitGoal || config.targetProfit,
-        maxPerSession: config.maxPositions || config.maxPerSession || 3,
-        lossThreshold: config.lossThreshold || 10,
-        avantisApiWallet: privateKey, // Private key for Avantis trading
-        userFid: payload.fid,
-        walletAddress: walletAddress, // Trading wallet address
-      })
-    })
+    
+    // Clean up URL (remove trailing /api/trading-engine if present)
+    const cleanUrl = tradingEngineUrl.replace(/\/api\/trading-engine\/?$/, '');
+    const tradingEngineEndpoint = `${cleanUrl}/api/trading/start`;
+    
+    console.log('[API] Calling trading engine at:', tradingEngineEndpoint);
+    
+    let response;
+    try {
+      response = await fetch(tradingEngineEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          maxBudget: config.totalBudget || config.investmentAmount || config.maxBudget,
+          profitGoal: config.profitGoal || config.targetProfit,
+          maxPerSession: config.maxPositions || config.maxPerSession || 3,
+          lossThreshold: config.lossThreshold || 10,
+          avantisApiWallet: privateKey, // Private key for Avantis trading
+          userFid: payload.fid,
+          walletAddress: walletAddress, // Trading wallet address
+        }),
+        // Add timeout to prevent hanging
+        signal: AbortSignal.timeout(30000) // 30 second timeout
+      });
+    } catch (fetchError) {
+      // Handle network errors (connection refused, timeout, etc.)
+      console.error('[API] Failed to connect to trading engine:', fetchError);
+      const errorMessage = fetchError instanceof Error ? fetchError.message : 'Unknown network error';
+      
+      if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('fetch failed')) {
+        return NextResponse.json({ 
+          success: false, 
+          error: `Trading engine is not accessible. Please ensure the trading engine is running at ${cleanUrl}. Error: ${errorMessage}` 
+        }, { status: 502 });
+      }
+      
+      if (errorMessage.includes('timeout') || errorMessage.includes('AbortError')) {
+        return NextResponse.json({ 
+          success: false, 
+          error: `Trading engine request timed out. Please check if the trading engine is running and try again.` 
+        }, { status: 504 });
+      }
+      
+      return NextResponse.json({ 
+        success: false, 
+        error: `Failed to connect to trading engine: ${errorMessage}` 
+      }, { status: 502 });
+    }
 
     if (!response.ok) {
       let errorData;
@@ -79,7 +114,7 @@ export async function POST(request: NextRequest) {
       console.error('[API] Trading engine returned error:', errorData);
       return NextResponse.json({ 
         success: false, 
-        error: errorData.error || `Failed to start trading (${response.status})` 
+        error: errorData.error || `Failed to start trading (${response.status}): ${response.statusText}` 
       }, { status: response.status })
     }
 
