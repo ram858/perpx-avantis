@@ -42,29 +42,43 @@ export function useTradingSession() {
       try {
         const session = await getTradingSession(tradingSession.id);
         if (session) {
-          setTradingSession(prev => prev ? {
-            ...prev,
-            sessionId: prev.sessionId || prev.id, // Preserve sessionId
-            status: session.status,
-            totalPnL: session.totalPnL,
-            positions: session.positions?.length || 0,
-            pnl: session.totalPnL,
-            openPositions: session.positions?.length || 0,
-            cycle: (session as any).cycle || prev.cycle || 0,
-          } : null);
+          // Only update if session is actually running
+          if (session.status === 'running') {
+            setTradingSession(prev => prev ? {
+              ...prev,
+              sessionId: prev.sessionId || prev.id, // Preserve sessionId
+              status: session.status,
+              totalPnL: session.totalPnL,
+              positions: session.positions?.length || 0,
+              pnl: session.totalPnL,
+              openPositions: session.positions?.length || 0,
+              cycle: (session as any).cycle || prev.cycle || 0,
+            } : null);
+          } else {
+            // Session is not running - clear it
+            console.log('[useTradingSession] Session is not running, clearing:', session.status);
+            setTradingSession(null);
+          }
+        } else {
+          // Session not found - clear it
+          console.log('[useTradingSession] Session not found, clearing');
+          setTradingSession(null);
         }
       } catch (err) {
         console.error('Failed to refresh session status:', err);
+        // On error, clear session to avoid showing stale data
+        setTradingSession(null);
       }
-    } else {
-      // If no session in state OR force restore, try to find active session
-      // Check for active sessions even without positions (session might be running but no positions yet)
+    } else if (forceRestore) {
+      // Only restore if explicitly requested (forceRestore = true)
+      // Check for active sessions with status === 'running' ONLY
       try {
         // Try to get all sessions and find the active one
         const sessions = await getTradingSessions();
         const activeSession = sessions.find(s => s.status === 'running');
         
-        if (activeSession) {
+        // Only restore if we find a session with status === 'running'
+        if (activeSession && activeSession.status === 'running') {
           const sessionState: TradingSessionState = {
             id: activeSession.id,
             sessionId: activeSession.id, // Ensure sessionId is set
@@ -88,9 +102,19 @@ export function useTradingSession() {
           };
           setTradingSession(sessionState);
           console.log('[useTradingSession] Restored active session:', activeSession.id);
+        } else {
+          // No active session found - clear any stale session state
+          if (tradingSession) {
+            console.log('[useTradingSession] No active session found, clearing stale session');
+            setTradingSession(null);
+          }
         }
       } catch (err) {
         console.error('Failed to restore session:', err);
+        // On error, clear session to avoid showing stale data
+        if (tradingSession) {
+          setTradingSession(null);
+        }
       }
     }
   }, [tradingSession, getTradingSession, getTradingSessions, positionData]);

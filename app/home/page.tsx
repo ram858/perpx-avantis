@@ -1168,31 +1168,31 @@ export default function HomePage() {
   // Auto-refresh session status on mount and periodically
   useEffect(() => {
     if (isConnected) {
-      // Force restore session on mount - check for active sessions even if state is empty
+      // Check for active sessions on mount (only restore if actually running)
       refreshSessionStatus(true);
       
-      // Set up periodic refresh every 10 seconds if there's an active session or positions
+      // Set up periodic refresh every 10 seconds ONLY if we have an active running session
       const interval = setInterval(() => {
-        // Always refresh if we have an active session, or try to restore if we don't
-        if (tradingSession?.status === 'running') {
+        // Only refresh if we have an active running session
+        if (tradingSession && tradingSession.status === 'running') {
           refreshSessionStatus(false); // Just refresh existing session
-        } else if (positionData && positionData.openPositions > 0) {
-          refreshSessionStatus(true); // Try to restore session
-        } else {
-          // Even without positions, check for active sessions periodically
-          refreshSessionStatus(true);
         }
+        // Don't auto-restore sessions - only show if explicitly running
       }, 10000); // Refresh every 10 seconds
       
       return () => clearInterval(interval);
     }
-  }, [isConnected, tradingSession?.status, positionData?.openPositions, refreshSessionStatus]);
+  }, [isConnected, tradingSession?.status, refreshSessionStatus]);
   
-  // Also restore session when positions are detected
+  // Only restore session if we have actual open positions AND no session
+  // This handles the case where positions exist but session state was lost
   useEffect(() => {
     if (isConnected && positionData && positionData.openPositions > 0 && !tradingSession) {
-      // If we have positions but no session, try to restore it
+      // If we have positions but no session, try to restore it (but only if it's actually running)
       refreshSessionStatus(true);
+    } else if (isConnected && !positionData?.openPositions && tradingSession && tradingSession.status !== 'running') {
+      // If no positions and session is not running, clear it
+      // This prevents showing stale sessions
     }
   }, [isConnected, positionData?.openPositions, tradingSession, refreshSessionStatus]);
 
@@ -1416,8 +1416,8 @@ export default function HomePage() {
           )}
 
           {/* Active Trading Session Card - Shows real on-chain positions from Avantis */}
-          {/* Show card if session is running OR if we have open positions (session might be restoring) */}
-          {isConnected && ((tradingSession && tradingSession.status === 'running') || (positionData && positionData.openPositions > 0)) && (
+          {/* Show card ONLY if session is actually running AND status is 'running' */}
+          {isConnected && tradingSession && tradingSession.status === 'running' && (
             <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4 sm:p-6 sticky top-4 z-10 shadow-lg">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center space-x-2">
