@@ -1,9 +1,14 @@
-"""Core Avantis SDK client wrapper."""
+"""Core Avantis SDK client wrapper.
+    
+Following official Avantis SDK documentation:
+- Configuration: https://sdk.avantisfi.com/configuration.html#trading-configuration
+- Introduction: https://sdk.avantisfi.com/introduction.html
+- API Reference: https://sdk.avantisfi.com/api_reference.html
+"""
 import os
 import logging
 from typing import Optional
-from avantis_trader_sdk import TraderClient  # Adjust import based on actual SDK
-from avantis_trader_sdk.signers.local_signer import LocalSigner
+from avantis_trader_sdk import TraderClient  # Official SDK
 from web3 import Web3
 from web3 import AsyncWeb3
 from eth_account import Account
@@ -67,7 +72,7 @@ class AvantisClient:
         if not self.web3.is_connected():
             raise ConnectionError(f"Failed to connect to RPC: {rpc_url}")
         
-        # Initialize async Web3
+        # Initialize async Web3 (for compatibility, though SDK handles this internally)
         async_web3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(rpc_url))
         
         # Override SDK contract addresses for testnet if needed
@@ -115,28 +120,21 @@ class AvantisClient:
                 logger.error(f"Could not override SDK config: {e}", exc_info=True)
         
         # Initialize Avantis TraderClient
+        # Following official SDK configuration: https://sdk.avantisfi.com/configuration.html#trading-configuration
         try:
+            # Step 1: Create TraderClient with provider URL (as per SDK docs)
+            self.trader_client = TraderClient(provider_url=rpc_url)
+            
+            # Step 2: Set local signer if private key is provided (as per SDK docs)
             if self.private_key:
-                # Traditional wallet: create signer
-                signer = LocalSigner(private_key=self.private_key, async_web3=async_web3)
-                self.trader_client = TraderClient(
-                    provider_url=rpc_url,
-                    signer=signer
-                )
+                # Traditional wallet: set local signer using SDK's set_local_signer method
+                # Reference: https://sdk.avantisfi.com/configuration.html#trading-configuration
+                self.trader_client.set_local_signer(self.private_key)
+                logger.info(f"✅ TraderClient initialized with local signer for address: {self.address}")
             else:
-                # Base Account: initialize without signer (read-only mode)
-                # Note: TraderClient may require a signer, so we create a dummy signer or handle differently
-                # For now, try to initialize without signer, or create a read-only client
-                # This depends on TraderClient implementation
-                try:
-                    # Try without signer first
-                    self.trader_client = TraderClient(provider_url=rpc_url)
-                except TypeError:
-                    # If signer is required, we may need to handle this differently
-                    # For Base Accounts, read operations should work via contract calls with address
-                    raise ValueError(
-                        "TraderClient requires a signer. For Base Accounts, use address-based read operations only."
-                    )
+                # Base Account: read-only mode (no signer)
+                # Note: Some operations may require a signer, but read operations should work
+                logger.info(f"✅ TraderClient initialized in read-only mode for address: {self.address}")
         except Exception as e:
             raise ValueError(f"Failed to initialize Avantis TraderClient: {str(e)}")
     

@@ -44,6 +44,7 @@ export function useTradingSession() {
         if (session) {
           setTradingSession(prev => prev ? {
             ...prev,
+            sessionId: prev.sessionId || prev.id, // Preserve sessionId
             status: session.status,
             totalPnL: session.totalPnL,
             positions: session.positions?.length || 0,
@@ -66,7 +67,7 @@ export function useTradingSession() {
         if (activeSession) {
           const sessionState: TradingSessionState = {
             id: activeSession.id,
-            sessionId: activeSession.id,
+            sessionId: activeSession.id, // Ensure sessionId is set
             status: activeSession.status,
             startTime: activeSession.startTime,
             totalPnL: activeSession.totalPnL || positionData?.totalPnL || 0,
@@ -219,6 +220,7 @@ export function useTradingSession() {
     if (tradingSession && positionData) {
       setTradingSession(prev => prev ? {
         ...prev,
+        sessionId: prev.sessionId || prev.id, // Preserve sessionId when updating
         totalPnL: positionData.totalPnL || 0,
         pnl: positionData.totalPnL || 0,
         openPositions: positionData.openPositions || 0,

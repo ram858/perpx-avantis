@@ -45,18 +45,34 @@ async def get_positions(
             pair_index = pos.get("pair_index")
             symbol = get_symbol(pair_index) if pair_index is not None else None
             
+            entry_price = pos.get("entry_price", 0)
+            leverage = pos.get("leverage", 1)
+            is_long = pos.get("is_long", False)
+            liquidation_price = pos.get("liquidation_price")
+            
+            # Calculate liquidation price if not provided by SDK
+            # Formula: For LONG: Entry * (1 - (1/Leverage)), For SHORT: Entry * (1 + (1/Leverage))
+            # This is a simplified calculation - actual Avantis liquidation considers maintenance margin
+            if not liquidation_price and entry_price > 0 and leverage > 0:
+                if is_long:
+                    # Long position: liquidates when price drops
+                    liquidation_price = entry_price * (1 - (1.0 / leverage))
+                else:
+                    # Short position: liquidates when price rises
+                    liquidation_price = entry_price * (1 + (1.0 / leverage))
+            
             formatted_positions.append({
                 "pair_index": pair_index,
                 "symbol": symbol,
-                "is_long": pos.get("is_long", False),
+                "is_long": is_long,
                 "size": pos.get("size", 0),
-                "entry_price": pos.get("entry_price", 0),
+                "entry_price": entry_price,
                 "current_price": pos.get("current_price", 0),
-                "leverage": pos.get("leverage", 1),
+                "leverage": leverage,
                 "collateral": pos.get("collateral", 0),
                 "pnl": pos.get("pnl", 0),
                 "pnl_percentage": pos.get("pnl_percentage", 0),
-                "liquidation_price": pos.get("liquidation_price"),
+                "liquidation_price": liquidation_price,
                 "take_profit": pos.get("take_profit"),
                 "stop_loss": pos.get("stop_loss"),
             })

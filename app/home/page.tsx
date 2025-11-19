@@ -1415,14 +1415,14 @@ export default function HomePage() {
             />
           )}
 
-          {/* Active Trading Session Card - Detailed floating card like chat page */}
+          {/* Active Trading Session Card - Shows real on-chain positions from Avantis */}
           {/* Show card if session is running OR if we have open positions (session might be restoring) */}
           {isConnected && ((tradingSession && tradingSession.status === 'running') || (positionData && positionData.openPositions > 0)) && (
             <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4 sm:p-6 sticky top-4 z-10 shadow-lg">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center space-x-2">
                   <div className="w-2 h-2 bg-[#27c47d] rounded-full animate-pulse"></div>
-                  <span className="text-[#27c47d] text-sm font-medium">Trading Active</span>
+                  <span className="text-[#27c47d] text-sm font-medium">Trading Active on Avantis</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <span className="text-[#b4b4b4] text-xs">
@@ -1445,9 +1445,53 @@ export default function HomePage() {
                 </div>
               </div>
               
+              {/* Real position data from Avantis on-chain */}
+              {positionData && positionData.positions && positionData.positions.length > 0 && (
+                <div className="mb-4 space-y-2">
+                  <p className="text-[#b4b4b4] text-xs font-medium">Live Positions on AvantisFi:</p>
+                  {positionData.positions.slice(0, 3).map((position, idx) => (
+                    <div key={idx} className="bg-[#2a2a2a] border border-[#262626] rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-white font-semibold text-sm">{position.symbol || position.coin}</span>
+                          <span className={`px-2 py-0.5 rounded text-xs ${position.side === 'long' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>
+                            {position.side.toUpperCase()}
+                          </span>
+                          <span className="text-[#b4b4b4] text-xs">{position.leverage}x</span>
+                        </div>
+                        <span className={`text-xs font-medium ${(position.pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          ${position.pnl ? position.pnl.toFixed(2) : '0.00'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="text-[#b4b4b4]">Entry:</span>
+                          <span className="text-white ml-1">${position.entryPrice ? position.entryPrice.toFixed(2) : '0.00'}</span>
+                        </div>
+                        <div>
+                          <span className="text-[#b4b4b4]">Mark:</span>
+                          <span className="text-white ml-1">${position.markPrice ? position.markPrice.toFixed(2) : '0.00'}</span>
+                        </div>
+                        {position.liquidationPrice && position.liquidationPrice > 0 && (
+                          <div className="col-span-2">
+                            <span className="text-[#b4b4b4]">Liq. Price:</span>
+                            <span className="text-red-400 ml-1">${position.liquidationPrice.toFixed(2)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {positionData.positions.length > 3 && (
+                    <p className="text-[#b4b4b4] text-xs text-center">
+                      +{positionData.positions.length - 3} more position{positionData.positions.length - 3 !== 1 ? 's' : ''}
+                    </p>
+                  )}
+                </div>
+              )}
+              
               <div className="grid grid-cols-2 gap-4 mb-3">
                 <div>
-                  <p className="text-[#b4b4b4] text-xs sm:text-sm">Current PnL</p>
+                  <p className="text-[#b4b4b4] text-xs sm:text-sm">Total PnL</p>
                   <p className={`font-semibold text-base sm:text-lg ${(positionData?.totalPnL || tradingSession?.totalPnL || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     ${(positionData?.totalPnL || tradingSession?.totalPnL || 0).toFixed(2)}
                   </p>
@@ -1498,6 +1542,23 @@ export default function HomePage() {
                   return `${((pnl / goal) * 100).toFixed(1)}%`;
                 })()}
               </p>
+              
+              {/* Link to view on AvantisFi */}
+              <div className="mt-3 pt-3 border-t border-[#262626]">
+                <a
+                  href="https://www.avantisfi.com/trade?asset=BTC-USD"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[#8759ff] text-xs hover:text-[#7c4dff] flex items-center space-x-1"
+                >
+                  <span>View positions on AvantisFi Dashboard</span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className="inline">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <polyline points="15 3 21 3 21 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <line x1="10" y1="14" x2="21" y2="3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </a>
+              </div>
             </Card>
           )}
 

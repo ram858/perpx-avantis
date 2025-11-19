@@ -40,6 +40,10 @@ export interface Position {
   entry_price: number;
   current_price: number;
   pnl: number;
+  pnl_percentage?: number;
+  liquidation_price?: number | null;
+  take_profit?: number | null;
+  stop_loss?: number | null;
   margin?: string;
   timestamp?: string;
 }

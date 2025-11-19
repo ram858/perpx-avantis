@@ -946,6 +946,14 @@ export default function ChatPage() {
                           <span className="text-white">${(position.positionValue && typeof position.positionValue === 'number') ? position.positionValue.toFixed(2) : '0.00'}</span>
                         </div>
                         <div className="flex justify-between">
+                          <span className="text-[#b4b4b4]">Liq. Price</span>
+                          <span className="text-[#dc3545]">
+                            {position.liquidationPrice && position.liquidationPrice > 0 
+                              ? `$${position.liquidationPrice.toFixed(2)}` 
+                              : 'N/A'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
                           <span className="text-[#b4b4b4]">PnL (ROE)</span>
                           <span className={`font-semibold ${(position.pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                             ${(position.pnl && typeof position.pnl === 'number') ? position.pnl.toFixed(2) : '0.00'} ({(position.roe && typeof position.roe === 'number') ? position.roe.toFixed(2) : '0.00'}%)
@@ -962,111 +970,140 @@ export default function ChatPage() {
               </Card>
             )}
 
-            {/* Fallback for when no positions but trading session exists */}
-            {tradingSession && (!positionData || positionData.openPositions === 0) && (
+            {/* Show first position as LIVE POSITION card if positions exist, otherwise show fallback */}
+            {tradingSession && positionData && positionData.positions && positionData.positions.length > 0 ? (
+              // Show first position as LIVE POSITION card with real data from Avantis
+              positionData.positions.slice(0, 1).map((position, idx) => (
+                <Card key={`live-${idx}`} className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4 mx-2 sm:mx-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-white font-semibold">Open Positions</h3>
+                    <span className="text-[#b4b4b4] text-sm">{positionData.openPositions || 0} positions</span>
+                  </div>
+
+                  {/* Real position data from Avantis */}
+                  <div className="bg-[#2a1a2a] border border-[#262626] rounded-xl p-4 mb-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-8 h-8 bg-[#2563eb] rounded-full flex items-center justify-center">
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M8 2L8 14L2 8L14 8L8 2Z" fill="white" />
+                          </svg>
+                        </div>
+                        <span className="text-white font-semibold">LIVE POSITION</span>
+                        <span className={`${position.side === 'long' ? 'bg-[#27c47d]' : 'bg-red-500'} text-white px-2 py-1 rounded text-xs font-medium`}>
+                          {position.side.toUpperCase()}
+                        </span>
+                        <span className="text-white font-semibold">{position.leverage}x</span>
+                      </div>
+                      <button 
+                        onClick={() => handleClosePosition(position.pair_index ? String(position.pair_index) : position.coin)}
+                        className="text-[#b4b4b4] hover:text-white transition-colors"
+                      >
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                          <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                        </svg>
+                      </button>
+                    </div>
+
+                    <div className="space-y-3 mb-4">
+                      <div className="flex justify-between">
+                        <span className="text-[#b4b4b4]">Entry Price</span>
+                        <span className="text-white">${position.entryPrice ? position.entryPrice.toFixed(2) : '0.00'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#b4b4b4]">Position</span>
+                        <span className="text-white">${position.positionValue ? position.positionValue.toFixed(2) : '0.00'} USDC</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#b4b4b4]">Collateral</span>
+                        <span className="text-white">${position.collateral ? position.collateral.toFixed(2) : (position.margin ? parseFloat(position.margin).toFixed(2) : '0.00')} USDC</span>
+                      </div>
+                      <hr className="border-[#262626]" />
+                      <div className="flex justify-between">
+                        <span className="text-[#b4b4b4]">Liq. Price</span>
+                        <span className="text-[#dc3545]">
+                          {position.liquidationPrice && position.liquidationPrice > 0 
+                            ? `$${position.liquidationPrice.toFixed(2)}` 
+                            : 'Calculating...'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#b4b4b4]">SL/TP</span>
+                        <span className="text-white text-sm">
+                          {position.stopLoss && position.stopLoss > 0 ? `$${position.stopLoss.toFixed(2)}` : 'Auto'} / {position.takeProfit && position.takeProfit > 0 ? `$${position.takeProfit.toFixed(2)}` : 'Auto'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#b4b4b4]">PnL</span>
+                        <span className={position.pnl && position.pnl > 0 ? "text-[#27c47d]" : "text-[#dc3545]"}>
+                          ${position.pnl ? position.pnl.toFixed(2) : '0.00'} USDC ({position.roe ? position.roe.toFixed(1) : '0.0'}%)
+                        </span>
+                      </div>
+                      {/* Avantis uses Zero Fee Perpetuals (ZFP) - fees are minimal */}
+                      <div className="flex justify-between">
+                        <span className="text-[#b4b4b4]">Exit Fee</span>
+                        <span className="text-white">0.00 USDC</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#b4b4b4]">Funding Fee</span>
+                        <span className="text-white">0.00 USDC</span>
+                      </div>
+                      <div className="flex justify-between font-semibold">
+                        <span className="text-white">You&apos;ll Receive</span>
+                        <span className="text-white">
+                          ${((position.pnl || 0) + (position.collateral || parseFloat(position.margin) || 0)).toFixed(4)} USDC
+                        </span>
+                      </div>
+                    </div>
+
+                    <Button
+                      onClick={() => handleClosePosition(position.pair_index ? String(position.pair_index) : position.coin)}
+                      disabled={closingPositions.includes(position.pair_index ? String(position.pair_index) : position.coin)}
+                      className="w-full bg-[#8759ff] hover:bg-[#7c4dff] text-white rounded-xl py-3"
+                    >
+                      {closingPositions.includes(position.pair_index ? String(position.pair_index) : position.coin) ? (
+                        <div className="flex items-center justify-center space-x-2">
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        </div>
+                      ) : (
+                        "Close Position"
+                      )}
+                    </Button>
+
+                    <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-[#262626]">
+                      <div>
+                        <p className="text-[#b4b4b4] text-sm">Current PnL</p>
+                        <p className="text-white font-semibold">${(positionData?.totalPnL || 0).toFixed(2)} USDC</p>
+                      </div>
+                      <div>
+                        <p className="text-[#b4b4b4] text-sm">Open Positions</p>
+                        <p className="text-white font-semibold">{positionData?.openPositions || 0}</p>
+                      </div>
+                    </div>
+
+                    <p className="text-[#b4b4b4] text-sm mt-3">
+                      Session: <span className="text-white">{tradingSession.sessionId?.slice(-8)}</span>. Cycle:{" "}
+                      <span className="text-white">{tradingSession.cycle}</span>.
+                    </p>
+                  </div>
+                </Card>
+              ))
+            ) : tradingSession && (!positionData || positionData.openPositions === 0) ? (
+              // Fallback: Show placeholder when session exists but no positions yet
               <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4 mx-2 sm:mx-4">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-white font-semibold">Open Positions</h3>
                   <span className="text-[#b4b4b4] text-sm">{tradingSession.openPositions || 0} positions</span>
                 </div>
 
-                {/* Real position data from trading session */}
                 <div className="bg-[#2a1a2a] border border-[#262626] rounded-xl p-4 mb-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 bg-[#2563eb] rounded-full flex items-center justify-center">
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                          <path d="M8 2L8 14L2 8L14 8L8 2Z" fill="white" />
-                        </svg>
-                      </div>
-                      <span className="text-white font-semibold">LIVE POSITION</span>
-                      <span className="bg-[#27c47d] text-white px-2 py-1 rounded text-xs font-medium">LONG</span>
-                      <span className="text-white font-semibold">5x</span>
-                    </div>
-                    <button 
-                      onClick={() => handleClosePosition("live")}
-                      className="text-[#b4b4b4] hover:text-white transition-colors"
-                    >
-                      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                        <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                      </svg>
-                    </button>
+                  <div className="text-center py-8">
+                    <p className="text-[#b4b4b4] text-sm">Waiting for positions to open...</p>
+                    <p className="text-[#6b7280] text-xs mt-2">The trading bot is monitoring markets and will open positions when opportunities are detected.</p>
                   </div>
-
-                  <div className="space-y-3 mb-4">
-                    <div className="flex justify-between">
-                      <span className="text-[#b4b4b4]">Entry Price</span>
-                      <span className="text-white">Live</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#b4b4b4]">Position</span>
-                      <span className="text-white">${tradingSession.pnl?.toFixed(2) || '0.00'} USDC</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#b4b4b4]">Collateral</span>
-                      <span className="text-white">10 USDC</span>
-                    </div>
-                    <hr className="border-[#262626]" />
-                    <div className="flex justify-between">
-                      <span className="text-[#b4b4b4]">Liq. Price</span>
-                      <span className="text-[#dc3545]">Dynamic</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#b4b4b4]">SL/TP</span>
-                      <span className="text-white text-sm">Auto / Auto</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#b4b4b4]">PnL</span>
-                      <span className={tradingSession.pnl && tradingSession.pnl > 0 ? "text-[#27c47d]" : "text-[#dc3545]"}>
-                        ${tradingSession.pnl?.toFixed(2) || '0.00'} USDC ({((tradingSession.pnl || 0) / 10 * 100).toFixed(1)}%)
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#b4b4b4]">Est. Exit Fee</span>
-                      <span className="text-white">-0.05 USDC</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#b4b4b4]">Est. Funding Fee</span>
-                      <span className="text-white">-0.001 USDC</span>
-                    </div>
-                    <div className="flex justify-between font-semibold">
-                      <span className="text-white">You&apos;ll Receive</span>
-                      <span className="text-white">${((tradingSession.pnl || 0) + 10 - 0.05 - 0.001).toFixed(4)} USDC</span>
-                    </div>
-                  </div>
-
-                  <Button
-                    onClick={() => handleClosePosition("live")}
-                    disabled={closingPositions.includes("live")}
-                    className="w-full bg-[#8759ff] hover:bg-[#7c4dff] text-white rounded-xl py-3"
-                  >
-                    {closingPositions.includes("live") ? (
-                      <div className="flex items-center justify-center space-x-2">
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      </div>
-                    ) : (
-                      "Close Position"
-                    )}
-                  </Button>
-
-                  <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-[#262626]">
-                    <div>
-                      <p className="text-[#b4b4b4] text-sm">Current PnL</p>
-                      <p className="text-white font-semibold">${(positionData?.totalPnL || 0).toFixed(2)} USDC</p>
-                    </div>
-                    <div>
-                      <p className="text-[#b4b4b4] text-sm">Open Positions</p>
-                      <p className="text-white font-semibold">{positionData?.openPositions || 0}</p>
-                    </div>
-                  </div>
-
-                  <p className="text-[#b4b4b4] text-sm mt-3">
-                    Session: <span className="text-white">{tradingSession.sessionId?.slice(-8)}</span>. Cycle:{" "}
-                    <span className="text-white">{tradingSession.cycle}</span>.
-                  </p>
                 </div>
               </Card>
-            )}
+            ) : null}
 
           </div>
         )}
@@ -1313,7 +1350,7 @@ export default function ChatPage() {
                     <span className="text-white text-xs">💻</span>
                   </div>
                   <span className="text-[#58a6ff] font-mono text-xs sm:text-sm break-all">
-                    {tradingSession ? `********** Monitoring ${tradingSession.sessionId} **********` : 'No active trading session'}
+                    {tradingSession ? `********** Monitoring ${tradingSession.sessionId || tradingSession.id || 'session'} **********` : 'No active trading session'}
                   </span>
                 </div>
 

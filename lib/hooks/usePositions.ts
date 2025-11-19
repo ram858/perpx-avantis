@@ -17,6 +17,10 @@ export interface Position {
   positionValue: number;
   margin: string;
   leverage: string;
+  liquidationPrice?: number | null; // Liquidation price from Avantis
+  collateral?: number; // Collateral amount
+  takeProfit?: number | null; // Take profit price
+  stopLoss?: number | null; // Stop loss price
 }
 
 export interface PositionData {
