@@ -72,6 +72,14 @@ export function useTrading() {
           
           // Don't retry on client errors (4xx)
           if (response.status >= 400 && response.status < 500) {
+            // Provide more specific error messages for authentication errors
+            if (response.status === 401) {
+              const authError = errorData.error || 'Unauthorized';
+              console.error('[useTrading] Authentication error:', authError);
+              throw new Error(authError.includes('Unauthorized') 
+                ? 'Authentication failed. Please refresh your session and try again.' 
+                : authError);
+            }
             throw new Error(errorData.error || `Request failed with status ${response.status}`);
           }
           

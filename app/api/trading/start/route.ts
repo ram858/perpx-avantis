@@ -12,14 +12,44 @@ export async function POST(request: NextRequest) {
     // Verify authentication
     const authHeader = request.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.error('[API] Missing or invalid authorization header')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const token = authHeader.substring(7)
-    const payload = await authService.verifyToken(token)
+    
+    // Verify token with proper error handling
+    let payload
+    try {
+      payload = await authService.verifyToken(token)
+    } catch (authError) {
+      console.error('[API] Token verification failed:', authError)
+      const errorMessage = authError instanceof Error ? authError.message : 'Token verification failed'
+      
+      // Return appropriate error based on the type of authentication failure
+      if (errorMessage.includes('expired') || errorMessage.includes('Token expired')) {
+        return NextResponse.json(
+          { error: 'Token expired. Please refresh your session and try again.' },
+          { status: 401 }
+        )
+      }
+      
+      if (errorMessage.includes('Invalid token') || errorMessage.includes('invalid')) {
+        return NextResponse.json(
+          { error: 'Invalid authentication token. Please log in again.' },
+          { status: 401 }
+        )
+      }
+      
+      return NextResponse.json(
+        { error: 'Unauthorized: Authentication failed. Please log in again.' },
+        { status: 401 }
+      )
+    }
     
     // FID is required for user identification
     if (!payload.fid) {
+      console.error('[API] No FID in token payload')
       return NextResponse.json(
         { error: 'User authentication (FID) required. This app runs in Base app only.' },
         { status: 400 }
