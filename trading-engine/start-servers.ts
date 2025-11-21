@@ -3,9 +3,13 @@
 // Load environment variables from trading-engine/.env first
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 
-// Load .env from trading-engine directory
-dotenv.config({ path: path.resolve(__dirname, '.env') });
+// Load .env from trading-engine directory if it exists
+const envPath = path.resolve(__dirname, '.env');
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+}
 
 import { spawn } from 'child_process';
 

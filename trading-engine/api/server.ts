@@ -1,9 +1,13 @@
 // Load environment variables from trading-engine/.env
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 
-// Load .env from trading-engine directory (parent directory of api/)
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
+// Load .env from trading-engine directory (parent directory of api/) if it exists
+const envPath = path.resolve(__dirname, '../.env');
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+}
 
 import express from 'express';
 import cors from 'cors';

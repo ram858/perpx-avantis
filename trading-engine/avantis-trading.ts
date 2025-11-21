@@ -6,9 +6,13 @@
 // Load environment variables from trading-engine/.env
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 
-// Load .env from trading-engine directory
-dotenv.config({ path: path.resolve(__dirname, '.env') });
+// Load .env from trading-engine directory if it exists
+const envPath = path.resolve(__dirname, '.env');
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+}
 
 const AVANTIS_API_URL = process.env.AVANTIS_API_URL || 'http://localhost:8000';
 const BASE_RPC_URL = process.env.BASE_RPC_URL || 'https://mainnet.base.org';
