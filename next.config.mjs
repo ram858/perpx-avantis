@@ -16,6 +16,16 @@ const nextConfig = {
   // Optimize for Base Mini App
   reactStrictMode: true,
   
+  // Environment variables configuration
+  // Note: Environment variables are loaded at runtime, not build time
+  // This allows CI/CD systems to inject variables without rebuilding
+  // Server-side: Read from process.env at runtime
+  // Client-side: Use /api/config endpoint for runtime configuration
+  env: {
+    // These are optional at build time - they will be read at runtime
+    // CI/CD should set these as environment variables in the deployment platform
+  },
+  
   // Webpack configuration to handle Node.js modules
   webpack: (config, { isServer }) => {
     // Exclude Node.js modules from client bundle
