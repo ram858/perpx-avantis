@@ -1,3 +1,15 @@
+// Load environment variables from trading-engine/.env
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Get the directory of the current file
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load .env from trading-engine directory
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
 import { WebSocketServer, WebSocket, type Data } from 'ws';
 import { TradingSessionManager } from '../session-manager.js';
 

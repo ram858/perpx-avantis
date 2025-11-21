@@ -3,6 +3,13 @@
  * This module provides functions to interact with Avantis API for opening/closing positions
  */
 
+// Load environment variables from trading-engine/.env
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Load .env from trading-engine directory
+dotenv.config({ path: path.resolve(__dirname, '.env') });
+
 const AVANTIS_API_URL = process.env.AVANTIS_API_URL || 'http://localhost:8000';
 const BASE_RPC_URL = process.env.BASE_RPC_URL || 'https://mainnet.base.org';
 const TRANSACTION_CONFIRMATION_TIMEOUT = 30000; // 30 seconds

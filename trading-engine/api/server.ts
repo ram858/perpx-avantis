@@ -1,3 +1,10 @@
+// Load environment variables from trading-engine/.env
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Load .env from trading-engine directory (parent directory of api/)
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
 import express from 'express';
 import cors from 'cors';
 import { TradingSessionManager } from '../session-manager';

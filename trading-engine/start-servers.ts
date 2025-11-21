@@ -1,7 +1,13 @@
 #!/usr/bin/env ts-node
 
-import { spawn } from 'child_process';
+// Load environment variables from trading-engine/.env first
+import dotenv from 'dotenv';
 import path from 'path';
+
+// Load .env from trading-engine directory
+dotenv.config({ path: path.resolve(__dirname, '.env') });
+
+import { spawn } from 'child_process';
 
 console.log('🚀 Starting PrepX Trading Integration...\n');
 
