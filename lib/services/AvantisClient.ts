@@ -92,10 +92,12 @@ export class AvantisClient {
 
   constructor(config: AvantisConfig) {
     // Server-side: use AVANTIS_API_URL, client-side: use NEXT_PUBLIC_ or API route
+    // Use NEXT_PUBLIC_AVANTIS_API_URL for both client and server (CI/CD compliant)
+    // AVANTIS_API_URL is now in trading-engine/.env and not available to frontend
     const baseURL = config.baseUrl || 
       (typeof window !== 'undefined' 
         ? (process.env.NEXT_PUBLIC_AVANTIS_API_URL || '/api/avantis-proxy')
-        : (process.env.AVANTIS_API_URL || 'http://localhost:8000'));
+        : (process.env.NEXT_PUBLIC_AVANTIS_API_URL || process.env.AVANTIS_API_URL || 'http://localhost:8000'));
     const timeout = config.timeout || 30000;
 
     this.axiosInstance = axios.create({
@@ -429,13 +431,18 @@ export class AvantisClient {
  * Factory function to create AvantisClient instance
  */
 export function createAvantisClient(config?: Partial<AvantisConfig>): AvantisClient {
-  const baseUrl = config?.baseUrl || process.env.AVANTIS_API_URL || 'http://localhost:8000';
+  // Use NEXT_PUBLIC_AVANTIS_API_URL for CI/CD compliance
+  // AVANTIS_API_URL is now in trading-engine/.env
+  const baseUrl = config?.baseUrl || 
+    process.env.NEXT_PUBLIC_AVANTIS_API_URL || 
+    process.env.AVANTIS_API_URL || 
+    'http://localhost:8000';
   
   return new AvantisClient({
     baseUrl,
     timeout: config?.timeout || 30000,
     privateKey: config?.privateKey || process.env.AVANTIS_PK,
-    network: config?.network || process.env.AVANTIS_NETWORK,
+    network: config?.network || process.env.NEXT_PUBLIC_AVANTIS_NETWORK || process.env.AVANTIS_NETWORK,
   });
 }
 

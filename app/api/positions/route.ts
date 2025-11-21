@@ -76,7 +76,8 @@ export async function GET(request: NextRequest) {
 
     // Fallback: Fetch positions directly from Avantis
     try {
-      const avantisApiUrl = process.env.AVANTIS_API_URL || 'http://localhost:8000'
+      // Use NEXT_PUBLIC_AVANTIS_API_URL for frontend API routes (CI/CD compliant)
+      const avantisApiUrl = process.env.NEXT_PUBLIC_AVANTIS_API_URL || 'http://localhost:8000'
       const avantisClient = new AvantisClient({ 
         baseUrl: avantisApiUrl,
         privateKey: wallet.privateKey 
