@@ -9,7 +9,6 @@ export interface JwtPayload {
 }
 
 export class AuthService {
-  private readonly jwtSecret: string
   private readonly jwtExpirationTime: string
   private db: any = null // DatabaseService - optional, loaded dynamically
 
@@ -20,18 +19,33 @@ export class AuthService {
   }
 
   constructor() {
-    // JWT_SECRET is required - throw error if missing
-    if (!process.env.JWT_SECRET) {
+    // JWT_SECRET validation moved to runtime (getSecret method)
+    // This prevents Next.js from crashing during build
+    this.jwtExpirationTime = process.env.JWT_EXPIRATION_TIME || '7d'
+  }
+
+  /**
+   * Get JWT secret - validates at runtime, not build time
+   * This prevents Next.js build failures when JWT_SECRET is not available during build
+   */
+  private getSecret(): string {
+    if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
+      throw new Error("JWT_SECRET missing at runtime.");
+    }
+    
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
       throw new Error('JWT_SECRET environment variable is required. Please set it in your .env file.');
     }
-    this.jwtSecret = process.env.JWT_SECRET
-    this.jwtExpirationTime = process.env.JWT_EXPIRATION_TIME || '7d'
+    
+    return secret;
   }
 
   async generateJwtToken(payload: Omit<JwtPayload, 'iat' | 'exp'>): Promise<string> {
     try {
+      const secret = this.getSecret();
       // @ts-ignore - JWT type issue with expiresIn
-      const token = jwt.sign(payload, this.jwtSecret, {
+      const token = jwt.sign(payload, secret, {
         expiresIn: this.jwtExpirationTime,
         issuer: 'prepx',
         audience: 'prepx-users'
@@ -46,7 +60,8 @@ export class AuthService {
 
   async verifyToken(token: string): Promise<JwtPayload> {
     try {
-      const decoded = jwt.verify(token, this.jwtSecret, {
+      const secret = this.getSecret();
+      const decoded = jwt.verify(token, secret, {
         issuer: 'prepx',
         audience: 'prepx-users'
       }) as JwtPayload
