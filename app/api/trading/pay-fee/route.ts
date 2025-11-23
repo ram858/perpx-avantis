@@ -46,6 +46,10 @@ async function getEthPrice(): Promise<number> {
  */
 async function calculateTotalWalletBalance(fid: number, walletAddress: string): Promise<number> {
   try {
+    // Initialize services
+    const balanceService = getBalanceService();
+    const walletService = getWalletService();
+    
     // Get blockchain balances (ETH + tokens)
     const balanceData = await balanceService.getAllBalances(walletAddress);
     const blockchainBalance = balanceData.totalPortfolioValue + (parseFloat(balanceData.ethBalanceFormatted) * balanceData.ethPriceUSD);
