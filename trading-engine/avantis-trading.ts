@@ -282,7 +282,6 @@ export async function openAvantisPosition(
       }
     
     // Remove trailing slash from AVANTIS_API_URL if present
-    const avantisApiUrl = getAvantisApiUrl();
     const baseUrl = avantisApiUrl.endsWith('/') ? avantisApiUrl.slice(0, -1) : avantisApiUrl;
       
       // Add timeout to prevent hanging

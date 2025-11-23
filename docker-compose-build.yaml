@@ -9,7 +9,7 @@ services:
 
   trading-engine:
     build:
-      context: .
+      context: ./trading-engine
       dockerfile: Dockerfile
     image: ghcr.io/ram858/trading-engine:latest
 
