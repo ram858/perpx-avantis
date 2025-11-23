@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { getStorageItem } from '../utils/safeStorage';
+import { useIntegratedWallet } from '@/lib/wallet/IntegratedWalletContext';
 
 export interface Position {
   coin: string;
@@ -31,18 +32,78 @@ export interface PositionData {
 
 export function usePositions() {
   const { token } = useAuth();
+  const { avantisBalance } = useIntegratedWallet();
   const [positionData, setPositionData] = useState<PositionData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fetchInProgressRef = useRef(false);
   const retryCountRef = useRef(0);
   const maxRetries = 3;
+  const hasActiveSessionRef = useRef(false);
+  
+  // Check if there's an active trading session by calling the API
+  // This avoids circular dependency with useTradingSession
+  const checkActiveSession = useCallback(async (): Promise<boolean> => {
+    if (!token) return false;
+    
+    try {
+      const response = await fetch('/api/trading/sessions', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) return false;
+      
+      const data = await response.json();
+      const activeSession = data.sessions?.find((s: any) => s.status === 'running');
+      hasActiveSessionRef.current = !!activeSession;
+      return !!activeSession;
+    } catch (err) {
+      console.warn('[usePositions] Failed to check active session:', err);
+      return hasActiveSessionRef.current; // Return cached value on error
+    }
+  }, [token]);
+  
+  // Check if positions should be fetched
+  // Only fetch if BOTH conditions are met:
+  // 1. User has deposited funds (balance > 0)
+  // 2. User has started trading (active trading session with status === 'running')
+  const shouldFetchPositions = useCallback(async (): Promise<boolean> => {
+    if (!token) return false;
+    
+    // Must have balance > 0 (user has deposited funds)
+    if (!avantisBalance || avantisBalance <= 0) {
+      return false;
+    }
+    
+    // Check if there's an active trading session
+    const hasActiveSession = await checkActiveSession();
+    if (!hasActiveSession) {
+      return false;
+    }
+    
+    // Both conditions met - allow fetching positions
+    return true;
+  }, [token, avantisBalance, checkActiveSession]);
 
       const fetchPositions = useCallback(async (force = false) => {
-        // Authentication is handled by the API endpoint
+        // Authentication is required
         if (!token) {
           console.warn('[usePositions] No token available, skipping fetch');
+          setPositionData({ positions: [], totalPnL: 0, openPositions: 0 });
           return;
+        }
+        
+        // Only fetch if user has deposited funds AND started trading
+        if (!force) {
+          const shouldFetch = await shouldFetchPositions();
+          if (!shouldFetch) {
+            console.log('[usePositions] Conditions not met - need balance > 0 AND active trading session. Skipping fetch.');
+            setPositionData({ positions: [], totalPnL: 0, openPositions: 0 });
+            return;
+          }
         }
 
         // Prevent concurrent fetches
@@ -64,7 +125,7 @@ export function usePositions() {
 
           const response = await fetch('/api/positions', {
             headers: {
-              // 'Authorization': `Bearer ${token}`,
+              'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json',
             },
             signal: controller.signal,
@@ -104,7 +165,7 @@ export function usePositions() {
       setIsLoading(false);
       fetchInProgressRef.current = false;
     }
-  }, []); // Removed token dependency since authentication is disabled
+  }, [token, shouldFetchPositions]); // Include shouldFetchPositions dependency
 
   const closePositionInProgressRef = useRef<Set<string>>(new Set());
   const closeAllInProgressRef = useRef(false);
@@ -236,20 +297,53 @@ export function usePositions() {
 
       // Smart auto-refresh: only refresh when positions exist and page is visible
       useEffect(() => {
-        fetchPositions();
+        // Only fetch if we have a token AND user is authenticated
+        if (!token) {
+          // No token - set empty positions and return
+          setPositionData({ positions: [], totalPnL: 0, openPositions: 0 });
+          return;
+        }
+        
+        // Check conditions and fetch if met (async)
+        let cancelled = false;
+        shouldFetchPositions().then(shouldFetch => {
+          if (cancelled) return;
+          
+          if (!shouldFetch) {
+            console.log('[usePositions] Conditions not met - need balance > 0 AND active trading session. Not fetching positions.');
+            setPositionData({ positions: [], totalPnL: 0, openPositions: 0 });
+            return;
+          }
+          
+          // Initial fetch (only if conditions are met)
+          fetchPositions();
+        });
+        
+        return () => {
+          cancelled = true;
+        };
 
         let interval: NodeJS.Timeout | null = null;
 
         const startPolling = () => {
           if (interval) return; // Already polling
+          
+          // Don't start polling if no token (user not authenticated)
+          if (!token) {
+            return;
+          }
 
           // Much slower polling to reduce server load and prevent conflicts
           // Only poll every 45 seconds when no positions, 20 seconds when positions exist
           const pollInterval = positionData && positionData.openPositions > 0 ? 20000 : 45000;
           interval = setInterval(() => {
-            // Only fetch if not already in progress
-            if (!fetchInProgressRef.current) {
-              fetchPositions();
+            // Only fetch if we have a token, conditions are met, and not already in progress
+            if (token && !fetchInProgressRef.current) {
+              shouldFetchPositions().then(shouldFetch => {
+                if (shouldFetch) {
+                  fetchPositions();
+                }
+              });
             }
           }, pollInterval);
         };
@@ -261,16 +355,23 @@ export function usePositions() {
       }
     };
     
-    // Start polling on mount
-    startPolling();
+    // Start polling on mount (only if token exists)
+    if (token) {
+      startPolling();
+    }
     
     // Pause polling when tab is not visible to save resources
     const handleVisibilityChange = () => {
       if (document.hidden) {
         stopPolling();
-      } else {
-        fetchPositions(true); // Force refresh when tab becomes visible
-        startPolling();
+      } else if (token) {
+        // Only resume if we have a token and conditions are met
+        shouldFetchPositions().then(shouldFetch => {
+          if (shouldFetch) {
+            fetchPositions(true); // Force refresh when tab becomes visible
+            startPolling();
+          }
+        });
       }
     };
     
@@ -280,7 +381,7 @@ export function usePositions() {
       stopPolling();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [fetchPositions, positionData?.openPositions]);
+  }, [fetchPositions, positionData?.openPositions, token, shouldFetchPositions]); // Include shouldFetchPositions dependency
 
   return {
     positionData,

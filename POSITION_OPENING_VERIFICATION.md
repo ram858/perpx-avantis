@@ -181,7 +181,7 @@ When positions are open, the system returns:
 
 **Note:** To test actual position opening:
 1. Deposit USDC to wallet: `0x1412C18d693bb2ab22aa7F18e6eCb0CFC7049ef4`
-2. Approve USDC spending on AvantisFi
+2. Position opening will automatically check and approve USDC spending if needed (no manual approval required)
 3. Position opening will succeed with sufficient balance
 
 ## Conclusion

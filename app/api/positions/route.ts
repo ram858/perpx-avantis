@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService'
-import { AuthService } from '@/lib/services/AuthService'
+import { WebWalletService } from '@/lib/services/WebWalletService'
+import { verifyTokenAndGetContext } from '@/lib/utils/authHelper'
 import { AvantisClient } from '@/lib/services/AvantisClient'
 
-const walletService = new BaseAccountWalletService()
-const authService = new AuthService()
+const farcasterWalletService = new BaseAccountWalletService()
+const webWalletService = new WebWalletService()
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,32 +18,64 @@ export async function GET(request: NextRequest) {
     }
 
     const token = authHeader.substring(7)
-    const payload = await authService.verifyToken(token)
+    const authContext = await verifyTokenAndGetContext(token)
     
-    // FID is required for user identification
-    if (!payload.fid) {
-      return NextResponse.json({
-        positions: [],
-        totalPnL: 0,
-        openPositions: 0,
-        error: 'User FID required'
-      })
+    let wallet: { address: string; privateKey: string } | null = null;
+    
+    if (authContext.context === 'farcaster') {
+      // Farcaster user
+      if (!authContext.fid) {
+        return NextResponse.json({
+          positions: [],
+          totalPnL: 0,
+          openPositions: 0,
+          error: 'User FID required'
+        })
+      }
+      
+      // Get user's backend trading wallet (must have private key for automated trading)
+      const farcasterWallet = await farcasterWalletService.getWalletWithKey(authContext.fid, 'ethereum')
+      if (farcasterWallet && farcasterWallet.privateKey) {
+        wallet = {
+          address: farcasterWallet.address,
+          privateKey: farcasterWallet.privateKey
+        }
+      }
+    } else {
+      // Web user
+      if (!authContext.webUserId) {
+        return NextResponse.json({
+          positions: [],
+          totalPnL: 0,
+          openPositions: 0,
+          error: 'Web user ID required'
+        })
+      }
+      
+      // Get web user's trading wallet
+      const webWallet = await webWalletService.getWallet(authContext.webUserId, 'ethereum')
+      if (webWallet) {
+        const privateKey = await webWalletService.getPrivateKey(authContext.webUserId, 'ethereum')
+        if (privateKey) {
+          wallet = {
+            address: webWallet.address,
+            privateKey: privateKey
+          }
+        }
+      }
     }
-    
-    // Get user's backend trading wallet (must have private key for automated trading)
-    const wallet = await walletService.getWalletWithKey(payload.fid, 'ethereum')
     
     if (!wallet || !wallet.privateKey) {
       return NextResponse.json({
         positions: [],
         totalPnL: 0,
         openPositions: 0,
-        error: 'No backend trading wallet found. Backend wallets require a private key for automated trading.'
+        error: 'No trading wallet found. Please ensure your wallet is set up.'
       })
     }
     
-    console.log('[API] Getting positions for FID:', payload.fid)
-    console.log('[API] Using backend wallet address:', wallet.address)
+    console.log(`[API] Getting positions for ${authContext.context} user:`, authContext.fid || authContext.webUserId)
+    console.log('[API] Using wallet address:', wallet.address)
 
     // Try to get positions from trading engine first
     const tradingEngineUrl = process.env.TRADING_ENGINE_URL || 'http://localhost:3001'

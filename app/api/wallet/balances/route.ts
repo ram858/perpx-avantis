@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
-import { AuthService } from '@/lib/services/AuthService'
+import { verifyTokenAndGetContext } from '@/lib/utils/authHelper'
 import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService'
+import { WebWalletService } from '@/lib/services/WebWalletService'
 import { RealBalanceService } from '@/lib/services/RealBalanceService'
 
 export const runtime = 'nodejs'
 
-const authService = new AuthService()
-const walletService = new BaseAccountWalletService()
+const farcasterWalletService = new BaseAccountWalletService()
+const webWalletService = new WebWalletService()
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,12 +18,14 @@ export async function GET(request: NextRequest) {
     }
 
     const token = authHeader.substring(7)
-    const payload = await authService.verifyToken(token)
-
-    if (!payload.fid) {
+    let authContext
+    try {
+      authContext = await verifyTokenAndGetContext(token)
+    } catch (authError) {
+      console.error('[API] balances - Token verification failed:', authError)
       return NextResponse.json(
-        { error: 'Base Account (FID) required' },
-        { status: 400 }
+        { error: 'Invalid or expired token', details: authError instanceof Error ? authError.message : 'Invalid token' },
+        { status: 401 }
       )
     }
 
@@ -38,11 +41,40 @@ export async function GET(request: NextRequest) {
 
     const address = addressParam.toLowerCase()
 
-    const baseAddress = (await walletService.getBaseAccountAddress(payload.fid))?.toLowerCase() || null
-    const tradingWallet = await walletService.getWalletWithKey(payload.fid, 'ethereum')
-    const tradingAddress = tradingWallet?.address?.toLowerCase() || null
+    // Get authorized addresses based on context
+    let authorizedAddresses: string[] = []
+    
+    if (authContext.context === 'farcaster') {
+      if (!authContext.fid) {
+        return NextResponse.json(
+          { error: 'Base Account (FID) required' },
+          { status: 400 }
+        )
+      }
+      
+      const baseAddress = (await farcasterWalletService.getBaseAccountAddress(authContext.fid))?.toLowerCase() || null
+      const tradingWallet = await farcasterWalletService.getWalletWithKey(authContext.fid, 'ethereum')
+      const tradingAddress = tradingWallet?.address?.toLowerCase() || null
+      
+      if (baseAddress) authorizedAddresses.push(baseAddress)
+      if (tradingAddress) authorizedAddresses.push(tradingAddress)
+    } else {
+      // Web user
+      if (!authContext.webUserId) {
+        return NextResponse.json(
+          { error: 'Web user ID required' },
+          { status: 400 }
+        )
+      }
+      
+      const webWallet = await webWalletService.getWallet(authContext.webUserId, 'ethereum')
+      if (webWallet) {
+        authorizedAddresses.push(webWallet.address.toLowerCase())
+      }
+    }
 
-    if (address !== baseAddress && address !== tradingAddress) {
+    // Check if address is authorized
+    if (!authorizedAddresses.includes(address)) {
       return NextResponse.json(
         { error: 'Address not authorized for this user' },
         { status: 403 }

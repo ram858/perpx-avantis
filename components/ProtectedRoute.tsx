@@ -13,6 +13,11 @@ export function ProtectedRoute({ children, fallback }: ProtectedRouteProps): JSX
   const { isBaseContext } = useBaseMiniApp()
   const isWebFallbackEnabled = process.env.NEXT_PUBLIC_ENABLE_WEB_MODE !== "false"
 
+  // Allow access to auth pages without authentication
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/auth/')) {
+    return <>{children}</>
+  }
+
   // Show loading state
   if (isLoading) {
     return (

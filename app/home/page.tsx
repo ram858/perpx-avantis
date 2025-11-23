@@ -13,6 +13,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute"
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { NavigationHeader } from "@/components/NavigationHeader"
 import { DepositModal } from "@/components/DepositModal"
+import { BuildTimestamp } from "@/components/BuildTimestamp"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useBaseAccountTransactions } from "@/lib/services/BaseAccountTransactionService"
@@ -219,9 +220,9 @@ const TradingCard = ({
   const [lossThreshold, setLossThreshold] = useState('10')
   const [maxPositions, setMaxPositions] = useState('3')
 
-  const explorerBaseUrl = process.env.NEXT_PUBLIC_AVANTIS_NETWORK === 'base-testnet'
-    ? 'https://sepolia.basescan.org'
-    : 'https://basescan.org'
+  const explorerBaseUrl = process.env.NEXT_PUBLIC_AVANTIS_NETWORK === 'base-mainnet'
+    ? 'https://basescan.org'
+    : 'https://sepolia.basescan.org'
 
   const router = useRouter()
 
@@ -1228,14 +1229,16 @@ export default function HomePage() {
   }, [isConnected, positionData?.openPositions, tradingSession, refreshSessionStatus]);
 
   // Auto-create wallet if user doesn't have one - optimized with useCallback
+  // NOTE: For web users, wallet is created during OTP verification, so this is mainly for Farcaster users
   useEffect(() => {
     // Only create wallet if:
-    // 1. User is logged in
+    // 1. User is logged in (Farcaster only - web users get wallet during auth)
     // 2. Not currently loading
     // 3. No primary wallet is connected
     // 4. No wallets exist for this user
     // 5. Not already creating a wallet (prevent multiple simultaneous calls)
-    if (user?.fid && !isLoading && !primaryWallet && allWallets && allWallets.length === 0 && !error) {
+    // 6. User is Farcaster (web users already have wallet from OTP verification)
+    if (user?.fid && !user?.webUserId && !isLoading && !primaryWallet && allWallets && allWallets.length === 0 && !error) {
       // Add a small delay to ensure auth is fully complete
       const timer = setTimeout(() => {
         createWallet('ethereum').catch(err => {
@@ -1244,7 +1247,7 @@ export default function HomePage() {
       }, 500)
       return () => clearTimeout(timer)
     }
-  }, [user?.fid, isLoading, primaryWallet, allWallets, createWallet, error])
+  }, [user?.fid, user?.webUserId, isLoading, primaryWallet, allWallets, createWallet, error])
 
   // NOTE: Automatic post-deposit refresh removed
   // User must manually click refresh button to update balances after deposit confirms
@@ -1393,33 +1396,36 @@ export default function HomePage() {
           breadcrumbs={[{ label: 'Home' }]}
           actions={
             isConnected && hasCompletedInitialLoad ? (
-              <Button
-                onClick={async () => {
-                  try {
-                    await refreshWallets()
-                    await refreshBalances(true)
-                  } catch (err) {
-                    console.error('[HomePage] Refresh failed:', err)
-                  }
-                }}
-                disabled={isLoading}
-                className="bg-[#8759ff] hover:bg-[#7c4dff] text-white p-2 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                title={isLoading ? 'Refreshing...' : 'Refresh Balances'}
-              >
-                <svg 
-                  className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
+              <div className="flex items-center gap-2">
+                <BuildTimestamp />
+                <Button
+                  onClick={async () => {
+                    try {
+                      await refreshWallets()
+                      await refreshBalances(true)
+                    } catch (err) {
+                      console.error('[HomePage] Refresh failed:', err)
+                    }
+                  }}
+                  disabled={isLoading}
+                  className="bg-[#8759ff] hover:bg-[#7c4dff] text-white p-2 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={isLoading ? 'Refreshing...' : 'Refresh Balances'}
                 >
-                  <path 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round" 
-                    strokeWidth={2.5} 
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
-                  />
-                </svg>
-              </Button>
+                  <svg 
+                    className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round" 
+                      strokeWidth={2.5} 
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
+                    />
+                  </svg>
+                </Button>
+              </div>
             ) : undefined
           }
         />

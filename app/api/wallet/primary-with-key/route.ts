@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService'
-import { AuthService } from '@/lib/services/AuthService'
+import { WebWalletService } from '@/lib/services/WebWalletService'
+import { verifyTokenAndGetContext } from '@/lib/utils/authHelper'
 
-const walletService = new BaseAccountWalletService()
-const authService = new AuthService()
+const farcasterWalletService = new BaseAccountWalletService()
+const webWalletService = new WebWalletService()
 
-// GET /api/wallet/primary-with-key - Get user's primary trading wallet with private key
+// GET /api/wallet/primary-with-key - Get user's primary trading wallet with private key (supports both Farcaster and Web)
 export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization')
@@ -16,9 +17,9 @@ export async function GET(request: NextRequest) {
 
     const token = authHeader.substring(7)
     
-    let payload
+    let authContext
     try {
-      payload = await authService.verifyToken(token)
+      authContext = await verifyTokenAndGetContext(token)
     } catch (authError) {
       console.error('[API] primary-with-key - Token verification failed:', authError)
       return NextResponse.json(
@@ -27,33 +28,81 @@ export async function GET(request: NextRequest) {
       )
     }
     
-    // FID is required for Base Account users
-    if (!payload.fid) {
-      console.error('[API] primary-with-key - No FID in token payload')
-      return NextResponse.json(
-        { error: 'Base Account (FID) required' },
-        { status: 400 }
-      )
-    }
+    let wallet: { id: string; address: string; chain: string; privateKey: string; createdAt: Date } | null = null
     
-    console.log('[API] primary-with-key - Fetching wallet for FID:', payload.fid)
-    
-    let wallet
-    try {
-      wallet = await walletService.getWalletWithKey(payload.fid, 'ethereum')
-    } catch (walletError) {
-      console.error('[API] primary-with-key - Error fetching wallet:', walletError)
-      return NextResponse.json(
-        { 
-          error: 'Failed to fetch wallet from database',
-          details: walletError instanceof Error ? walletError.message : 'Unknown error'
-        },
-        { status: 500 }
-      )
+    if (authContext.context === 'farcaster') {
+      // Farcaster user
+      if (!authContext.fid) {
+        console.error('[API] primary-with-key - No FID in token payload')
+        return NextResponse.json(
+          { error: 'Base Account (FID) required' },
+          { status: 400 }
+        )
+      }
+      
+      console.log('[API] primary-with-key - Fetching wallet for FID:', authContext.fid)
+      
+      try {
+        const farcasterWallet = await farcasterWalletService.getWalletWithKey(authContext.fid, 'ethereum')
+        if (farcasterWallet) {
+          wallet = {
+            id: farcasterWallet.id,
+            address: farcasterWallet.address,
+            chain: farcasterWallet.chain,
+            privateKey: farcasterWallet.privateKey || '',
+            createdAt: farcasterWallet.createdAt
+          }
+        }
+      } catch (walletError) {
+        console.error('[API] primary-with-key - Error fetching wallet:', walletError)
+        return NextResponse.json(
+          { 
+            error: 'Failed to fetch wallet from database',
+            details: walletError instanceof Error ? walletError.message : 'Unknown error'
+          },
+          { status: 500 }
+        )
+      }
+    } else {
+      // Web user
+      if (!authContext.webUserId) {
+        console.error('[API] primary-with-key - No web user ID in token payload')
+        return NextResponse.json(
+          { error: 'Web user ID required' },
+          { status: 400 }
+        )
+      }
+      
+      console.log('[API] primary-with-key - Fetching wallet for web user:', authContext.webUserId)
+      
+      try {
+        const webWallet = await webWalletService.getWallet(authContext.webUserId, 'ethereum')
+        if (webWallet) {
+          const privateKey = await webWalletService.getPrivateKey(authContext.webUserId, 'ethereum')
+          if (privateKey) {
+            wallet = {
+              id: `web_${webWallet.id}`,
+              address: webWallet.address,
+              chain: webWallet.chain,
+              privateKey: privateKey,
+              createdAt: new Date(webWallet.created_at)
+            }
+          }
+        }
+      } catch (walletError) {
+        console.error('[API] primary-with-key - Error fetching wallet:', walletError)
+        return NextResponse.json(
+          { 
+            error: 'Failed to fetch wallet from database',
+            details: walletError instanceof Error ? walletError.message : 'Unknown error'
+          },
+          { status: 500 }
+        )
+      }
     }
     
     console.log('[API] primary-with-key - Wallet fetch result:', {
-      fid: payload.fid,
+      context: authContext.context,
       hasWallet: !!wallet,
       address: wallet?.address,
       hasPrivateKey: !!wallet?.privateKey,
@@ -62,7 +111,7 @@ export async function GET(request: NextRequest) {
     })
     
     if (!wallet) {
-      console.error('[API] primary-with-key - No wallet found for FID:', payload.fid)
+      console.error('[API] primary-with-key - No wallet found')
       return NextResponse.json(
         { 
           error: 'No trading wallet found',
@@ -73,11 +122,7 @@ export async function GET(request: NextRequest) {
     }
     
     if (!wallet.privateKey || wallet.privateKey.length === 0) {
-      console.error('[API] primary-with-key - Wallet found but no private key for FID:', payload.fid, {
-        address: wallet.address,
-        chain: wallet.chain,
-        hasPrivateKeyField: 'privateKey' in wallet
-      })
+      console.error('[API] primary-with-key - Wallet found but no private key')
       return NextResponse.json(
         { 
           error: 'Wallet found but private key not available',
@@ -103,7 +148,7 @@ export async function GET(request: NextRequest) {
       )
     }
     
-    console.log('[API] primary-with-key - ✅ Successfully returning wallet with private key for FID:', payload.fid)
+    console.log('[API] primary-with-key - ✅ Successfully returning wallet with private key')
     
     // Return wallet with private key (security: only return to authenticated user)
     return NextResponse.json({ 

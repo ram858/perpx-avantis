@@ -14,6 +14,7 @@
   "license": "MIT",
   "author": "PrepX Team",
   "scripts": {
+    "prebuild": "node scripts/generate-build-info.js",
     "build": "next build",
     "build:analyze": "ANALYZE=true next build",
     "dev": "next dev",

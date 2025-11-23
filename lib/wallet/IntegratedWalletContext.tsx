@@ -513,7 +513,8 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
    * Refresh wallet list from API
    */
   const refreshWallets = useCallback(async () => {
-    if (!user?.fid || !token) {
+    // Support both Farcaster (fid) and Web (webUserId) users
+    if ((!user?.fid && !user?.webUserId) || !token) {
       return;
     }
 
@@ -584,13 +585,14 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         tradingWalletAddress: null
       }));
     }
-  }, [user?.fid, user?.baseAccountAddress, token, refreshBalances, clientWalletService]);
+  }, [user?.fid, user?.webUserId, user?.baseAccountAddress, token, refreshBalances, clientWalletService]);
 
   /**
    * Create a new wallet
    */
   const createWallet = useCallback(async (chain: string, mnemonic?: string): Promise<ClientUserWallet | null> => {
-    if (!user?.fid || !token) return null;
+    // Support both Farcaster (fid) and Web (webUserId) users
+    if ((!user?.fid && !user?.webUserId) || !token) return null;
 
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
@@ -615,7 +617,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       }));
       return null;
     }
-  }, [user?.fid, token, refreshWallets, clientWalletService]);
+  }, [user?.fid, user?.webUserId, token, refreshWallets, clientWalletService]);
 
   /**
    * Switch to a different wallet
@@ -648,7 +650,8 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
   const hasInitialRefreshRef = useRef(false);
   
   useEffect(() => {
-    if (user?.fid && token && !hasLoadedWalletsRef.current) {
+    // Support both Farcaster (fid) and Web (webUserId) users
+    if ((user?.fid || user?.webUserId) && token && !hasLoadedWalletsRef.current) {
       hasLoadedWalletsRef.current = true;
       
       // Just load wallets, don't refresh balances yet
@@ -656,7 +659,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         console.error('[IntegratedWallet] Initial wallet load failed:', err);
       });
     }
-  }, [user?.fid, token]); // Remove refreshWallets from deps to prevent loops
+  }, [user?.fid, user?.webUserId, token, refreshWallets]); // Include refreshWallets but it's memoized
 
   // Do ONE initial balance refresh AFTER wallet addresses are loaded into state
   useEffect(() => {

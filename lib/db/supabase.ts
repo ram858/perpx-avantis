@@ -69,6 +69,70 @@ export interface Database {
           updated_at?: string;
         };
       };
+      web_users: {
+        Row: {
+          id: number;
+          email: string | null;
+          username: string | null;
+          phone_number: string | null;
+          created_at: string;
+          updated_at: string;
+          last_login_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          email?: string | null;
+          username?: string | null;
+          phone_number?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          last_login_at?: string | null;
+        };
+        Update: {
+          id?: number;
+          email?: string | null;
+          username?: string | null;
+          phone_number?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          last_login_at?: string | null;
+        };
+      };
+      web_wallets: {
+        Row: {
+          id: number;
+          user_id: number;
+          address: string;
+          encrypted_private_key: string | null;
+          iv: string | null;
+          chain: string;
+          wallet_type: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: number;
+          user_id: number;
+          address: string;
+          encrypted_private_key?: string | null;
+          iv?: string | null;
+          chain: string;
+          wallet_type: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: number;
+          user_id?: number;
+          address?: string;
+          encrypted_private_key?: string | null;
+          iv?: string | null;
+          chain?: string;
+          wallet_type?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
     };
   };
 }
