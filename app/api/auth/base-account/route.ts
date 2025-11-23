@@ -12,9 +12,19 @@ function getDomain(): string {
 }
 
 const client = createClient();
-const authService = new AuthService();
-const walletService = new BaseAccountWalletService();
-const dbService = new DatabaseWalletStorageService();
+
+// Lazy initialization - create services at runtime, not build time
+function getAuthService(): AuthService {
+  return new AuthService();
+}
+
+function getWalletService(): BaseAccountWalletService {
+  return new BaseAccountWalletService();
+}
+
+function getDbService(): DatabaseWalletStorageService {
+  return new DatabaseWalletStorageService();
+}
 
 /**
  * Verify Base Account JWT token and return user FID + JWT token
@@ -24,6 +34,10 @@ export async function GET(request: NextRequest) {
   try {
     // Get domain at runtime
     const domain = getDomain();
+    // Initialize services at runtime
+    const authService = getAuthService();
+    const walletService = getWalletService();
+    const dbService = getDbService();
     const authorization = request.headers.get('Authorization');
     
     if (!authorization?.startsWith('Bearer ')) {

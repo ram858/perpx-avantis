@@ -6,11 +6,19 @@ import { RealBalanceService } from '@/lib/services/RealBalanceService'
 
 export const runtime = 'nodejs'
 
-const authService = new AuthService()
-const walletService = new BaseAccountWalletService()
+// Lazy initialization - create services at runtime, not build time
+function getAuthService(): AuthService {
+  return new AuthService()
+}
+
+function getWalletService(): BaseAccountWalletService {
+  return new BaseAccountWalletService()
+}
 
 export async function GET(request: NextRequest) {
   try {
+    const authService = getAuthService()
+    const walletService = getWalletService()
     const authHeader = request.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

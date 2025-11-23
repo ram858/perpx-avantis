@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { AuthService } from '@/lib/services/AuthService'
 
-const authService = new AuthService()
+// Lazy initialization - create services at runtime, not build time
+function getAuthService(): AuthService {
+  return new AuthService()
+}
 
 export async function POST(request: NextRequest) {
   try {
+    const authService = getAuthService()
     // Verify authentication
     const authHeader = request.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
