@@ -139,8 +139,8 @@ jobs:
             CORS_ORIGINS=${{ secrets.CORS_ORIGINS }}
             EOF
 
-                        echo "Creating .env.trading file..."
-                        cat > .env.trading << 'EOF'
+            echo "Creating .env.trading file..."
+            cat > .env.trading << 'EOF'
             JWT_SECRET=${{ secrets.JWT_SECRET }}
             ENCRYPTION_SECRET=${{ secrets.ENCRYPTION_SECRET }}
             TRADING_ENGINE_URL=${{ secrets.TRADING_ENGINE_URL }}
@@ -155,8 +155,8 @@ jobs:
             NODE_ENV=production
             EOF
 
-                        echo "Creating .env.web file..."
-                        cat > .env.web << 'EOF'
+            echo "Creating .env.web file..."
+            cat > .env.web << 'EOF'
             JWT_SECRET=${{ secrets.JWT_SECRET }}
             ENCRYPTION_SECRET=${{ secrets.ENCRYPTION_SECRET }}
             TRADING_ENGINE_URL=${{ secrets.TRADING_ENGINE_URL }}
