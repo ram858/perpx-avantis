@@ -14,8 +14,15 @@ if (fs.existsSync(envPath)) {
   dotenv.config({ path: envPath });
 }
 
-const AVANTIS_API_URL = process.env.AVANTIS_API_URL || 'http://localhost:8000';
-const BASE_RPC_URL = process.env.BASE_RPC_URL || 'https://mainnet.base.org';
+// Runtime functions to get environment variables (not evaluated at build time)
+function getAvantisApiUrl(): string {
+  return process.env.AVANTIS_API_URL || 'http://localhost:8000';
+}
+
+function getBaseRpcUrl(): string {
+  return process.env.BASE_RPC_URL || 'https://mainnet.base.org';
+}
+
 const TRANSACTION_CONFIRMATION_TIMEOUT = 30000; // 30 seconds
 const POSITION_VERIFICATION_TIMEOUT = 20000; // 20 seconds
 const POSITION_VERIFICATION_RETRIES = 3;
@@ -54,7 +61,8 @@ async function waitForTransactionConfirmation(
     while (!confirmed && attempts < maxAttempts && (Date.now() - startTime) < timeout) {
       try {
         // Use Base RPC to check transaction receipt
-        const response = await fetch(BASE_RPC_URL, {
+        const baseRpcUrl = getBaseRpcUrl();
+        const response = await fetch(baseRpcUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -163,7 +171,8 @@ async function verifyPositionExists(
  */
 async function getAvantisBalance(privateKey: string): Promise<number> {
   try {
-    const baseUrl = AVANTIS_API_URL.endsWith('/') ? AVANTIS_API_URL.slice(0, -1) : AVANTIS_API_URL;
+    const avantisApiUrl = getAvantisApiUrl();
+    const baseUrl = avantisApiUrl.endsWith('/') ? avantisApiUrl.slice(0, -1) : avantisApiUrl;
     const response = await fetch(`${baseUrl}/api/balance?private_key=${encodeURIComponent(privateKey)}`, {
       method: 'GET',
       headers: {
@@ -236,7 +245,8 @@ export async function openAvantisPosition(
     console.log(`[AVANTIS] Collateral: $${params.collateral}`);
     console.log(`[AVANTIS] Leverage: ${params.leverage}x`);
     console.log(`[AVANTIS] Private Key: ${params.private_key ? `${params.private_key.slice(0, 10)}...${params.private_key.slice(-4)}` : 'MISSING!'}`);
-    console.log(`[AVANTIS] API URL: ${AVANTIS_API_URL}/api/open-position`);
+    const avantisApiUrl = getAvantisApiUrl();
+    console.log(`[AVANTIS] API URL: ${avantisApiUrl}/api/open-position`);
     console.log(`[AVANTIS] ==========================================`);
     
     if (!params.private_key) {
@@ -272,7 +282,7 @@ export async function openAvantisPosition(
       }
     
     // Remove trailing slash from AVANTIS_API_URL if present
-    const baseUrl = AVANTIS_API_URL.endsWith('/') ? AVANTIS_API_URL.slice(0, -1) : AVANTIS_API_URL;
+    const baseUrl = avantisApiUrl.endsWith('/') ? avantisApiUrl.slice(0, -1) : avantisApiUrl;
       
       // Add timeout to prevent hanging
       const controller = new AbortController();
@@ -437,7 +447,8 @@ export async function closeAvantisPosition(params: ClosePositionParams): Promise
     console.log(`[AVANTIS] Closing position: pair_index=${params.pair_index}`);
     
     // Remove trailing slash from AVANTIS_API_URL if present
-    const baseUrl = AVANTIS_API_URL.endsWith('/') ? AVANTIS_API_URL.slice(0, -1) : AVANTIS_API_URL;
+    const avantisApiUrl = getAvantisApiUrl();
+    const baseUrl = avantisApiUrl.endsWith('/') ? avantisApiUrl.slice(0, -1) : avantisApiUrl;
     const response = await fetch(`${baseUrl}/api/close-position`, {
       method: 'POST',
       headers: {
@@ -490,7 +501,8 @@ export async function getAvantisPositions(privateKey: string): Promise<Array<{
 }>> {
   try {
     // Remove trailing slash from AVANTIS_API_URL if present
-    const baseUrl = AVANTIS_API_URL.endsWith('/') ? AVANTIS_API_URL.slice(0, -1) : AVANTIS_API_URL;
+    const avantisApiUrl = getAvantisApiUrl();
+    const baseUrl = avantisApiUrl.endsWith('/') ? avantisApiUrl.slice(0, -1) : avantisApiUrl;
     const response = await fetch(`${baseUrl}/api/positions?private_key=${encodeURIComponent(privateKey)}`, {
       method: 'GET',
       headers: {

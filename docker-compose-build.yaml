@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+  avantis-service:
+    build:
+      context: ./avantis-service
+      dockerfile: Dockerfile
+    image: ghcr.io/ram858/avantis-service:latest
+
+  trading-engine:
+    build:
+      context: ./trading-engine
+      dockerfile: Dockerfile
+    image: ghcr.io/ram858/trading-engine:latest
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/ram858/perpx-frontend:latest

@@ -4,13 +4,23 @@ import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletServic
 import { getNetworkConfig } from '@/lib/config/network'
 import { ethers } from 'ethers'
 
-const authService = new AuthService()
-const walletService = new BaseAccountWalletService()
-const network = getNetworkConfig()
+// Lazy initialization - create services at runtime, not build time
+function getAuthService(): AuthService {
+  return new AuthService()
+}
+
+function getWalletService(): BaseAccountWalletService {
+  return new BaseAccountWalletService()
+}
 
 const ERC20_INTERFACE = new ethers.Interface([
   'function transfer(address to, uint256 amount) returns (bool)'
 ])
+
+// Get network config at runtime
+function getNetwork() {
+  return getNetworkConfig()
+}
 
 interface DepositRequestBody {
   amount: string
@@ -20,6 +30,10 @@ interface DepositRequestBody {
 
 export async function POST(request: NextRequest) {
   try {
+    const authService = getAuthService();
+    const walletService = getWalletService();
+    const network = getNetwork();
+    
     const authHeader = request.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

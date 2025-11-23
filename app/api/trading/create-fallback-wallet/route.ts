@@ -2,8 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { AuthService } from '@/lib/services/AuthService';
 import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService';
 
-const authService = new AuthService();
-const walletService = new BaseAccountWalletService();
+// Lazy initialization - create services at runtime, not build time
+function getAuthService(): AuthService {
+  return new AuthService();
+}
+
+function getWalletService(): BaseAccountWalletService {
+  return new BaseAccountWalletService();
+}
 
 /**
  * Create a fallback trading wallet for automated strategies
@@ -11,6 +17,8 @@ const walletService = new BaseAccountWalletService();
  */
 export async function POST(request: NextRequest) {
   try {
+    const authService = getAuthService();
+    const walletService = getWalletService();
     // Verify authentication
     const authHeader = request.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -63,6 +71,9 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   try {
+    const authService = getAuthService();
+    const walletService = getWalletService();
+    
     // Verify authentication
     const authHeader = request.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {

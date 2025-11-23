@@ -4,8 +4,14 @@ import { WebWalletService } from '@/lib/services/WebWalletService'
 import { verifyTokenAndGetContext } from '@/lib/utils/authHelper'
 import { AvantisClient } from '@/lib/services/AvantisClient'
 
-const farcasterWalletService = new BaseAccountWalletService()
-const webWalletService = new WebWalletService()
+// Lazy initialization - create services at runtime, not build time
+function getFarcasterWalletService(): BaseAccountWalletService {
+  return new BaseAccountWalletService()
+}
+
+function getWebWalletService(): WebWalletService {
+  return new WebWalletService()
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -34,6 +40,7 @@ export async function GET(request: NextRequest) {
       }
       
       // Get user's backend trading wallet (must have private key for automated trading)
+      const farcasterWalletService = getFarcasterWalletService()
       const farcasterWallet = await farcasterWalletService.getWalletWithKey(authContext.fid, 'ethereum')
       if (farcasterWallet && farcasterWallet.privateKey) {
         wallet = {
@@ -53,6 +60,7 @@ export async function GET(request: NextRequest) {
       }
       
       // Get web user's trading wallet
+      const webWalletService = getWebWalletService()
       const webWallet = await webWalletService.getWallet(authContext.webUserId, 'ethereum')
       if (webWallet) {
         const privateKey = await webWalletService.getPrivateKey(authContext.webUserId, 'ethereum')

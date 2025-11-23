@@ -20,13 +20,25 @@ import { getAIPOS } from './aiStorage';
 import { runTelegramSession, getDefaultSessionConfig, canStartSession } from './telegramSession';
 import { stopController } from './stopController';
 
-// Production configuration
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+// Production configuration - get at runtime (not build time)
+function getBotToken(): string | undefined {
+  return process.env.TELEGRAM_BOT_TOKEN;
+}
+
+function getChatId(): string | undefined {
+  return process.env.TELEGRAM_CHAT_ID;
+}
+
+function getIsProduction(): boolean {
+  return process.env.NODE_ENV === 'production';
+}
 
 // Make Telegram bot optional for development
 let bot: TelegramBot | null = null;
+
+const BOT_TOKEN = getBotToken();
+const CHAT_ID = getChatId();
+const IS_PRODUCTION = getIsProduction();
 
 if (BOT_TOKEN && CHAT_ID) {
   // Configure proxy if available
@@ -37,9 +49,11 @@ if (BOT_TOKEN && CHAT_ID) {
     }
   };
 
-  if (process.env.SOCKS_PROXY && SocksProxyAgent) {
+  // Get SOCKS proxy at runtime
+  const socksProxy = process.env.SOCKS_PROXY;
+  if (socksProxy && SocksProxyAgent) {
     try {
-      const agent = new SocksProxyAgent(process.env.SOCKS_PROXY);
+      const agent = new SocksProxyAgent(socksProxy);
       botOptions.request.agent = agent;
       console.log('🔗 Using SOCKS proxy for Telegram connection');
     } catch (error) {

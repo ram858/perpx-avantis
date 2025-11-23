@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { AuthService } from '@/lib/services/AuthService'
 
-const authService = new AuthService()
+// Lazy initialization - create services at runtime, not build time
+function getAuthService(): AuthService {
+  return new AuthService()
+}
 
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ sessionId: string }> }
 ) {
   try {
+    const authService = getAuthService()
     const params = await context.params
     const sessionId = params.sessionId
     console.log(`[API] Getting session status for: ${sessionId}`)

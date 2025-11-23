@@ -6,11 +6,25 @@ import { DatabaseWalletStorageService } from '@/lib/services/DatabaseWalletStora
 
 // Domain must match your mini app's deployment domain
 // This will be set via environment variable in production
-const domain = process.env.NEXT_PUBLIC_APP_URL?.replace(/^https?:\/\//, '') || 'localhost:3000';
+// Helper function to get domain at runtime
+function getDomain(): string {
+  return process.env.NEXT_PUBLIC_APP_URL?.replace(/^https?:\/\//, '') || 'localhost:3000';
+}
+
 const client = createClient();
-const authService = new AuthService();
-const walletService = new BaseAccountWalletService();
-const dbService = new DatabaseWalletStorageService();
+
+// Lazy initialization - create services at runtime, not build time
+function getAuthService(): AuthService {
+  return new AuthService();
+}
+
+function getWalletService(): BaseAccountWalletService {
+  return new BaseAccountWalletService();
+}
+
+function getDbService(): DatabaseWalletStorageService {
+  return new DatabaseWalletStorageService();
+}
 
 /**
  * Verify Base Account JWT token and return user FID + JWT token
@@ -18,6 +32,12 @@ const dbService = new DatabaseWalletStorageService();
  */
 export async function GET(request: NextRequest) {
   try {
+    // Get domain at runtime
+    const domain = getDomain();
+    // Initialize services at runtime
+    const authService = getAuthService();
+    const walletService = getWalletService();
+    const dbService = getDbService();
     const authorization = request.headers.get('Authorization');
     
     if (!authorization?.startsWith('Bearer ')) {

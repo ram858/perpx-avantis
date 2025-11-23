@@ -3,12 +3,25 @@ import { AvantisTradingService } from '@/lib/services/AvantisTradingService'
 import { AuthService } from '@/lib/services/AuthService'
 import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService'
 
-const tradingService = new AvantisTradingService()
-const authService = new AuthService()
-const walletService = new BaseAccountWalletService()
+// Lazy initialization - create services at runtime, not build time
+function getTradingService(): AvantisTradingService {
+  return new AvantisTradingService()
+}
+
+function getAuthService(): AuthService {
+  return new AuthService()
+}
+
+function getWalletService(): BaseAccountWalletService {
+  return new BaseAccountWalletService()
+}
 
 export async function POST(request: NextRequest) {
   try {
+    // Initialize services at runtime
+    const tradingService = getTradingService()
+    const authService = getAuthService()
+    const walletService = getWalletService()
     // Verify authentication
     const authHeader = request.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {

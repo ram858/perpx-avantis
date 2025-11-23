@@ -6,15 +6,26 @@ import { ethers } from 'ethers';
 import { getAvantisBalanceUSD } from '@/lib/wallet/avantisBalance';
 import { getNetworkConfig } from '@/lib/config/network';
 
-const authService = new AuthService();
-const walletService = new BaseAccountWalletService();
-const balanceService = new RealBalanceService();
+// Lazy initialization - create services at runtime, not build time
+function getAuthService(): AuthService {
+  return new AuthService();
+}
+
+function getWalletService(): BaseAccountWalletService {
+  return new BaseAccountWalletService();
+}
+
+function getBalanceService(): RealBalanceService {
+  return new RealBalanceService();
+}
+
+// Get network config at runtime
+function getNetworkConfigRuntime() {
+  return getNetworkConfig();
+}
 
 const FEE_PERCENTAGE = 0.01; // 1% of total wallet balance
 const FEE_RECIPIENT = '0xeb56286910d3Cf36Ba26958Be0BbC91D60B28799';
-const NETWORK_CONFIG = getNetworkConfig();
-const USDC_ADDRESS = NETWORK_CONFIG.usdcAddress;
-const USDC_DECIMALS = NETWORK_CONFIG.usdcDecimals;
 
 /**
  * Get current ETH price
@@ -35,6 +46,10 @@ async function getEthPrice(): Promise<number> {
  */
 async function calculateTotalWalletBalance(fid: number, walletAddress: string): Promise<number> {
   try {
+    // Initialize services
+    const balanceService = getBalanceService();
+    const walletService = getWalletService();
+    
     // Get blockchain balances (ETH + tokens)
     const balanceData = await balanceService.getAllBalances(walletAddress);
     const blockchainBalance = balanceData.totalPortfolioValue + (parseFloat(balanceData.ethBalanceFormatted) * balanceData.ethPriceUSD);
@@ -77,6 +92,10 @@ async function calculateEthAmount(feeAmountUSD: number): Promise<string> {
  */
 export async function POST(request: NextRequest) {
   try {
+    const authService = getAuthService();
+    const walletService = getWalletService();
+    const balanceService = getBalanceService();
+    
     const authHeader = request.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -130,7 +149,8 @@ export async function POST(request: NextRequest) {
 
     // Calculate fee amounts in ETH and USDC
     const ethAmount = await calculateEthAmount(finalFeeAmountUSD);
-    const usdcAmount = ethers.parseUnits(finalFeeAmountUSD.toFixed(USDC_DECIMALS), USDC_DECIMALS).toString();
+    const networkConfig = getNetworkConfigRuntime();
+    const usdcAmount = ethers.parseUnits(finalFeeAmountUSD.toFixed(networkConfig.usdcDecimals), networkConfig.usdcDecimals).toString();
 
     // Return transaction data for client to sign
     // Client will handle signing based on wallet type (Base Account vs fallback)
@@ -148,14 +168,14 @@ export async function POST(request: NextRequest) {
           data: '0x',
         },
         usdc: {
-          to: USDC_ADDRESS,
+          to: networkConfig.usdcAddress,
           value: '0x0',
           data: encodeUsdcTransfer(FEE_RECIPIENT, usdcAmount),
         },
       },
       amounts: {
         eth: ethers.formatEther(ethAmount),
-        usdc: ethers.formatUnits(usdcAmount, USDC_DECIMALS),
+        usdc: ethers.formatUnits(usdcAmount, networkConfig.usdcDecimals),
       },
     });
   } catch (error) {

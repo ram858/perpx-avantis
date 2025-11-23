@@ -3,8 +3,14 @@ import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletServic
 import { WebWalletService } from '@/lib/services/WebWalletService'
 import { verifyTokenAndGetContext } from '@/lib/utils/authHelper'
 
-const farcasterWalletService = new BaseAccountWalletService()
-const webWalletService = new WebWalletService()
+// Lazy initialization - create services at runtime, not build time
+function getFarcasterWalletService(): BaseAccountWalletService {
+  return new BaseAccountWalletService()
+}
+
+function getWebWalletService(): WebWalletService {
+  return new WebWalletService()
+}
 
 // GET /api/wallet/primary-with-key - Get user's primary trading wallet with private key (supports both Farcaster and Web)
 export async function GET(request: NextRequest) {
@@ -43,6 +49,7 @@ export async function GET(request: NextRequest) {
       console.log('[API] primary-with-key - Fetching wallet for FID:', authContext.fid)
       
       try {
+        const farcasterWalletService = getFarcasterWalletService()
         const farcasterWallet = await farcasterWalletService.getWalletWithKey(authContext.fid, 'ethereum')
         if (farcasterWallet) {
           wallet = {
@@ -76,6 +83,7 @@ export async function GET(request: NextRequest) {
       console.log('[API] primary-with-key - Fetching wallet for web user:', authContext.webUserId)
       
       try {
+        const webWalletService = getWebWalletService()
         const webWallet = await webWalletService.getWallet(authContext.webUserId, 'ethereum')
         if (webWallet) {
           const privateKey = await webWalletService.getPrivateKey(authContext.webUserId, 'ethereum')

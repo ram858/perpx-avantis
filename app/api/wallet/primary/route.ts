@@ -2,12 +2,20 @@ import { NextRequest, NextResponse } from 'next/server'
 import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService'
 import { AuthService } from '@/lib/services/AuthService'
 
-const walletService = new BaseAccountWalletService()
-const authService = new AuthService()
+// Lazy initialization - create services at runtime, not build time
+function getWalletService(): BaseAccountWalletService {
+  return new BaseAccountWalletService()
+}
+
+function getAuthService(): AuthService {
+  return new AuthService()
+}
 
 // GET /api/wallet/primary - Get user's primary trading wallet
 export async function GET(request: NextRequest) {
   try {
+    const walletService = getWalletService()
+    const authService = getAuthService()
     const authHeader = request.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

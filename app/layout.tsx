@@ -16,20 +16,15 @@ import { Suspense } from "react"
 import "./globals.css"
 
 const DEFAULT_APP_URL = "https://avantis.superapp.gg"
-const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? DEFAULT_APP_URL).replace(/\/$/, "")
 
-const miniApp = {
-  name: "PrepX AI Trading",
-  description:
-    "Advanced AI-powered trading bot for cryptocurrency markets. Automated trading with intelligent risk management and real-time analytics.",
-  version: "next",
-  heroImageUrl: `${appUrl}/trading-illustration.png`,
-  homeUrl: appUrl,
+// Helper function to get app URL at runtime
+function getAppUrl(): string {
+  return (process.env.NEXT_PUBLIC_APP_URL ?? DEFAULT_APP_URL).replace(/\/$/, "")
 }
 
 const baseMetadata: Metadata = {
   title: "PrepX - AI Trading Bot",
-  description: miniApp.description,
+  description: "Advanced AI-powered trading bot for cryptocurrency markets. Automated trading with intelligent risk management and real-time analytics.",
   generator: "PrepX",
   keywords: ["AI trading", "cryptocurrency", "trading bot", "automated trading", "crypto trading"],
   authors: [{ name: "PrepX Team" }],
@@ -50,6 +45,17 @@ const baseMetadata: Metadata = {
 }
 
 export async function generateMetadata(): Promise<Metadata> {
+  // Get app URL at runtime
+  const appUrl = getAppUrl()
+  const miniApp = {
+    name: "PrepX AI Trading",
+    description:
+      "Advanced AI-powered trading bot for cryptocurrency markets. Automated trading with intelligent risk management and real-time analytics.",
+    version: "next",
+    heroImageUrl: `${appUrl}/trading-illustration.png`,
+    homeUrl: appUrl,
+  }
+  
   const fcMiniAppContent = JSON.stringify({
     version: miniApp.version,
     imageUrl: miniApp.heroImageUrl,

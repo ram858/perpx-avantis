@@ -3,8 +3,14 @@ import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletServic
 import { WebWalletService } from '@/lib/services/WebWalletService'
 import { verifyTokenAndGetContext } from '@/lib/utils/authHelper'
 
-const farcasterWalletService = new BaseAccountWalletService()
-const webWalletService = new WebWalletService()
+// Lazy initialization - create services at runtime, not build time
+function getFarcasterWalletService(): BaseAccountWalletService {
+  return new BaseAccountWalletService()
+}
+
+function getWebWalletService(): WebWalletService {
+  return new WebWalletService()
+}
 
 // GET /api/wallet/user-wallets - Get user's wallets (supports both Farcaster and Web)
 export async function GET(request: NextRequest) {
@@ -37,6 +43,7 @@ export async function GET(request: NextRequest) {
         )
       }
 
+      const farcasterWalletService = getFarcasterWalletService()
       // Base Account wallet (smart wallet)
       const baseAddress = await farcasterWalletService.getBaseAccountAddress(authContext.fid)
       if (baseAddress) {
@@ -71,6 +78,7 @@ export async function GET(request: NextRequest) {
         )
       }
 
+      const webWalletService = getWebWalletService()
       const webWallets = await webWalletService.getAllWallets(authContext.webUserId)
       for (const wallet of webWallets) {
         wallets.push({
@@ -97,6 +105,8 @@ export async function GET(request: NextRequest) {
 // POST /api/wallet/user-wallets - Create a new wallet (supports both Farcaster and Web)
 export async function POST(request: NextRequest) {
   try {
+    const walletService = getWalletService()
+    const authService = getAuthService()
     const authHeader = request.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -128,6 +138,7 @@ export async function POST(request: NextRequest) {
 
       if (chainType === 'ethereum') {
         // Ensure trading wallet exists (create if needed)
+        const farcasterWalletService = getFarcasterWalletService()
         const wallet = await farcasterWalletService.ensureTradingWallet(authContext.fid)
         
         if (!wallet) {
@@ -152,6 +163,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (chainType === 'base-account') {
+        const farcasterWalletService = getFarcasterWalletService()
         const baseAddress = await farcasterWalletService.getBaseAccountAddress(authContext.fid)
         return NextResponse.json({
           wallet: baseAddress
@@ -176,6 +188,7 @@ export async function POST(request: NextRequest) {
 
       if (chainType === 'ethereum') {
         // Ensure trading wallet exists (create if needed)
+        const webWalletService = getWebWalletService()
         const wallet = await webWalletService.ensureTradingWallet(authContext.webUserId)
         
         if (!wallet) {

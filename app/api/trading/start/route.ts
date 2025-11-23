@@ -2,11 +2,20 @@ import { NextRequest, NextResponse } from 'next/server'
 import { AuthService } from '@/lib/services/AuthService'
 import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService'
 
-const authService = new AuthService()
-const walletService = new BaseAccountWalletService()
+// Lazy initialization - create services at runtime, not build time
+function getAuthService(): AuthService {
+  return new AuthService()
+}
+
+function getWalletService(): BaseAccountWalletService {
+  return new BaseAccountWalletService()
+}
 
 export async function POST(request: NextRequest) {
   try {
+    // Initialize services at runtime
+    const authService = getAuthService()
+    const walletService = getWalletService()
     console.log('[API] Trading start endpoint called')
     
     // Verify authentication

@@ -7,8 +7,14 @@ import { RealBalanceService } from '@/lib/services/RealBalanceService'
 
 export const runtime = 'nodejs'
 
-const farcasterWalletService = new BaseAccountWalletService()
-const webWalletService = new WebWalletService()
+// Lazy initialization - create services at runtime, not build time
+function getFarcasterWalletService(): BaseAccountWalletService {
+  return new BaseAccountWalletService()
+}
+
+function getWebWalletService(): WebWalletService {
+  return new WebWalletService()
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -52,6 +58,7 @@ export async function GET(request: NextRequest) {
         )
       }
       
+      const farcasterWalletService = getFarcasterWalletService()
       const baseAddress = (await farcasterWalletService.getBaseAccountAddress(authContext.fid))?.toLowerCase() || null
       const tradingWallet = await farcasterWalletService.getWalletWithKey(authContext.fid, 'ethereum')
       const tradingAddress = tradingWallet?.address?.toLowerCase() || null
@@ -67,6 +74,7 @@ export async function GET(request: NextRequest) {
         )
       }
       
+      const webWalletService = getWebWalletService()
       const webWallet = await webWalletService.getWallet(authContext.webUserId, 'ethereum')
       if (webWallet) {
         authorizedAddresses.push(webWallet.address.toLowerCase())
