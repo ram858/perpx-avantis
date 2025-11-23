@@ -128,61 +128,56 @@ jobs:
             cd /opt/perpx-avantis || mkdir -p /opt/perpx-avantis && cd /opt/perpx-avantis
 
             echo "Creating .env.avantis file..."
-            cat > .env.avantis << 'EOF'
-            HOST=0.0.0.0
-            PORT=8000
-            DEBUG=false
-            AVANTIS_NETWORK=${{ secrets.AVANTIS_NETWORK }}
-            AVANTIS_RPC_URL=${{ secrets.AVANTIS_RPC_URL }}
-            MAX_RETRIES=3
-            RETRY_DELAY=1.0
-            CORS_ORIGINS=${{ secrets.CORS_ORIGINS }}
-            EOF
+            echo "HOST=${{ secrets.HOST }}" > .env.avantis
+            echo "PORT=8000" >> .env.avantis
+            echo "DEBUG=false" >> .env.avantis
+            echo "AVANTIS_NETWORK=${{ secrets.AVANTIS_NETWORK }}" >> .env.avantis
+            echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env.avantis
+            echo "AVANTIS_RPC_URL=${{ secrets.AVANTIS_RPC_URL }}" >> .env.avantis
+            echo "MAX_RETRIES=3" >> .env.avantis
+            echo "RETRY_DELAY=1.0" >> .env.avantis
+            echo "CORS_ORIGINS=${{ secrets.CORS_ORIGINS }}" >> .env.avantis
 
             echo "Creating .env.trading file..."
-            cat > .env.trading << 'EOF'
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
-            ENCRYPTION_SECRET=${{ secrets.ENCRYPTION_SECRET }}
-            TRADING_ENGINE_URL=${{ secrets.TRADING_ENGINE_URL }}
-            AVANTIS_API_URL=${{ secrets.AVANTIS_API_URL }}
-            AVANTIS_NETWORK=${{ secrets.AVANTIS_NETWORK }}
-            JWT_EXPIRATION_TIME=${{ secrets.JWT_EXPIRATION_TIME }}
-            SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-            SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-            SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
-            BASE_RPC_URL=${{ secrets.BASE_RPC_URL }}
-            BASE_TESTNET_RPC_URL=${{ secrets.BASE_TESTNET_RPC_URL}}
-            NODE_ENV=production
-            EOF
+            echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" > .env.trading
+            echo "ENCRYPTION_SECRET=${{ secrets.ENCRYPTION_SECRET }}" >> .env.trading
+            echo "TRADING_ENGINE_URL=${{ secrets.TRADING_ENGINE_URL }}" >> .env.trading
+            echo "AVANTIS_API_URL=${{ secrets.AVANTIS_API_URL }}" >> .env.trading
+            echo "AVANTIS_NETWORK=${{ secrets.AVANTIS_NETWORK }}" >> .env.trading
+            echo "JWT_EXPIRATION_TIME=${{ secrets.JWT_EXPIRATION_TIME }}" >> .env.trading
+            echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env.trading
+            echo "SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" >> .env.trading
+            echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env.trading
+            echo "BASE_RPC_URL=${{ secrets.BASE_RPC_URL }}" >> .env.trading
+            echo "BASE_TESTNET_RPC_URL=${{ secrets.BASE_TESTNET_RPC_URL}}" >> .env.trading
+            echo "NODE_ENV=production" >> .env.trading
+            PORT=3001 >> .env.trading
 
             echo "Creating .env.web file..."
-            cat > .env.web << 'EOF'
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
-            ENCRYPTION_SECRET=${{ secrets.ENCRYPTION_SECRET }}
-            TRADING_ENGINE_URL=${{ secrets.TRADING_ENGINE_URL }}
-            AVANTIS_API_URL=${{ secrets.AVANTIS_API_URL }}
-            AVANTIS_NETWORK=${{ secrets.AVANTIS_NETWORK }}
-            JWT_EXPIRATION_TIME=${{ secrets.JWT_EXPIRATION_TIME }}
-            BASE_RPC_URL=${{ secrets.BASE_RPC_URL }}
-            BASE_TESTNET_RPC_URL=${{ secrets.BASE_TESTNET_RPC_URL }}
+            echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" > .env.web
+            echo "ENCRYPTION_SECRET=${{ secrets.ENCRYPTION_SECRET }}" >> .env.web
+            echo "TRADING_ENGINE_URL=${{ secrets.TRADING_ENGINE_URL }}" >> .env.web"
+            echo "AVANTIS_API_URL=${{ secrets.AVANTIS_API_URL }}" >> .env.web"
+            echo "AVANTIS_NETWORK=${{ secrets.AVANTIS_NETWORK }}" >> .env.web
+            echo "JWT_EXPIRATION_TIME=${{ secrets.JWT_EXPIRATION_TIME }}" >> .env.web
+            echo "BASE_RPC_URL=${{ secrets.BASE_RPC_URL }}" >> .env.web
+            echo "BASE_TESTNET_RPC_URL=${{ secrets.BASE_TESTNET_RPC_URL }}" >> .env.web
+            echo "NEXT_PUBLIC_BASE_RPC_URL=${{ secrets.NEXT_PUBLIC_BASE_RPC_URL || secrets.BASE_RPC_URL }}" >> .env.web
+            echo "NEXT_PUBLIC_BASE_TESTNET_RPC_URL=${{ secrets.NEXT_PUBLIC_BASE_TESTNET_RPC_URL }}" >> .env.web
 
-            NEXT_PUBLIC_BASE_RPC_URL=${{ secrets.NEXT_PUBLIC_BASE_RPC_URL || secrets.BASE_RPC_URL }}
-            NEXT_PUBLIC_BASE_TESTNET_RPC_URL=${{ secrets.NEXT_PUBLIC_BASE_TESTNET_RPC_URL }}
+            echo "NEXT_PUBLIC_APP_URL=${{ secrets.NEXT_PUBLIC_APP_URL }}" >> .env.web
+            echo "NEXT_PUBLIC_AVANTIS_NETWORK=${{ secrets.NEXT_PUBLIC_AVANTIS_NETWORK }}" >> .env.web
 
-            NEXT_PUBLIC_APP_URL=${{ secrets.NEXT_PUBLIC_APP_URL }}
-            NEXT_PUBLIC_AVANTIS_NETWORK=${{ secrets.NEXT_PUBLIC_AVANTIS_NETWORK }}
+            echo "NEXT_PUBLIC_ENABLE_WEB_MODE=${{ secrets.NEXT_PUBLIC_ENABLE_WEB_MODE }}" >> .env.web
+            echo "NEXT_PUBLIC_AVANTIS_API_URL=${{ secrets.NEXT_PUBLIC_AVANTIS_API_URL}}" >> .env.web
+            echo "NEXT_PUBLIC_WS_URL=${{ secrets.NEXT_PUBLIC_WS_URL}}" >> .env.web
+            echo "NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" >> .env.web
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}" >> .env.web
 
-            NEXT_PUBLIC_ENABLE_WEB_MODE=${{ secrets.NEXT_PUBLIC_ENABLE_WEB_MODE }}
-            NEXT_PUBLIC_AVANTIS_API_URL=${{ secrets.NEXT_PUBLIC_AVANTIS_API_URL}}
-            NEXT_PUBLIC_WS_URL=${{ secrets.NEXT_PUBLIC_WS_URL}}
-            NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-
-            NODE_ENV=production
-            SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-            SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-            SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
-            EOF
+            echo "NODE_ENV=production" >> .env.web
+            echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env.web
+            echo "SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" >> .env.web
+            echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env.web
             echo "Logging into GHCR..."
             echo "${{ secrets.Auth_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GIT_USER }}" --password-stdin
 
