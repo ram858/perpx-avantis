@@ -72,17 +72,28 @@ class Settings(BaseSettings):
         case_sensitive = False
 
 
-# Global settings instance
-settings = Settings()
+# Global settings instance - lazy initialization at runtime
+_settings_instance: Optional[Settings] = None
 
-# Validate network setting
-if settings.avantis_network not in ["base-testnet", "base-mainnet"]:
-    raise ValueError(
-        f"Invalid AVANTIS_NETWORK: {settings.avantis_network}. "
-        "Must be 'base-testnet' or 'base-mainnet'"
-    )
+def get_settings() -> Settings:
+    """Get settings instance (lazy initialization at runtime)."""
+    global _settings_instance
+    if _settings_instance is None:
+        _settings_instance = Settings()
+        
+        # Validate network setting at runtime
+        if _settings_instance.avantis_network not in ["base-testnet", "base-mainnet"]:
+            raise ValueError(
+                f"Invalid AVANTIS_NETWORK: {_settings_instance.avantis_network}. "
+                "Must be 'base-testnet' or 'base-mainnet'"
+            )
+        
+        # Override USDC address based on network
+        if _settings_instance.avantis_network == "base-testnet":
+            _settings_instance.usdc_token_address = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+    
+    return _settings_instance
 
-# Override USDC address based on network
-if settings.avantis_network == "base-testnet":
-    settings.usdc_token_address = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+# For backward compatibility, create settings on first access
+settings = get_settings()
 

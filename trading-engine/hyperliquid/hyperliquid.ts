@@ -119,7 +119,12 @@ export const account = {
 
 
 // 🌐 Use testnet or mainnet transport based on environment
-const isTestnet = process.env.HYPERLIQUID_TESTNET !== 'false'; // Default to testnet unless explicitly set to false
+// Get testnet setting at runtime (not build time)
+function getIsTestnet(): boolean {
+  return process.env.HYPERLIQUID_TESTNET !== 'false'; // Default to testnet unless explicitly set to false
+}
+
+const isTestnet = getIsTestnet();
 export const transport = new hl.HttpTransport({ isTestnet });
 export const publicClient = new hl.PublicClient({ transport });
 

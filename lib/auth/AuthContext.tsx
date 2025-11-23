@@ -40,7 +40,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [token, setToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const { isBaseContext, authenticate: authenticateBase, isReady: baseReady } = useBaseMiniApp()
-  const isWebFallbackEnabled = process.env.NEXT_PUBLIC_ENABLE_WEB_MODE !== "false"
+  
+  // Get web fallback setting at runtime (client-side)
+  // Use a function to ensure it's evaluated at runtime, not build time
+  const getIsWebFallbackEnabled = () => {
+    if (typeof window !== 'undefined') {
+      // Client-side: try to get from runtime config or fallback to env
+      return (window as any).__RUNTIME_CONFIG__?.NEXT_PUBLIC_ENABLE_WEB_MODE !== "false" ||
+             process.env.NEXT_PUBLIC_ENABLE_WEB_MODE !== "false"
+    }
+    // Server-side: read from process.env at runtime
+    return process.env.NEXT_PUBLIC_ENABLE_WEB_MODE !== "false"
+  }
+  
+  const isWebFallbackEnabled = getIsWebFallbackEnabled()
 
   const isAuthenticated = !!user
 

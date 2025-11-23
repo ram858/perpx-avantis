@@ -40,10 +40,22 @@ function log(tag: string, message: string) {
   console.log(logMessage);
 }
 
-// Check if running in web mode
-const isWebMode = process.env.WEB_MODE === 'true';
-const sessionId = process.env.SESSION_ID;
-const tradingConfig = process.env.TRADING_CONFIG;
+// Check if running in web mode - get at runtime (not build time)
+function getIsWebMode(): boolean {
+  return process.env.WEB_MODE === 'true';
+}
+
+function getSessionId(): string | undefined {
+  return process.env.SESSION_ID;
+}
+
+function getTradingConfig(): string | undefined {
+  return process.env.TRADING_CONFIG;
+}
+
+const isWebMode = getIsWebMode();
+const sessionId = getSessionId();
+const tradingConfig = getTradingConfig();
 
 interface WebTradingConfig {
   maxBudget: number;

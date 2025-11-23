@@ -14,7 +14,11 @@ import cors from 'cors';
 import { TradingSessionManager } from '../session-manager';
 
 const app = express();
-const port = process.env.API_PORT || 3001;
+
+// Get port at runtime (not build time)
+function getPort(): number {
+  return parseInt(process.env.API_PORT || '3001', 10);
+}
 
 // Middleware
 app.use(cors({
@@ -208,7 +212,11 @@ app.post('/api/close-all-positions', async (req, res) => {
     console.log(`[API] Closing all positions for user ${phoneNumber || 'unknown'}`);
     
     // For Avantis: Call Avantis service
-    const avantisApiUrl = process.env.AVANTIS_API_URL || 'http://localhost:8000';
+    // Get Avantis API URL at runtime
+    function getAvantisApiUrl(): string {
+      return process.env.AVANTIS_API_URL || 'http://localhost:8000';
+    }
+    const avantisApiUrl = getAvantisApiUrl();
     try {
       const response = await fetch(`${avantisApiUrl}/api/close-all-positions`, {
         method: 'POST',
@@ -281,7 +289,11 @@ app.post('/api/close-position', async (req, res) => {
     console.log(`[API] Closing position ${pairIndex} for user ${userFid || 'unknown'}`);
     
     // For Avantis: Call Avantis service
-    const avantisApiUrl = process.env.AVANTIS_API_URL || 'http://localhost:8000';
+    // Get Avantis API URL at runtime
+    function getAvantisApiUrl(): string {
+      return process.env.AVANTIS_API_URL || 'http://localhost:8000';
+    }
+    const avantisApiUrl = getAvantisApiUrl();
     try {
       const response = await fetch(`${avantisApiUrl}/api/close-position`, {
         method: 'POST',
@@ -509,6 +521,7 @@ process.on('SIGINT', () => {
 });
 
 // Start server
+const port = getPort();
 app.listen(port, () => {
   console.log(`[API] Trading API server running on port ${port}`);
   console.log(`[API] Health check: http://localhost:${port}/api/health`);
