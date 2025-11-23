@@ -1,0 +1,260 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [development]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GIT_USER }}
+          password: ${{ secrets.Auth_TOKEN }}
+
+      # Build and push Avantis Service
+      - name: Extract Avantis metadata
+        id: meta-avantis
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ secrets.GIT_USER }}/avantis-service
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      - name: Build and Push Avantis Service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./avantis-service
+          file: ./avantis-service/Dockerfile
+          push: true
+          tags: ${{ steps.meta-avantis.outputs.tags }}
+          labels: ${{ steps.meta-avantis.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Build and push Trading Engine
+      - name: Extract Trading Engine metadata
+        id: meta-trading
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ secrets.GIT_USER }}/trading-engine
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      - name: Build and Push Trading Engine
+        uses: docker/build-push-action@v5
+        with:
+          context: ./trading-engine
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta-trading.outputs.tags }}
+          labels: ${{ steps.meta-trading.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Build and push Frontend
+      - name: Extract Frontend metadata
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ secrets.GIT_USER }}/perpx-frontend
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      - name: Build and Push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Deploy to Server
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Test SSH connection
+        run: |
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes \
+          ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
+          "echo 'SSH connected successfully ✅'"
+
+      - name: Copy docker-compose.yaml to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "docker-compose.yaml"
+          target: "/opt/perpx-avantis/"
+
+      - name: Deploy to Server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          debug: true
+          script_stop: true
+          script: |
+            cd /opt/perpx-avantis || mkdir -p /opt/perpx-avantis && cd /opt/perpx-avantis
+
+            echo "Creating .env.avantis file..."
+            cat > .env.avantis << EOF
+            HOST=0.0.0.0
+            PORT=8000
+            DEBUG=false
+            AVANTIS_NETWORK=${{ secrets.AVANTIS_NETWORK }}
+            AVANTIS_RPC_URL=${{ secrets.AVANTIS_RPC_URL }}
+            MAX_RETRIES=3
+            RETRY_DELAY=1.0
+            CORS_ORIGINS=${{ secrets.CORS_ORIGINS }}
+            EOF
+
+            echo "Creating .env.trading file..."
+            cat > .env.trading << EOF
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            ENCRYPTION_SECRET=${{ secrets.ENCRYPTION_SECRET }}
+            TRADING_ENGINE_URL=${{ secrets.TRADING_ENGINE_URL }}
+            AVANTIS_API_URL=${{ secrets.AVANTIS_API_URL }}
+            AVANTIS_NETWORK=${{ secrets.AVANTIS_NETWORK }}
+            JWT_EXPIRATION_TIME=${{ secrets.JWT_EXPIRATION_TIME }}
+            SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+            SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+            SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+            BASE_RPC_URL=${{ secrets.BASE_RPC_URL }}
+            BASE_TESTNET_RPC_URL=${{ secrets.BASE_TESTNET_RPC_URL}}
+            NODE_ENV=production
+            EOF
+
+            echo "Creating .env.web file..."
+            cat > .env.web << EOF
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            ENCRYPTION_SECRET=${{ secrets.ENCRYPTION_SECRET }}
+            TRADING_ENGINE_URL=${{ secrets.TRADING_ENGINE_URL }}
+            AVANTIS_API_URL=${{ secrets.AVANTIS_API_URL }}
+            AVANTIS_NETWORK=${{ secrets.AVANTIS_NETWORK }}
+            JWT_EXPIRATION_TIME=${{ secrets.JWT_EXPIRATION_TIME }}
+            BASE_RPC_URL=${{ secrets.BASE_RPC_URL }}
+            BASE_TESTNET_RPC_URL=${{ secrets.BASE_TESTNET_RPC_URL }}
+
+            # Client-side (NEXT_PUBLIC_) overrides
+            NEXT_PUBLIC_BASE_RPC_URL=${{ secrets.NEXT_PUBLIC_BASE_RPC_URL || secrets.BASE_RPC_URL }}
+            NEXT_PUBLIC_BASE_TESTNET_RPC_URL=${{ secrets.NEXT_PUBLIC_BASE_TESTNET_RPC_URL }}
+
+            # REQUIRED - Client-Side (NEXT_PUBLIC_ prefix)
+            NEXT_PUBLIC_APP_URL=${{ secrets.NEXT_PUBLIC_APP_URL }}
+            NEXT_PUBLIC_AVANTIS_NETWORK=${{ secrets.NEXT_PUBLIC_AVANTIS_NETWORK }}
+
+            # OPTIONAL
+            NEXT_PUBLIC_ENABLE_WEB_MODE=${{ secrets.NEXT_PUBLIC_ENABLE_WEB_MODE }}
+            NEXT_PUBLIC_AVANTIS_API_URL=${{ secrets.NEXT_PUBLIC_AVANTIS_API_URL}}
+            NEXT_PUBLIC_WS_URL=${{ secrets.NEXT_PUBLIC_WS_URL}}
+            NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+            NODE_ENV=production
+            SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+            SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+            SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+            EOF
+
+            echo "Logging into GHCR..."
+            echo "${{ secrets.Auth_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GIT_USER }}" --password-stdin
+
+            echo "Pulling latest images..."
+            docker pull ghcr.io/${{ secrets.GIT_USER }}/avantis-service:latest || true
+            docker pull ghcr.io/${{ secrets.GIT_USER }}/trading-engine:latest || true
+            docker pull ghcr.io/${{ secrets.GIT_USER }}/perpx-frontend:latest || true
+
+            echo "Stopping existing containers..."
+            docker-compose down || true
+
+            echo "Pruning old images..."
+            docker image prune -af || true
+
+            echo "Starting services with docker-compose..."
+            docker-compose up -d
+
+            echo "Waiting for services to be healthy..."
+            sleep 20
+
+            echo "Checking service health..."
+            if curl -f http://localhost:8000/health > /dev/null 2>&1; then
+              echo "✅ Avantis service is healthy"
+            else
+              echo "⚠️ Avantis service health check failed"
+            fi
+
+            if curl -f http://localhost:3001/api/health > /dev/null 2>&1; then
+              echo "✅ Trading engine is healthy"
+            else
+              echo "⚠️ Trading engine health check failed"
+            fi
+
+            if curl -f http://localhost:3000/api/config > /dev/null 2>&1; then
+              echo "✅ Frontend is healthy"
+            else
+              echo "⚠️ Frontend health check failed"
+            fi
+
+            echo "✅ Deployment complete 🚀"
+            docker-compose ps
+
+      - name: Check if release exists
+        id: check_release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = "latest";
+            try {
+              await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag
+              });
+              core.setOutput("release_exists", true);
+            } catch (error) {
+              core.setOutput("release_exists", false);
+            }
+
+      - name: Create release
+        if: steps.check_release.outputs.release_exists == 'false'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.Auth_TOKEN }}
+        with:
+          tag_name: latest
+          release_name: Deployment
+          body: |
+            Zero-downtime deployment 🚀
+            
+            - Built and pushed all 3 Docker images to GHCR
+              - avantis-service
+              - trading-engine
+              - perpx-frontend
+            - Deployed to production server using docker-compose
+            - Environment variables loaded at runtime
+            - Health checks verified

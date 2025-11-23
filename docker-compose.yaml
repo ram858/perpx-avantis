@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   avantis-service:
-    image: ghcr.io/ram858/avantis-service:latest
+    image: ghcr.io/ram858/avantis-service
     container_name: perpx-avantis-service
     ports:
       - "8000:8000"
@@ -22,7 +22,7 @@ services:
       - perpx-network
 
   trading-engine:
-    image: ghcr.io/ram858/trading-engine:latest
+    image: ghcr.io/ram858/trading-engine
     container_name: perpx-trading-engine
     ports:
       - "3001:3001"
@@ -38,7 +38,7 @@ services:
       - perpx-network
 
   frontend:
-    image: ghcr.io/ram858/start_periodfrontend:latest
+    image: ghcr.io/ram858/perpx-frontend
     container_name: perpx-frontend
     env_file:
       - .env.web
@@ -47,9 +47,9 @@ services:
     environment:
       NODE_ENV: production
 
-      # URLs for backend services (via service names inside the network)
-      NEXT_PUBLIC_AVANTIS_URL: http://avantis-service:8000
-      NEXT_PUBLIC_TRADING_ENGINE_URL: http://trading-engine:3001
+      # # URLs for backend services (via service names inside the network)
+      # NEXT_PUBLIC_AVANTIS_URL: http://avantis-service:8000
+      # NEXT_PUBLIC_TRADING_ENGINE_URL: http://trading-engine:3001
 
     depends_on:
       - avantis-service
