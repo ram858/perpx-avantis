@@ -105,8 +105,6 @@ export async function GET(request: NextRequest) {
 // POST /api/wallet/user-wallets - Create a new wallet (supports both Farcaster and Web)
 export async function POST(request: NextRequest) {
   try {
-    const walletService = getWalletService()
-    const authService = getAuthService()
     const authHeader = request.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
