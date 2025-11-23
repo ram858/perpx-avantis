@@ -133,6 +133,7 @@
     "dotenv": "^16.6.1",
     "eslint": "^9",
     "eslint-config-next": "15.5.2",
+    "lightningcss": "^1.30.2",
     "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
     "ts-node": "^10.9.1",
