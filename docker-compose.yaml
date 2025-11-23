@@ -1,0 +1,63 @@
+version: "3.9"
+
+services:
+  avantis-service:
+    image: ghcr.io/ram858/avantis-service:latest
+    container_name: perpx-avantis-service
+    ports:
+      - "8000:8000"
+    environment:
+      ENV: production
+      PORT: 8000
+    env_file:
+      - .env.avantis
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - perpx-network
+
+  trading-engine:
+    image: ghcr.io/ram858/trading-engine:latest
+    container_name: perpx-trading-engine
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env.trading
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+    depends_on:
+      - avantis-service
+    restart: unless-stopped
+    networks:
+      - perpx-network
+
+  frontend:
+    image: ghcr.io/ram858/start_periodfrontend:latest
+    container_name: perpx-frontend
+    env_file:
+      - .env.web
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+
+      # URLs for backend services (via service names inside the network)
+      NEXT_PUBLIC_AVANTIS_URL: http://avantis-service:8000
+      NEXT_PUBLIC_TRADING_ENGINE_URL: http://trading-engine:3001
+
+    depends_on:
+      - avantis-service
+      - trading-engine
+    restart: unless-stopped
+    networks:
+      - perpx-network
+
+networks:
+  perpx-network:
+    driver: bridge
