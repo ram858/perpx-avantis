@@ -389,29 +389,51 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       let tradingVaultTotal = 0;
       let tradingVaultHoldings: TokenBalance[] = [];
       
-      if (tradingAddress && tradingAddress.toLowerCase() !== addressToUse.toLowerCase()) {
-        // Different addresses - fetch trading vault balance separately
-        try {
-          const tradingBalanceData = await fetchBalanceData(tradingAddress, forceRefresh);
-          const tradingVaultHoldingsRaw = convertHoldingsToTokenBalance(tradingBalanceData.holdings)
-            .filter(vaultHolding => parseFloat(vaultHolding.balance) > 0);
-          
-          // Recalculate USD values from fresh prices
-          tradingVaultTotal = tradingVaultHoldingsRaw.reduce((sum, holding) => {
-            return sum + (isValidNumber(holding.valueUSD) ? holding.valueUSD : 0);
-          }, 0);
-          
-          tradingVaultHoldings = tradingVaultHoldingsRaw;
-        } catch (vaultError) {
-          console.warn('[IntegratedWallet] Unable to fetch trading vault balance:', vaultError);
-        }
-      } else if (user?.webUserId && tradingAddress && tradingAddress.toLowerCase() === addressToUse.toLowerCase()) {
-        // For web users, trading wallet IS the main wallet - use the main balance as avantisBalance
-        // Calculate USDC balance from holdings (this is the trading balance)
-        const usdcHolding = baseHoldings.find(h => h.token.symbol === 'USDC');
-        if (usdcHolding && usdcHolding.valueUSD > 0) {
-          tradingVaultTotal = usdcHolding.valueUSD;
-          console.log(`[IntegratedWallet] Web user - using USDC balance as avantisBalance: $${tradingVaultTotal.toFixed(2)}`);
+      // CRITICAL: Always fetch trading wallet balance for Farcaster users (even if same address)
+      // This ensures Holdings section shows trading wallet balance, not Farcaster wallet balance
+      if (tradingAddress) {
+        if (tradingAddress.toLowerCase() !== addressToUse.toLowerCase()) {
+          // Different addresses - fetch trading vault balance separately
+          try {
+            const tradingBalanceData = await fetchBalanceData(tradingAddress, forceRefresh);
+            const tradingVaultHoldingsRaw = convertHoldingsToTokenBalance(tradingBalanceData.holdings)
+              .filter(vaultHolding => parseFloat(vaultHolding.balance) > 0);
+            
+            // Recalculate USD values from fresh prices
+            tradingVaultTotal = tradingVaultHoldingsRaw.reduce((sum, holding) => {
+              return sum + (isValidNumber(holding.valueUSD) ? holding.valueUSD : 0);
+            }, 0);
+            
+            tradingVaultHoldings = tradingVaultHoldingsRaw;
+          } catch (vaultError) {
+            console.warn('[IntegratedWallet] Unable to fetch trading vault balance:', vaultError);
+          }
+        } else if (user?.webUserId) {
+          // For web users, trading wallet IS the main wallet - use the main balance as avantisBalance
+          // Calculate USDC balance from holdings (this is the trading balance)
+          const usdcHolding = baseHoldings.find(h => h.token.symbol === 'USDC');
+          if (usdcHolding && usdcHolding.valueUSD > 0) {
+            tradingVaultTotal = usdcHolding.valueUSD;
+            console.log(`[IntegratedWallet] Web user - using USDC balance as avantisBalance: $${tradingVaultTotal.toFixed(2)}`);
+          }
+        } else {
+          // For Farcaster users: Even if addresses are the same, fetch trading wallet separately
+          // This ensures we get trading wallet balance, not Farcaster wallet balance
+          try {
+            const tradingBalanceData = await fetchBalanceData(tradingAddress, forceRefresh);
+            const tradingVaultHoldingsRaw = convertHoldingsToTokenBalance(tradingBalanceData.holdings)
+              .filter(vaultHolding => parseFloat(vaultHolding.balance) > 0);
+            
+            // Recalculate USD values from fresh prices
+            tradingVaultTotal = tradingVaultHoldingsRaw.reduce((sum, holding) => {
+              return sum + (isValidNumber(holding.valueUSD) ? holding.valueUSD : 0);
+            }, 0);
+            
+            tradingVaultHoldings = tradingVaultHoldingsRaw;
+            console.log(`[IntegratedWallet] Farcaster user - fetched trading wallet balance separately: $${tradingVaultTotal.toFixed(2)}`);
+          } catch (vaultError) {
+            console.warn('[IntegratedWallet] Unable to fetch trading vault balance for Farcaster user:', vaultError);
+          }
         }
       }
 

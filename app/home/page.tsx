@@ -1363,7 +1363,9 @@ export default function HomePage() {
 
     // Use tradingHoldings (trading wallet only) instead of merged holdings
     // This ensures Holdings section matches the main trading balance
-    const holdingsToUse = tradingHoldings && tradingHoldings.length > 0 ? tradingHoldings : holdings
+    // CRITICAL: For Farcaster users, always use tradingHoldings (even if empty)
+    // Don't fall back to merged holdings (which includes Farcaster wallet)
+    const holdingsToUse = tradingHoldings || []
 
     const nativeSymbol = holdingsToUse.find(holding => holding.token.isNative)?.token.symbol || 'ETH'
     const nativeHolding = holdingsToUse.find(
