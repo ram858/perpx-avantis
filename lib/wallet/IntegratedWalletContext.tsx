@@ -296,11 +296,27 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
    */
   const refreshBalances = useCallback(async (forceRefresh: boolean = false): Promise<void> => {
     // Determine addresses to use from state
-    const addressToUse =
-      state.primaryWallet?.address ||
-      state.baseAccountAddress ||
-      user?.baseAccountAddress ||
-      null;
+    // For web users (no base account), use trading wallet address
+    // For Farcaster users, prefer base account, fallback to trading wallet
+    let addressToUse: string | null = null;
+    
+    if (user?.webUserId) {
+      // Web user - use trading wallet (they don't have base account)
+      addressToUse = 
+        state.tradingWallet?.address ||
+        state.tradingWalletAddress ||
+        state.primaryWallet?.address ||
+        null;
+    } else {
+      // Farcaster user - prefer base account, fallback to trading wallet
+      addressToUse =
+        state.primaryWallet?.address ||
+        state.baseAccountAddress ||
+        user?.baseAccountAddress ||
+        state.tradingWallet?.address ||
+        state.tradingWalletAddress ||
+        null;
+    }
 
     if (!addressToUse || !token) {
       console.log('[IntegratedWallet] No wallet address available, skipping balance refresh');
@@ -347,9 +363,9 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         state.tradingWalletAddress ||
         null;
 
-      // Fetch trading wallet from API if not in state
+      // Fetch trading wallet from API if not in state (for both Farcaster and Web users)
       let foundTradingWallet: ClientUserWallet | null = null;
-      if (!tradingAddress && user?.fid && token) {
+      if (!tradingAddress && (user?.fid || user?.webUserId) && token) {
         try {
           const wallets = await clientWalletService.getAllUserWallets();
           foundTradingWallet = wallets.find(w => w.walletType === 'trading') || null;
@@ -372,6 +388,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       let tradingVaultHoldings: TokenBalance[] = [];
       
       if (tradingAddress && tradingAddress.toLowerCase() !== addressToUse.toLowerCase()) {
+        // Different addresses - fetch trading vault balance separately
         try {
           const tradingBalanceData = await fetchBalanceData(tradingAddress, forceRefresh);
           const tradingVaultHoldingsRaw = convertHoldingsToTokenBalance(tradingBalanceData.holdings)
@@ -385,6 +402,14 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
           tradingVaultHoldings = tradingVaultHoldingsRaw;
         } catch (vaultError) {
           console.warn('[IntegratedWallet] Unable to fetch trading vault balance:', vaultError);
+        }
+      } else if (user?.webUserId && tradingAddress && tradingAddress.toLowerCase() === addressToUse.toLowerCase()) {
+        // For web users, trading wallet IS the main wallet - use the main balance as avantisBalance
+        // Calculate USDC balance from holdings (this is the trading balance)
+        const usdcHolding = baseHoldings.find(h => h.token.symbol === 'USDC');
+        if (usdcHolding && usdcHolding.valueUSD > 0) {
+          tradingVaultTotal = usdcHolding.valueUSD;
+          console.log(`[IntegratedWallet] Web user - using USDC balance as avantisBalance: $${tradingVaultTotal.toFixed(2)}`);
         }
       }
 
@@ -450,9 +475,22 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         // Only update holdings if we have valid new data, or if we have no previous holdings
         const newHoldings = shouldUpdateHoldings ? combinedHoldings : prev.holdings;
         
+        // Calculate avantis balance
+        // For web users: use USDC balance from main wallet (trading wallet = main wallet)
+        // For Farcaster users: use trading vault total (separate trading wallet)
+        let calculatedAvantisBalance = tradingVaultTotal;
+        if (user?.webUserId && tradingVaultTotal === 0) {
+          // For web users, if no separate trading vault, use USDC from main wallet
+          const usdcHolding = combinedHoldings.find(h => h.token.symbol === 'USDC');
+          if (usdcHolding && usdcHolding.valueUSD > 0) {
+            calculatedAvantisBalance = usdcHolding.valueUSD;
+            console.log(`[IntegratedWallet] Web user - using USDC balance as avantisBalance: $${calculatedAvantisBalance.toFixed(2)}`);
+          }
+        }
+        
         // Only update avantis balance if it's valid or if we're forcing an update
-        const newAvantisBalance = isValidNumber(tradingVaultTotal) && tradingVaultTotal >= 0
-          ? tradingVaultTotal
+        const newAvantisBalance = isValidNumber(calculatedAvantisBalance) && calculatedAvantisBalance >= 0
+          ? calculatedAvantisBalance
           : prev.avantisBalance;
         
         return {
@@ -541,8 +579,14 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
           ? [...wallets, baseWallet]
           : wallets;
 
-      const primaryWallet = baseWallet || tradingWallet || wallets[0] || null;
-      const walletForBalances = baseWallet || primaryWallet;
+      // For web users, trading wallet should be primary (no base account)
+      // For Farcaster users, base account is primary, trading wallet is fallback
+      const primaryWallet = user?.webUserId 
+        ? (tradingWallet || wallets[0] || null)
+        : (baseWallet || tradingWallet || wallets[0] || null);
+      const walletForBalances = user?.webUserId 
+        ? (tradingWallet || primaryWallet)
+        : (baseWallet || primaryWallet);
 
       // Extract addresses before conditional to avoid TypeScript narrowing issues
       const baseAddress: string | null = baseWallet ? baseWallet.address : (user.baseAccountAddress || null);

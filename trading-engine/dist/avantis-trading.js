@@ -3,12 +3,29 @@
  * Avantis Trading Functions
  * This module provides functions to interact with Avantis API for opening/closing positions
  */
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.openAvantisPosition = openAvantisPosition;
 exports.closeAvantisPosition = closeAvantisPosition;
 exports.getAvantisPositions = getAvantisPositions;
-const AVANTIS_API_URL = process.env.AVANTIS_API_URL || 'http://localhost:8000';
-const BASE_RPC_URL = process.env.BASE_RPC_URL || 'https://mainnet.base.org';
+// Load environment variables from trading-engine/.env
+const dotenv_1 = __importDefault(require("dotenv"));
+const path_1 = __importDefault(require("path"));
+const fs_1 = __importDefault(require("fs"));
+// Load .env from trading-engine directory if it exists
+const envPath = path_1.default.resolve(__dirname, '.env');
+if (fs_1.default.existsSync(envPath)) {
+    dotenv_1.default.config({ path: envPath });
+}
+// Runtime functions to get environment variables (not evaluated at build time)
+function getAvantisApiUrl() {
+    return process.env.AVANTIS_API_URL || 'http://localhost:8000';
+}
+function getBaseRpcUrl() {
+    return process.env.BASE_RPC_URL || 'https://mainnet.base.org';
+}
 const TRANSACTION_CONFIRMATION_TIMEOUT = 30000; // 30 seconds
 const POSITION_VERIFICATION_TIMEOUT = 20000; // 20 seconds
 const POSITION_VERIFICATION_RETRIES = 3;
@@ -26,7 +43,8 @@ async function waitForTransactionConfirmation(txHash, confirmations = 2, timeout
         while (!confirmed && attempts < maxAttempts && (Date.now() - startTime) < timeout) {
             try {
                 // Use Base RPC to check transaction receipt
-                const response = await fetch(BASE_RPC_URL, {
+                const baseRpcUrl = getBaseRpcUrl();
+                const response = await fetch(baseRpcUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -121,7 +139,9 @@ async function verifyPositionExists(pairIndex, privateKey, symbol, timeout = POS
  */
 async function getAvantisBalance(privateKey) {
     try {
-        const baseUrl = AVANTIS_API_URL.endsWith('/') ? AVANTIS_API_URL.slice(0, -1) : AVANTIS_API_URL;
+        const avantisApiUrl = getAvantisApiUrl();
+        const baseUrl = avantisApiUrl.endsWith('/') ? avantisApiUrl.slice(0, -1) : avantisApiUrl;
+        // Use the /api/balance endpoint with private_key as query parameter
         const response = await fetch(`${baseUrl}/api/balance?private_key=${encodeURIComponent(privateKey)}`, {
             method: 'GET',
             headers: {
@@ -133,8 +153,18 @@ async function getAvantisBalance(privateKey) {
             return 0;
         }
         const result = await response.json();
-        // Return USDC balance (trading balance)
-        return result.usdc_balance || result.balance || 0;
+        // Return USDC balance (trading balance) - try multiple possible fields
+        // Note: usdc_balance might be very small (like 2e-05), but usdc_allowance shows approved amount
+        // For trading, we should use available_balance or usdc_balance
+        const balance = result.available_balance || result.usdc_balance || result.avantis_balance || result.balance || result.total_balance || 0;
+        // Log for debugging
+        console.log(`[AVANTIS] Balance check result:`, {
+            usdc_balance: result.usdc_balance,
+            available_balance: result.available_balance,
+            usdc_allowance: result.usdc_allowance,
+            returned_balance: balance
+        });
+        return balance;
     }
     catch (error) {
         console.error(`[AVANTIS] ❌ Error getting balance:`, error);
@@ -175,7 +205,8 @@ async function openAvantisPosition(params, options) {
             console.log(`[AVANTIS] Collateral: $${params.collateral}`);
             console.log(`[AVANTIS] Leverage: ${params.leverage}x`);
             console.log(`[AVANTIS] Private Key: ${params.private_key ? `${params.private_key.slice(0, 10)}...${params.private_key.slice(-4)}` : 'MISSING!'}`);
-            console.log(`[AVANTIS] API URL: ${AVANTIS_API_URL}/api/open-position`);
+            const avantisApiUrl = getAvantisApiUrl();
+            console.log(`[AVANTIS] API URL: ${avantisApiUrl}/api/open-position`);
             console.log(`[AVANTIS] ==========================================`);
             if (!params.private_key) {
                 console.error(`[AVANTIS] ❌ CRITICAL: Private key is missing! Cannot open position on Avantis.`);
@@ -206,7 +237,7 @@ async function openAvantisPosition(params, options) {
                 }
             }
             // Remove trailing slash from AVANTIS_API_URL if present
-            const baseUrl = AVANTIS_API_URL.endsWith('/') ? AVANTIS_API_URL.slice(0, -1) : AVANTIS_API_URL;
+            const baseUrl = avantisApiUrl.endsWith('/') ? avantisApiUrl.slice(0, -1) : avantisApiUrl;
             // Add timeout to prevent hanging
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
@@ -338,7 +369,8 @@ async function closeAvantisPosition(params) {
     try {
         console.log(`[AVANTIS] Closing position: pair_index=${params.pair_index}`);
         // Remove trailing slash from AVANTIS_API_URL if present
-        const baseUrl = AVANTIS_API_URL.endsWith('/') ? AVANTIS_API_URL.slice(0, -1) : AVANTIS_API_URL;
+        const avantisApiUrl = getAvantisApiUrl();
+        const baseUrl = avantisApiUrl.endsWith('/') ? avantisApiUrl.slice(0, -1) : avantisApiUrl;
         const response = await fetch(`${baseUrl}/api/close-position`, {
             method: 'POST',
             headers: {
@@ -379,7 +411,8 @@ async function closeAvantisPosition(params) {
 async function getAvantisPositions(privateKey) {
     try {
         // Remove trailing slash from AVANTIS_API_URL if present
-        const baseUrl = AVANTIS_API_URL.endsWith('/') ? AVANTIS_API_URL.slice(0, -1) : AVANTIS_API_URL;
+        const avantisApiUrl = getAvantisApiUrl();
+        const baseUrl = avantisApiUrl.endsWith('/') ? avantisApiUrl.slice(0, -1) : avantisApiUrl;
         const response = await fetch(`${baseUrl}/api/positions?private_key=${encodeURIComponent(privateKey)}`, {
             method: 'GET',
             headers: {

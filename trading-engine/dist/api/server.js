@@ -37,11 +37,23 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sessionManager = void 0;
+// Load environment variables from trading-engine/.env
+const dotenv_1 = __importDefault(require("dotenv"));
+const path_1 = __importDefault(require("path"));
+const fs_1 = __importDefault(require("fs"));
+// Load .env from trading-engine directory (parent directory of api/) if it exists
+const envPath = path_1.default.resolve(__dirname, '../.env');
+if (fs_1.default.existsSync(envPath)) {
+    dotenv_1.default.config({ path: envPath });
+}
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const session_manager_1 = require("../session-manager");
 const app = (0, express_1.default)();
-const port = process.env.API_PORT || 3001;
+// Get port at runtime (not build time)
+function getPort() {
+    return parseInt(process.env.API_PORT || '3001', 10);
+}
 // Middleware
 app.use((0, cors_1.default)({
     origin: process.env.NODE_ENV === 'production'
@@ -206,7 +218,11 @@ app.post('/api/close-all-positions', async (req, res) => {
         }
         console.log(`[API] Closing all positions for user ${phoneNumber || 'unknown'}`);
         // For Avantis: Call Avantis service
-        const avantisApiUrl = process.env.AVANTIS_API_URL || 'http://localhost:8000';
+        // Get Avantis API URL at runtime
+        function getAvantisApiUrl() {
+            return process.env.AVANTIS_API_URL || 'http://localhost:8000';
+        }
+        const avantisApiUrl = getAvantisApiUrl();
         try {
             const response = await fetch(`${avantisApiUrl}/api/close-all-positions`, {
                 method: 'POST',
@@ -274,7 +290,11 @@ app.post('/api/close-position', async (req, res) => {
         }
         console.log(`[API] Closing position ${pairIndex} for user ${userFid || 'unknown'}`);
         // For Avantis: Call Avantis service
-        const avantisApiUrl = process.env.AVANTIS_API_URL || 'http://localhost:8000';
+        // Get Avantis API URL at runtime
+        function getAvantisApiUrl() {
+            return process.env.AVANTIS_API_URL || 'http://localhost:8000';
+        }
+        const avantisApiUrl = getAvantisApiUrl();
         try {
             const response = await fetch(`${avantisApiUrl}/api/close-position`, {
                 method: 'POST',
@@ -469,6 +489,7 @@ process.on('SIGINT', () => {
     process.exit(0);
 });
 // Start server
+const port = getPort();
 app.listen(port, () => {
     console.log(`[API] Trading API server running on port ${port}`);
     console.log(`[API] Health check: http://localhost:${port}/api/health`);

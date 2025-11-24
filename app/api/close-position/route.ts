@@ -1,27 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { AvantisTradingService } from '@/lib/services/AvantisTradingService'
-import { AuthService } from '@/lib/services/AuthService'
+import { verifyTokenAndGetContext } from '@/lib/utils/authHelper'
 import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService'
+import { WebWalletService } from '@/lib/services/WebWalletService'
 
 // Lazy initialization - create services at runtime, not build time
 function getTradingService(): AvantisTradingService {
   return new AvantisTradingService()
 }
 
-function getAuthService(): AuthService {
-  return new AuthService()
+function getFarcasterWalletService(): BaseAccountWalletService {
+  return new BaseAccountWalletService()
 }
 
-function getWalletService(): BaseAccountWalletService {
-  return new BaseAccountWalletService()
+function getWebWalletService(): WebWalletService {
+  return new WebWalletService()
 }
 
 export async function POST(request: NextRequest) {
   try {
     // Initialize services at runtime
     const tradingService = getTradingService()
-    const authService = getAuthService()
-    const walletService = getWalletService()
+    
     // Verify authentication
     const authHeader = request.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -29,15 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     const token = authHeader.substring(7)
-    const payload = await authService.verifyToken(token)
-
-    // FID is required for Base Account users
-    if (!payload.fid) {
-      return NextResponse.json(
-        { error: 'Base Account (FID) required' },
-        { status: 400 }
-      )
-    }
+    const authContext = await verifyTokenAndGetContext(token)
     
     // Parse request body - Avantis uses pair_index instead of symbol
     const { pair_index, symbol } = await request.json()
@@ -49,9 +41,65 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Get user's wallet for private key using FID
-    const wallet = await walletService.getWalletWithKey(payload.fid, 'ethereum')
+    // Get user's wallet for private key based on context
+    let wallet: { address: string; privateKey: string } | null = null
+    let userId: string | number
     
+    if (authContext.context === 'farcaster') {
+      // Farcaster user
+      if (!authContext.fid) {
+        return NextResponse.json(
+          { error: 'Base Account (FID) required' },
+          { status: 400 }
+        )
+      }
+      
+      userId = authContext.fid
+      const farcasterWalletService = getFarcasterWalletService()
+      const farcasterWallet = await farcasterWalletService.getWalletWithKey(authContext.fid, 'ethereum')
+      
+      if (!farcasterWallet || !farcasterWallet.privateKey) {
+        return NextResponse.json({ 
+          error: 'No wallet found with private key' 
+        }, { status: 404 })
+      }
+      
+      wallet = {
+        address: farcasterWallet.address,
+        privateKey: farcasterWallet.privateKey
+      }
+    } else {
+      // Web user
+      if (!authContext.webUserId) {
+        return NextResponse.json(
+          { error: 'Web user ID required' },
+          { status: 400 }
+        )
+      }
+      
+      userId = authContext.webUserId
+      const webWalletService = getWebWalletService()
+      const webWallet = await webWalletService.getWallet(authContext.webUserId, 'ethereum')
+      
+      if (!webWallet) {
+        return NextResponse.json({ 
+          error: 'No wallet found' 
+        }, { status: 404 })
+      }
+      
+      const privateKey = await webWalletService.getPrivateKey(authContext.webUserId, 'ethereum')
+      if (!privateKey) {
+        return NextResponse.json({ 
+          error: 'Wallet private key not available' 
+        }, { status: 404 })
+      }
+      
+      wallet = {
+        address: webWallet.address,
+        privateKey: privateKey
+      }
+    }
+
     if (!wallet || !wallet.privateKey) {
       return NextResponse.json({ 
         error: 'No wallet found with private key' 
@@ -68,10 +116,10 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    console.log(`[ClosePosition] Closing position with pair_index ${pairIndex} for FID ${payload.fid}`)
+    console.log(`[ClosePosition] Closing position with pair_index ${pairIndex} for ${authContext.context} user:`, userId)
 
     // Use the trading service to close the position with private key
-    const result = await tradingService.closePosition(pairIndex, wallet.privateKey, payload.fid)
+    const result = await tradingService.closePosition(pairIndex, wallet.privateKey, userId as number)
     
     if (result.success) {
       console.log(`[ClosePosition] Successfully closed position for pair_index ${pairIndex}`)

@@ -5,8 +5,7 @@ from symbols import get_symbol
 from config import settings
 from utils import retry_on_network_error
 from contract_operations import (
-    get_positions_via_contract,
-    get_balance_via_contract
+    get_positions_via_contract
 )
 import logging
 
@@ -93,6 +92,9 @@ async def get_balance(
     """
     Get account balance information for a user.
     
+    Uses SDK's get_usdc_balance() which returns wallet balance (not vault balance).
+    This allows trading directly from wallet without manual deposit to vault.
+    
     Args:
         private_key: User's private key (for traditional wallets)
         address: User's address (for Base Accounts - required if no private_key)
@@ -108,16 +110,42 @@ async def get_balance(
         trader_client = client.get_client()
         user_address = client.get_address()
         
-        # Get balance using contract methods
-        balance_info = await get_balance_via_contract(trader_client, address=user_address)
+        # Get wallet USDC balance directly from contract (not vault)
+        # SDK's get_usdc_balance() checks vault, we need wallet balance for trading
+        w3 = client.web3  # Use client's web3 instance
+        usdc_address = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"  # Base mainnet USDC
+        usdc_abi = [{"constant":True,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"type":"function"}]
+        usdc_contract = w3.eth.contract(address=usdc_address, abi=usdc_abi)
+        balance_wei = usdc_contract.functions.balanceOf(user_address).call()
+        usdc_balance = float(balance_wei) / 1e6  # USDC has 6 decimals
+        
+        # Get USDC allowance for trading
+        try:
+            allowance_raw = await trader_client.get_usdc_allowance_for_trading()
+            usdc_allowance = float(allowance_raw) if allowance_raw else 0.0
+        except Exception:
+            usdc_allowance = 0.0
+        
+        # Get positions to calculate margin used
+        try:
+            positions, _ = await trader_client.trade.get_trades(user_address)
+            margin_used = sum(
+                float(getattr(t.trade if hasattr(t, 'trade') else t, 'open_collateral', 0)) / 1e6
+                for t in positions
+            )
+        except Exception:
+            margin_used = 0.0
+        
+        # Available balance = wallet balance - margin used
+        available_balance = max(0.0, usdc_balance - margin_used)
         
         return {
-            "address": balance_info.get("address") or client.get_address(),
-            "total_balance": balance_info.get("total_balance", 0),
-            "available_balance": balance_info.get("available_balance", 0),
-            "margin_used": balance_info.get("margin_used", 0),
-            "usdc_balance": balance_info.get("usdc_balance", 0),
-            "usdc_allowance": balance_info.get("usdc_allowance", 0),
+            "address": user_address,
+            "total_balance": usdc_balance,
+            "available_balance": available_balance,
+            "margin_used": margin_used,
+            "usdc_balance": usdc_balance,  # Wallet USDC balance (for trading)
+            "usdc_allowance": usdc_allowance,
         }
         
     except Exception as e:
@@ -197,10 +225,9 @@ async def get_usdc_allowance(
                 except Exception:
                     continue  # try next safe method
         
-        # Final fallback — read from balance_contract
-        user_address = client.get_address()
-        balance_info = await get_balance_via_contract(trader_client, address=user_address)
-        return balance_info.get("usdc_allowance", 0)
+        # Final fallback — return 0 if all methods fail
+        logger.warning("Could not fetch USDC allowance using any method")
+        return 0.0
         
     except Exception as e:
         logger.error(f"Error getting safe USDC allowance: {e}")

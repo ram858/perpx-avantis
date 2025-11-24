@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { AuthService } from '@/lib/services/AuthService'
+import { verifyTokenAndGetContext } from '@/lib/utils/authHelper'
 import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService'
+import { WebWalletService } from '@/lib/services/WebWalletService'
 import { AvantisTradingService } from '@/lib/services/AvantisTradingService'
 
 // Lazy initialization - create services at runtime, not build time
-function getAuthService(): AuthService {
-  return new AuthService()
+function getFarcasterWalletService(): BaseAccountWalletService {
+  return new BaseAccountWalletService()
 }
 
-function getWalletService(): BaseAccountWalletService {
-  return new BaseAccountWalletService()
+function getWebWalletService(): WebWalletService {
+  return new WebWalletService()
 }
 
 function getTradingService(): AvantisTradingService {
@@ -19,8 +20,6 @@ function getTradingService(): AvantisTradingService {
 export async function POST(request: NextRequest) {
   try {
     // Initialize services at runtime
-    const authService = getAuthService()
-    const walletService = getWalletService()
     const tradingService = getTradingService()
     console.log('[API] Close all positions endpoint called')
 
@@ -31,27 +30,58 @@ export async function POST(request: NextRequest) {
     }
 
     const token = authHeader.substring(7)
-    const payload = await authService.verifyToken(token)
+    const authContext = await verifyTokenAndGetContext(token)
 
-    // FID is required for Base Account users
-    if (!payload.fid) {
-      return NextResponse.json(
-        { error: 'Base Account (FID) required' },
-        { status: 400 }
-      )
-    }
-
-    // Get user's wallet using FID
-    const wallet = await walletService.getWalletWithKey(payload.fid, 'ethereum')
+    // Get user's wallet and ID based on context
+    let userId: number
     
-    if (!wallet || !wallet.privateKey) {
-      return NextResponse.json({ 
-        error: 'No wallet found with private key' 
-      }, { status: 404 })
+    if (authContext.context === 'farcaster') {
+      // Farcaster user
+      if (!authContext.fid) {
+        return NextResponse.json(
+          { error: 'Base Account (FID) required' },
+          { status: 400 }
+        )
+      }
+      
+      userId = authContext.fid
+      const farcasterWalletService = getFarcasterWalletService()
+      const wallet = await farcasterWalletService.getWalletWithKey(authContext.fid, 'ethereum')
+      
+      if (!wallet || !wallet.privateKey) {
+        return NextResponse.json({ 
+          error: 'No wallet found with private key' 
+        }, { status: 404 })
+      }
+    } else {
+      // Web user
+      if (!authContext.webUserId) {
+        return NextResponse.json(
+          { error: 'Web user ID required' },
+          { status: 400 }
+        )
+      }
+      
+      userId = authContext.webUserId
+      const webWalletService = getWebWalletService()
+      const webWallet = await webWalletService.getWallet(authContext.webUserId, 'ethereum')
+      
+      if (!webWallet) {
+        return NextResponse.json({ 
+          error: 'No wallet found' 
+        }, { status: 404 })
+      }
+      
+      const privateKey = await webWalletService.getPrivateKey(authContext.webUserId, 'ethereum')
+      if (!privateKey) {
+        return NextResponse.json({ 
+          error: 'Wallet private key not available' 
+        }, { status: 404 })
+      }
     }
 
     // Use Avantis trading service to close all positions
-    const result = await tradingService.closeAllPositions(payload.fid)
+    const result = await tradingService.closeAllPositions(userId)
     
     if (result.success) {
       return NextResponse.json(result)

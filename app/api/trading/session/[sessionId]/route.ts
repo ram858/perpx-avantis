@@ -1,17 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { AuthService } from '@/lib/services/AuthService'
-
-// Lazy initialization - create services at runtime, not build time
-function getAuthService(): AuthService {
-  return new AuthService()
-}
+import { verifyTokenAndGetContext } from '@/lib/utils/authHelper'
 
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ sessionId: string }> }
 ) {
   try {
-    const authService = getAuthService()
     const params = await context.params
     const sessionId = params.sessionId
     console.log(`[API] Getting session status for: ${sessionId}`)
@@ -23,13 +17,17 @@ export async function GET(
     }
 
     const token = authHeader.substring(7)
-    const payload = await authService.verifyToken(token)
+    const authContext = await verifyTokenAndGetContext(token)
     
     // Call the trading engine to get session status
     const tradingEngineUrl = process.env.TRADING_ENGINE_URL || 'http://localhost:3001'
     
+    // Clean up URL (remove trailing /api/trading-engine if present)
+    const cleanUrl = tradingEngineUrl.replace(/\/api\/trading-engine\/?$/, '');
+    
     try {
-      const response = await fetch(`${tradingEngineUrl}/api/trading/session/${sessionId}`, {
+      // Trading engine uses /api/trading/status/:sessionId endpoint
+      const response = await fetch(`${cleanUrl}/api/trading/status/${sessionId}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

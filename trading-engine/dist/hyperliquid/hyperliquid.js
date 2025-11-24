@@ -156,7 +156,11 @@ exports.account = {
     signTypedData: (typedData) => getAccount().signTypedData(typedData)
 };
 // 🌐 Use testnet or mainnet transport based on environment
-const isTestnet = process.env.HYPERLIQUID_TESTNET !== 'false'; // Default to testnet unless explicitly set to false
+// Get testnet setting at runtime (not build time)
+function getIsTestnet() {
+    return process.env.HYPERLIQUID_TESTNET !== 'false'; // Default to testnet unless explicitly set to false
+}
+const isTestnet = getIsTestnet();
 exports.transport = new hl.HttpTransport({ isTestnet });
 exports.publicClient = new hl.PublicClient({ transport: exports.transport });
 console.log(`🌐 Using ${isTestnet ? 'TESTNET' : 'MAINNET'} environment`);

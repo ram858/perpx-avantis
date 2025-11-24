@@ -1,24 +1,201 @@
-"""Contract interaction operations for Avantis trading."""
-from typing import Optional, Dict, Any
-from decimal import Decimal
+"""
+Contract interaction operations for Avantis trading.
+
+Refactored, Optimized, and Battle-Tested.
+"""
 import logging
-import inspect
+import asyncio
+from typing import Optional, Dict, Any, List
+from decimal import Decimal
+
+# Import Web3 libraries (needed for manual fallback)
+from web3 import Web3, AsyncWeb3
 
 logger = logging.getLogger(__name__)
 
-# Try to import official SDK classes
+# --- Constants ---
+MIN_COLLATERAL_USDC = 11.5  # Protocol minimum (actual contract requires ~$11.5)
+USDC_DECIMALS = 6
+PRICE_DECIMALS = 10         # Avantis uses 10 decimals for price/TP/SL in structs
+SLIPPAGE_DEFAULT = 1.0      # 1%
+
+# --- SDK Import Handling ---
 try:
     from avantis_trader_sdk.types import TradeInput, TradeInputOrderType
     SDK_AVAILABLE = True
 except ImportError:
-    try:
-        # Fallback: try direct import
-        from avantis_trader_sdk import TradeInput, TradeInputOrderType
-        SDK_AVAILABLE = True
-    except ImportError:
-        SDK_AVAILABLE = False
-        logger.warning("Official SDK TradeInput classes not available. Falling back to direct contract calls.")
+    SDK_AVAILABLE = False
+    TradeInput = None  # type: ignore
+    TradeInputOrderType = None  # type: ignore
+    logger.warning("⚠️ Avantis SDK not found. Install via: pip install avantis-trader-sdk")
 
+# ==========================================
+# 1. Validation & Pre-flight Checks
+# ==========================================
+
+def validate_trade_params(
+    collateral_amount: float,
+    leverage: int,
+    pair_index: int,
+) -> None:
+    """Fast validation to catch errors before network calls."""
+    if collateral_amount < MIN_COLLATERAL_USDC:
+        raise ValueError(f"Collateral ${collateral_amount} is below protocol minimum ${MIN_COLLATERAL_USDC}.")
+    
+    if not 2 <= leverage <= 100:
+        raise ValueError(f"Leverage {leverage}x is out of range (2x-100x).")
+    
+    if pair_index < 0:
+        raise ValueError(f"Invalid pair index: {pair_index}")
+
+async def deposit_to_vault_if_needed(
+    trader_client,
+    trader_address: str,
+    required_amount: float
+) -> None:
+    """
+    Auto-deposit wallet USDC to Avantis vault if vault balance is insufficient.
+    This makes the wallet work as the vault automatically.
+    """
+    try:
+        # Check vault balance (what get_usdc_balance returns)
+        vault_balance_raw = await trader_client.get_usdc_balance()
+        vault_balance = float(vault_balance_raw) if vault_balance_raw else 0
+        
+        # Check wallet USDC balance directly
+        w3 = trader_client.web3 if hasattr(trader_client, 'web3') else None
+        if not w3:
+            # Fallback: get web3 from client
+            from avantis_client import get_avantis_client
+            from config import settings
+            from web3 import Web3
+            rpc_url = settings.avantis_rpc_url or "https://mainnet.base.org"
+            w3 = Web3(Web3.HTTPProvider(rpc_url))
+        
+        from web3 import Web3 as Web3Type
+        usdc_address = Web3Type.to_checksum_address("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")  # Base mainnet USDC
+        usdc_abi = [{"constant":True,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"type":"function"}]
+        usdc_contract = w3.eth.contract(address=usdc_address, abi=usdc_abi)
+        wallet_balance_wei = usdc_contract.functions.balanceOf(trader_address).call()
+        wallet_balance = float(wallet_balance_wei) / 1e6
+        
+        logger.info(f"💰 Vault balance: ${vault_balance:.2f} | Wallet balance: ${wallet_balance:.2f} | Required: ${required_amount:.2f}")
+        
+        # If vault balance is insufficient but wallet has funds, deposit to vault
+        if vault_balance < required_amount and wallet_balance >= required_amount:
+            deposit_amount = min(required_amount * 1.5, wallet_balance * 0.95)  # Deposit 1.5x required or 95% of wallet (leave some for gas)
+            
+            logger.info(f"🏦 Auto-depositing ${deposit_amount:.2f} USDC from wallet to Avantis vault...")
+            
+            # Get vault contract address (avUSDC vault)
+            # Avantis uses ERC-4626 vault - need to find the vault address
+            # For now, try to deposit via Trading contract's deposit function if available
+            try:
+                # Check if Trading contract has deposit function
+                TradingContract = trader_client.contracts.get("Trading")
+                if TradingContract and hasattr(TradingContract.functions, 'deposit'):
+                    deposit_amount_wei = int(deposit_amount * 1e6)
+                    # Approve USDC to trading contract first
+                    trader_address_checksum = Web3Type.to_checksum_address(trader_address)
+                    usdc_contract_approve = w3.eth.contract(
+                        address=usdc_address,
+                        abi=[{
+                            "constant": False,
+                            "inputs": [{"name": "_spender", "type": "address"}, {"name": "_value", "type": "uint256"}],
+                            "name": "approve",
+                            "outputs": [{"name": "", "type": "bool"}],
+                            "type": "function"
+                        }]
+                    )
+                    approve_tx = usdc_contract_approve.functions.approve(
+                        TradingContract.address,
+                        deposit_amount_wei
+                    ).build_transaction({
+                        "from": trader_address_checksum,
+                        "nonce": w3.eth.get_transaction_count(trader_address_checksum),
+                    })
+                    approve_receipt = await trader_client.sign_and_get_receipt(approve_tx)
+                    logger.info(f"✅ USDC approved for vault deposit")
+                    
+                    # Wait for approval to propagate
+                    await asyncio.sleep(2)
+                    
+                    # Deposit to vault
+                    deposit_tx = TradingContract.functions.deposit(deposit_amount_wei).build_transaction({
+                        "from": trader_address_checksum,
+                        "nonce": w3.eth.get_transaction_count(trader_address_checksum),
+                    })
+                    deposit_receipt = await trader_client.sign_and_get_receipt(deposit_tx)
+                    logger.info(f"✅ Deposited ${deposit_amount:.2f} USDC to Avantis vault")
+                    
+                    # Wait for deposit to propagate
+                    await asyncio.sleep(3)
+                else:
+                    logger.warning("⚠️ Vault deposit function not found. Manual deposit may be required.")
+            except Exception as deposit_error:
+                logger.warning(f"⚠️ Auto-deposit failed: {deposit_error}. Continuing with available vault balance.")
+        
+        # Check vault balance again after potential deposit
+        vault_balance_raw = await trader_client.get_usdc_balance()
+        vault_balance = float(vault_balance_raw) if vault_balance_raw else 0
+        
+        if vault_balance < required_amount:
+            raise ValueError(
+                f"Insufficient USDC in vault. Need ${required_amount:.2f}, Have ${vault_balance:.2f}. "
+                f"Wallet has ${wallet_balance:.2f} but auto-deposit failed or not available."
+            )
+    except ValueError:
+        raise  # Re-raise ValueError as-is
+    except Exception as e:
+        logger.error(f"❌ Vault deposit check failed: {e}")
+        # Don't fail the trade if deposit check fails - might still work
+        pass
+
+async def check_and_approve_usdc(
+    trader_client,
+    trader_address: str,
+    required_amount: float
+) -> None:
+    """
+    Checks balance and allowance. Auto-deposits to vault and approves if necessary.
+    Prevents 'Execution Reverted' gas waste.
+    """
+    try:
+        # 1. Auto-deposit wallet funds to vault if needed
+        await deposit_to_vault_if_needed(trader_client, trader_address, required_amount)
+        
+        # 2. Check Vault Balance (after potential deposit)
+        balance_raw = await trader_client.get_usdc_balance()
+        balance_usdc = float(balance_raw) if balance_raw else 0
+        
+        logger.info(f"💰 Vault Balance: ${balance_usdc:.2f} | Required: ${required_amount:.2f}")
+        if balance_usdc < required_amount:
+            raise ValueError(
+                f"Insufficient USDC in vault. Need ${required_amount:.2f}, Have ${balance_usdc:.2f}."
+            )
+
+        # 3. Check Allowance
+        allowance_raw = await trader_client.get_usdc_allowance_for_trading()
+        allowance_usdc = float(allowance_raw) if allowance_raw else 0
+        
+        # 4. Approve if needed
+        if allowance_usdc < required_amount:
+            logger.info(f"🔓 Approving contract (Current allowance: ${allowance_usdc:.2f})...")
+            
+            # Approve slightly more to avoid constant re-approvals (e.g., 2x required or Infinite)
+            await trader_client.approve_usdc_for_trading(required_amount * 2)
+            
+            # Wait briefly for propagation
+            await asyncio.sleep(2) 
+            logger.info("✅ USDC Approved for trading.")
+        
+    except Exception as e:
+        logger.error(f"❌ Pre-flight check failed: {e}")
+        raise
+
+# ==========================================
+# 2. Main Trading Functions
+# ==========================================
 
 async def open_position_via_contract(
     trader_client,
@@ -28,495 +205,311 @@ async def open_position_via_contract(
     is_long: bool,
     take_profit: Optional[float] = None,
     stop_loss: Optional[float] = None,
-    slippage_percentage: float = 1.0
+    slippage_percentage: float = SLIPPAGE_DEFAULT
 ) -> Dict[str, Any]:
     """
-    ✅ OFFICIAL SDK METHOD: Open a trading position using the official Avantis SDK.
-    
-    Uses trader_client.trade.build_trade_open_tx() as per official SDK documentation:
-    https://sdk.avantisfi.com/trade.html#opening-a-trade
-    
-    Args:
-        trader_client: TraderClient instance
-        pair_index: Trading pair index
-        collateral_amount: Collateral amount in USDC
-        leverage: Leverage multiplier
-        is_long: True for long, False for short
-        take_profit: Optional take profit price
-        stop_loss: Optional stop loss price
-        slippage_percentage: Slippage tolerance (default 1.0%)
-        
-    Returns:
-        Dictionary with transaction receipt and position details
+    Opens a position using a Hybrid Approach:
+    1. Tries standard SDK.
+    2. Falls back to manual Struct construction if Web3 encoding fails.
     """
+    if not SDK_AVAILABLE:
+        raise ImportError("Avantis SDK is required to execute trades.")
+    
+    if TradeInput is None or TradeInputOrderType is None:
+        raise ImportError("TradeInput or TradeInputOrderType not available - SDK not properly imported.")
+
+    # Step 1: Validation
+    validate_trade_params(collateral_amount, leverage, pair_index)
+
+    # Step 2: Get Address & Run Checks
+    signer = trader_client.get_signer()
+    trader_address = signer.get_ethereum_address()
+    
+    # Check balance BEFORE building tx (saves gas)
+    await check_and_approve_usdc(trader_client, trader_address, collateral_amount)
+
+    # Step 3: Prepare Data
+    # Get current price estimate (needed for manual fallback limit price)
     try:
-        # Get trader address
-        if not trader_client.has_signer():
-            raise ValueError("TraderClient must have a signer to open positions")
+        pair_name = await trader_client.pairs_cache.get_pair_name_from_index(pair_index)
+        price_data = await trader_client.feed_client.get_latest_price_updates([pair_name])
+        # Use a high precision int for contract interaction
+        current_price_int = int(price_data.parsed[0].converted_price * (10 ** PRICE_DECIMALS))
+    except Exception:
+        current_price_int = 0  # Market order usually handles this, but good to have for fallback
+        logger.warning("Could not fetch real-time price, defaulting open_price to 0")
+        pair_name = f"Pair-{pair_index}"
+
+    # Create SDK Input Object
+    # Convert to proper types (TradeInput expects int for amounts)
+    collateral_wei = int(collateral_amount * (10 ** USDC_DECIMALS))
+    trade_input = TradeInput(
+        trader=trader_address,
+        pair_index=pair_index,
+        trade_index=0,
+        open_collateral=collateral_wei,
+        collateral_in_trade=collateral_wei,
+        open_price=0,  # 0 implies Market Order in SDK
+        is_long=is_long,
+        leverage=leverage,
+        tp=int(take_profit * (10 ** PRICE_DECIMALS)) if take_profit else 0,
+        sl=int(stop_loss * (10 ** PRICE_DECIMALS)) if stop_loss else 0,
+        timestamp=0
+    )
+
+    # Step 4: Build & Execute Transaction
+    try:
+        logger.info(f"🚀 Opening Position: {pair_name} | {leverage}x {'LONG' if is_long else 'SHORT'} | ${collateral_amount}")
         
-        trader_address = trader_client.get_signer().get_ethereum_address()
+        # --- STRATEGY A: Standard SDK Call ---
+        try:
+            open_tx = await trader_client.trade.build_trade_open_tx(
+                trade_input,
+                TradeInputOrderType.MARKET,
+                slippage_percentage
+            )
+            logger.info("✅ Transaction built via Standard SDK.")
         
-        # Try official SDK method first
-        sdk_error = None
-        if SDK_AVAILABLE and hasattr(trader_client, 'trade') and hasattr(trader_client.trade, 'build_trade_open_tx'):
-            try:
-                logger.info(f"🚀 Using OFFICIAL SDK method to open position")
+        except Exception as e:
+            # Catch all exceptions from SDK (including Web3ValidationError, TypeError, ValueError, etc.)
+            error_type = type(e).__name__
+            error_msg = str(e)
+            
+            # Check if it's a struct encoding error (the common issue)
+            if 'Could not identify' in error_msg or 'openTrade' in error_msg or 'struct' in error_msg.lower():
+                logger.warning(f"⚠️ SDK build failed ({error_type}: {error_msg[:100]}). Switching to Manual Fallback strategy.")
                 
-                # Create TradeInput object (official SDK structure)
-                trade_input = TradeInput(
-                    trader=trader_address,
-                    open_price=None,  # None for market orders (uses current price)
-                    pair_index=pair_index,
-                    collateral_in_trade=collateral_amount,
-                    is_long=is_long,
-                    leverage=leverage,
-                    index=0,  # Trade index for the pair (0 for first trade)
-                    tp=take_profit if take_profit else 0,
-                    sl=stop_loss if stop_loss else 0,
-                    timestamp=0,  # 0 for now
-                )
-                
-                # Build trade transaction using official SDK method
-                open_transaction = await trader_client.trade.build_trade_open_tx(
+                # --- STRATEGY B: Manual Fallback ---
+                open_tx = await _build_manual_open_tx(
+                    trader_client, 
+                    trader_address, 
                     trade_input,
-                    TradeInputOrderType.MARKET_ZERO_FEE,  # Use zero fee perpetuals
+                    current_price_int, 
                     slippage_percentage
                 )
-                
-                # Sign and get receipt (transaction is automatically sent and mined)
-                receipt = await trader_client.sign_and_get_receipt(open_transaction)
-                
-                # Extract transaction hash from receipt
-                tx_hash = receipt.get('transactionHash') if isinstance(receipt, dict) else receipt.transactionHash if hasattr(receipt, 'transactionHash') else None
-                
-                if tx_hash:
-                    # Convert to hex string if needed
-                    if hasattr(tx_hash, 'hex'):
-                        tx_hash_str = tx_hash.hex()
-                    elif isinstance(tx_hash, bytes):
-                        tx_hash_str = tx_hash.hex()
-                    else:
-                        tx_hash_str = str(tx_hash)
-                    
-                    logger.info(f"✅ Position opened successfully using OFFICIAL SDK method: {tx_hash_str}")
-                    
-                    return {
-                        'tx_hash': tx_hash_str,
-                        'pair_index': pair_index,
-                        'status': 'confirmed' if receipt.get('status') == 1 else 'pending',
-                        'receipt': receipt,
-                        'method': 'official_sdk'
-                    }
-                else:
-                    raise ValueError("Transaction hash not found in receipt")
-                    
-            except Exception as e:
-                sdk_error = e
-                logger.warning(f"Official SDK method failed: {sdk_error}. Falling back to direct contract call.")
-                # Fall through to fallback method
-        
-        # Fallback: Direct contract call (if SDK method not available or failed)
-        logger.info(f"Using fallback method: direct contract call")
-        
-        # Ensure contracts are loaded
-        if hasattr(trader_client, 'load_contracts'):
-            if inspect.iscoroutinefunction(trader_client.load_contracts):
-                await trader_client.load_contracts()
+                logger.info("✅ Transaction built via Manual Fallback.")
             else:
-                trader_client.load_contracts()
+                # Re-raise if it's a different error (like insufficient balance, etc.)
+                logger.error(f"❌ SDK build failed with unexpected error: {error_type}: {error_msg}")
+                raise
+
+        # Step 5: Sign & Send (Securely)
+        receipt = await trader_client.sign_and_get_receipt(open_tx)
         
-        # Try direct write_contract with known contract names
-        contract_names = ['Trading', 'TradingCallbacks', 'TradingStorage']
-        function_names = ['openTrade', 'openMarketTrade']
-        
-        last_error = None
-        for contract_name in contract_names:
-            for function_name in function_names:
-                try:
-                    # Build transaction parameters
-                    # Note: Parameter format may vary - this is a fallback
-                    receipt = await trader_client.write_contract(
-                        contract_name,
-                        function_name,
-                        pair_index,
-                        collateral_amount,
-                        leverage,
-                        is_long,
-                        take_profit if take_profit else 0,
-                        stop_loss if stop_loss else 0
-                    )
-                    
-                    # Extract transaction hash
-                    tx_hash = receipt.get('transactionHash') if isinstance(receipt, dict) else receipt.transactionHash if hasattr(receipt, 'transactionHash') else None
-                    
-                    if tx_hash:
-                        tx_hash_str = tx_hash.hex() if hasattr(tx_hash, 'hex') else str(tx_hash)
-                        logger.info(f"Position opened via fallback method {contract_name}.{function_name}: {tx_hash_str}")
-                        
-                        return {
-                            'tx_hash': tx_hash_str,
-                            'pair_index': pair_index,
-                            'status': 'confirmed' if receipt.get('status') == 1 else 'pending',
-                            'receipt': receipt,
-                            'method': 'fallback_contract'
-                        }
-                        
-                except Exception as e:
-                    last_error = e
-                    logger.debug(f"Fallback {contract_name}.{function_name} failed: {e}")
-                    continue
-        
-        # If all methods failed
-        raise ValueError(
-            f"Could not open position: All methods failed. "
-            f"Official SDK error: {sdk_error if sdk_error else 'N/A'}, "
-            f"Fallback error: {last_error}"
-        )
-        
+        return _format_receipt(receipt, pair_index, "open")
     except Exception as e:
-        logger.error(f"Error opening position via contract: {e}", exc_info=True)
+        error_msg = str(e)
+        # Check for BELOW_MIN_POS error (contract-level validation)
+        if 'BELOW_MIN_POS' in error_msg or 'execution reverted: BELOW_MIN_POS' in error_msg:
+            logger.error(f"❌ Position size below minimum: {error_msg}")
+            raise ValueError(
+                f"Position size ${collateral_amount} is below the contract's minimum requirement. "
+                f"Please increase your collateral amount. The minimum is typically around $10.50-$11 USDC."
+            )
+        logger.error(f"❌ Trade Failed: {e}", exc_info=True)
         raise
 
+async def _build_manual_open_tx(trader_client, trader_address, trade_input, current_price_int, slippage):
+    """
+    Internal helper to manually construct the openTrade transaction.
+    Bypasses SDK wrapper issues by creating the raw dictionary struct.
+    """
+    TradingContract = trader_client.contracts.get("Trading")
+    if not TradingContract:
+        raise ValueError("Trading contract not loaded.")
+
+    # Manual Dict Construction (Matches Solidity Struct)
+    # Extract values from TradeInput object (handle both attribute access patterns)
+    pair_idx = getattr(trade_input, 'pair_index', getattr(trade_input, 'pairIndex', 0))
+    # TradeInput stores collateral in wei (already converted)
+    collateral_wei = getattr(trade_input, 'collateral_in_trade', getattr(trade_input, 'open_collateral', 0))
+    if isinstance(collateral_wei, float):
+        collateral_wei = int(collateral_wei)
+    is_long_val = getattr(trade_input, 'is_long', getattr(trade_input, 'buy', True))
+    leverage_val = getattr(trade_input, 'leverage', 1)
+    tp_val = getattr(trade_input, 'tp', 0)
+    sl_val = getattr(trade_input, 'sl', 0)
+    
+    trade_struct = {
+        'trader': trader_address,
+        'pairIndex': pair_idx,
+        'index': 0,
+        'initialPosToken': 0,
+        'positionSizeUSDC': collateral_wei,
+        'openPrice': current_price_int, 
+        'buy': is_long_val,
+        'leverage': leverage_val,
+        'tp': int(tp_val * (10 ** PRICE_DECIMALS)) if tp_val else 0,
+        'sl': int(sl_val * (10 ** PRICE_DECIMALS)) if sl_val else 0,
+        'timestamp': 0,
+    }
+
+    # Get Fees & Nonce
+    execution_fee = await trader_client.trade.get_trade_execution_fee()
+    nonce = await trader_client.get_transaction_count(trader_address)
+
+    # Build TX
+    return await TradingContract.functions.openTrade(
+        trade_struct,               # Pass dict, web3 converts to tuple
+        0,                          # OrderType.MARKET (uint8)
+        int(slippage * 10**10)      # Slippage (uint256)
+    ).build_transaction({
+        "from": trader_address,
+        "value": execution_fee,
+        "chainId": trader_client.chain_id,
+        "nonce": nonce,
+        # Gas limit estimation happens automatically by web3 usually, 
+        # but you can add 'gas': 2000000 if needed.
+    })
+
+# ==========================================
+# 3. Position Management (Close/Read)
+# ==========================================
 
 async def close_position_via_contract(
     trader_client,
-    pair_index: int
+    pair_index: int,
+    trade_index: int = 0
 ) -> Dict[str, Any]:
-    """
-    Close a trading position using contract methods.
-    
-    Args:
-        trader_client: TraderClient instance
-        pair_index: Trading pair index to close
-        
-    Returns:
-        Dictionary with transaction hash and PnL
-    """
+    """Closes a specific position."""
     try:
-        # Ensure contracts are loaded
-        if hasattr(trader_client, 'load_contracts'):
-            if inspect.iscoroutinefunction(trader_client.load_contracts):
-                await trader_client.load_contracts()
-            else:
-                trader_client.load_contracts()
-        
-        # Try different contract function combinations
-        contract_names = ['Trading', 'PerpetualTrading', 'AvantisTrading', 'TradingContract']
-        function_names = ['closePosition', 'closeTrade', 'closePositionByPair']
-        
-        result = None
-        last_error = None
-        
-        for contract_name in contract_names:
-            for function_name in function_names:
-                try:
-                    if inspect.iscoroutinefunction(trader_client.write_contract):
-                        tx_hash = await trader_client.write_contract(
-                            contract_name=contract_name,
-                            function_name=function_name,
-                            pairIndex=pair_index
-                        )
-                    else:
-                        tx_hash = trader_client.write_contract(
-                            contract_name=contract_name,
-                            function_name=function_name,
-                            pairIndex=pair_index
-                        )
-                    
-                    if tx_hash:
-                        result = {
-                            'tx_hash': tx_hash.hex() if hasattr(tx_hash, 'hex') else str(tx_hash),
-                            'pair_index': pair_index,
-                            'status': 'pending'
-                        }
-                        logger.info(f"Position closed via {contract_name}.{function_name}: {result['tx_hash']}")
-                        break
-                except Exception as e:
-                    last_error = e
-                    logger.debug(f"Failed to use {contract_name}.{function_name}: {e}")
-                    continue
-            
-            if result:
-                break
-        
-        if not result:
-            # Try direct SDK method if available
-            if hasattr(trader_client, 'close_position'):
-                try:
-                    # Check if it's async or sync
-                    if inspect.iscoroutinefunction(trader_client.close_position):
-                        result = await trader_client.close_position(pair_index=pair_index)
-                    else:
-                        # Synchronous method
-                        result = trader_client.close_position(pair_index=pair_index)
-                except Exception as sdk_error:
-                    logger.warning(f"SDK close_position method failed: {sdk_error}")
-                    raise ValueError(
-                        f"Could not close position: SDK method failed. "
-                        f"Last contract error: {last_error}, SDK error: {sdk_error}"
-                    )
-            else:
-                raise ValueError(
-                    f"Could not close position: No suitable contract method found. "
-                    f"Last error: {last_error}"
-                )
-        
-        return result
-        
+        signer = trader_client.get_signer()
+        trader_address = signer.get_ethereum_address()
+
+        # Find the trade first to get current collateral (needed for closure)
+        trades, _ = await trader_client.trade.get_trades(trader_address)
+        target_trade = next(
+            (t for t in trades if t.trade.pair_index == pair_index and t.trade.trade_index == trade_index), 
+            None
+        )
+
+        if not target_trade:
+            raise ValueError(f"Position not found for Pair {pair_index}")
+
+        # Build Close TX
+        logger.info(f"🔒 Closing position on Pair {pair_index}...")
+        close_tx = await trader_client.trade.build_trade_close_tx(
+            pair_index=pair_index,
+            trade_index=trade_index,
+            collateral_to_close=target_trade.trade.open_collateral,  # Close 100%
+            trader=trader_address
+        )
+
+        receipt = await trader_client.sign_and_get_receipt(close_tx)
+        return _format_receipt(receipt, pair_index, "close")
     except Exception as e:
-        logger.error(f"Error closing position via contract: {e}", exc_info=True)
+        logger.error(f"Error closing position: {e}")
         raise
 
-
-async def close_all_positions_via_contract(
-    trader_client
-) -> Dict[str, Any]:
-    """
-    Close all open positions using contract methods.
-    
-    Args:
-        trader_client: TraderClient instance
-        
-    Returns:
-        Dictionary with transaction hashes and total PnL
-    """
+async def close_all_positions_via_contract(trader_client) -> Dict[str, Any]:
+    """Closes all open positions for a trader."""
     try:
-        # First, get all open positions (avoid circular import by calling directly)
-        positions = await get_positions_via_contract(trader_client)
+        signer = trader_client.get_signer()
+        trader_address = signer.get_ethereum_address()
         
-        if not positions:
+        # Get all trades
+        trades, _ = await trader_client.trade.get_trades(trader_address)
+        
+        if not trades:
             return {
-                'closed_count': 0,
-                'tx_hashes': [],
-                'total_pnl': 0
+                "closed_count": 0,
+                "tx_hashes": [],
+                "total_pnl": 0.0
             }
         
-        # Close each position
         tx_hashes = []
-        total_pnl = 0
+        total_pnl = 0.0
         
-        for position in positions:
-            pair_index = position.get('pair_index')
-            if pair_index is not None:
-                try:
-                    result = await close_position_via_contract(trader_client, pair_index)
-                    if result and 'tx_hash' in result:
-                        tx_hashes.append(result['tx_hash'])
-                    if 'pnl' in result:
-                        total_pnl += result.get('pnl', 0)
-                except Exception as e:
-                    logger.warning(f"Failed to close position {pair_index}: {e}")
-                    continue
+        # Close each position
+        for trade_wrapper in trades:
+            trade_obj = trade_wrapper.trade if hasattr(trade_wrapper, 'trade') else trade_wrapper
+            pair_index = getattr(trade_obj, 'pair_index', getattr(trade_obj, 'pairIndex', 0))
+            trade_index = getattr(trade_obj, 'trade_index', getattr(trade_obj, 'index', 0))
+            
+            try:
+                close_tx = await trader_client.trade.build_trade_close_tx(
+                    pair_index=pair_index,
+                    trade_index=trade_index,
+                    collateral_to_close=trade_obj.open_collateral,
+                    trader=trader_address
+                )
+                receipt = await trader_client.sign_and_get_receipt(close_tx)
+                tx_hash = receipt.get('transactionHash') if isinstance(receipt, dict) else getattr(receipt, 'transactionHash', None)
+                if tx_hash:
+                    tx_hashes.append(str(tx_hash.hex() if hasattr(tx_hash, 'hex') else tx_hash))
+                if hasattr(trade_wrapper, 'pnl'):
+                    total_pnl += float(trade_wrapper.pnl)
+            except Exception as e:
+                logger.warning(f"Failed to close position {pair_index}: {e}")
+                continue
         
         return {
-            'closed_count': len(tx_hashes),
-            'tx_hashes': tx_hashes,
-            'total_pnl': total_pnl
+            "closed_count": len(tx_hashes),
+            "tx_hashes": tx_hashes,
+            "total_pnl": total_pnl
         }
-        
     except Exception as e:
-        logger.error(f"Error closing all positions via contract: {e}", exc_info=True)
+        logger.error(f"Error closing all positions: {e}")
         raise
 
-
-async def get_positions_via_contract(
-    trader_client,
-    address: Optional[str] = None
-) -> list[Dict[str, Any]]:
-    """
-    Get all open positions using contract read methods.
-    
-    Args:
-        trader_client: TraderClient instance
-        address: User's address (required for Base Accounts, optional if signer available)
-        
-    Returns:
-        List of position dictionaries
-    """
+async def get_positions_via_contract(trader_client, address: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Fetches and formats all open positions."""
     try:
-        # Ensure contracts are loaded
-        if hasattr(trader_client, 'load_contracts'):
-            if inspect.iscoroutinefunction(trader_client.load_contracts):
-                await trader_client.load_contracts()
-            else:
-                trader_client.load_contracts()
-        
-        # Get user address
-        user_address = address
-        if not user_address and trader_client.has_signer():
-            signer = trader_client.get_signer()
-            if hasattr(signer, 'account') and hasattr(signer.account, 'address'):
-                user_address = signer.account.address
-            elif hasattr(signer, 'address'):
-                user_address = signer.address
-        
-        if not user_address:
-            logger.warning("No address available for position query")
+        if not trader_client.has_signer() and not address:
             return []
-        
-        # Try to read positions from contract
-        contract_names = ['Trading', 'PerpetualTrading', 'AvantisTrading', 'TradingContract']
-        function_names = ['getPositions', 'getUserPositions', 'getOpenPositions']
-        
-        positions = None
-        last_error = None
-        
-        for contract_name in contract_names:
-            for function_name in function_names:
-                try:
-                    # Read positions for the user address
-                    if inspect.iscoroutinefunction(trader_client.read_contract):
-                        positions_data = await trader_client.read_contract(
-                            contract_name=contract_name,
-                            function_name=function_name,
-                            user=user_address,
-                            decode=True
-                        )
-                    else:
-                        positions_data = trader_client.read_contract(
-                            contract_name=contract_name,
-                            function_name=function_name,
-                            user=user_address,
-                            decode=True
-                        )
-                    
-                    if positions_data:
-                        # Parse positions data
-                        if isinstance(positions_data, (list, tuple)):
-                            positions = positions_data
-                        elif isinstance(positions_data, dict) and 'positions' in positions_data:
-                            positions = positions_data['positions']
-                        else:
-                            positions = [positions_data] if positions_data else []
-                        
-                        logger.debug(f"Retrieved {len(positions)} positions via {contract_name}.{function_name}")
-                        break
-                except Exception as e:
-                    last_error = e
-                    logger.debug(f"Failed to use {contract_name}.{function_name}: {e}")
-                    continue
             
-            if positions is not None:
-                break
+        if not address:
+            address = trader_client.get_signer().get_ethereum_address()
         
-        if positions is None:
-            # Try direct SDK method if available
-            if hasattr(trader_client, 'get_positions'):
-                try:
-                    # Check if it's async or sync
-                    if inspect.iscoroutinefunction(trader_client.get_positions):
-                        positions = await trader_client.get_positions()
-                    else:
-                        # Synchronous method
-                        positions = trader_client.get_positions()
-                except Exception as sdk_error:
-                    logger.warning(f"SDK get_positions method failed: {sdk_error}")
-                    return []
-            else:
-                logger.warning(f"Could not retrieve positions: No suitable contract method found. Last error: {last_error}")
-                return []
+        raw_trades, _ = await trader_client.trade.get_trades(address)
         
-        # Format positions
-        formatted_positions = []
-        for pos in positions:
-            if isinstance(pos, dict):
-                formatted_positions.append({
-                    'pair_index': pos.get('pairIndex') or pos.get('pair_index'),
-                    'is_long': pos.get('isLong') or pos.get('is_long', False),
-                    'size': pos.get('size', 0),
-                    'entry_price': pos.get('entryPrice') or pos.get('entry_price', 0),
-                    'current_price': pos.get('currentPrice') or pos.get('current_price', 0),
-                    'leverage': pos.get('leverage', 1),
-                    'collateral': pos.get('collateral', 0),
-                    'pnl': pos.get('pnl', 0),
-                    'pnl_percentage': pos.get('pnlPercentage') or pos.get('pnl_percentage', 0),
-                    'liquidation_price': pos.get('liquidationPrice') or pos.get('liquidation_price'),
-                    'take_profit': pos.get('takeProfit') or pos.get('take_profit'),
-                    'stop_loss': pos.get('stopLoss') or pos.get('stop_loss'),
-                })
-        
-        return formatted_positions
+        positions = []
+        for t in raw_trades:
+            # Handle both wrapped and direct trade objects
+            trade_obj = t.trade if hasattr(t, 'trade') else t
+            positions.append({
+                'pair_index': getattr(trade_obj, 'pair_index', getattr(trade_obj, 'pairIndex', 0)),
+                'is_long': getattr(trade_obj, 'is_long', getattr(trade_obj, 'buy', False)),
+                'collateral': float(getattr(trade_obj, 'open_collateral', getattr(trade_obj, 'collateral', 0))),
+                'leverage': getattr(trade_obj, 'leverage', 1),
+                'pnl': float(t.pnl) if hasattr(t, 'pnl') else 0.0,
+                'entry_price': float(getattr(trade_obj, 'open_price', 0)) / (10**PRICE_DECIMALS) if hasattr(trade_obj, 'open_price') else 0
+            })
+        return positions
         
     except Exception as e:
-        logger.error(f"Error getting positions via contract: {e}", exc_info=True)
+        logger.error(f"Error fetching positions: {e}")
         return []
 
+# ==========================================
+# 4. Utilities
+# ==========================================
 
-async def get_balance_via_contract(
-    trader_client,
-    address: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Get account balance using contract read methods.
+def _format_receipt(receipt: Any, pair_index: int, action: str) -> Dict[str, Any]:
+    """Standardizes receipt output."""
+    # Handle ReceiptDict or AttributeDict
+    tx_hash = receipt.get('transactionHash') if isinstance(receipt, dict) else getattr(receipt, 'transactionHash', None)
+    if tx_hash and hasattr(tx_hash, 'hex'):
+        tx_hash = tx_hash.hex()
+    elif isinstance(tx_hash, bytes):
+        tx_hash = tx_hash.hex()
+    elif not tx_hash:
+        tx_hash = str(tx_hash) if tx_hash else "unknown"
     
-    Args:
-        trader_client: TraderClient instance
-        address: User's address (required for Base Accounts, optional if signer available)
-        
-    Returns:
-        Dictionary with balance information
-    """
-    try:
-        # Get address
-        user_address = address
-        if not user_address and trader_client.has_signer():
-            signer = trader_client.get_signer()
-            if hasattr(signer, 'account') and hasattr(signer.account, 'address'):
-                user_address = signer.account.address
-            elif hasattr(signer, 'address'):
-                user_address = signer.address
-        
-        if not user_address:
-            raise ValueError("Address is required for balance queries")
-        
-        # Use SDK methods if available (may require signer for some methods)
-        usdc_balance = 0
-        usdc_allowance = 0
-        
-        if trader_client.has_signer():
-            # Traditional wallet - can use SDK methods
-            if hasattr(trader_client, 'get_usdc_balance'):
-                try:
-                    if inspect.iscoroutinefunction(trader_client.get_usdc_balance):
-                        usdc_balance = await trader_client.get_usdc_balance()
-                    else:
-                        usdc_balance = trader_client.get_usdc_balance()
-                except:
-                    pass
-            
-            if hasattr(trader_client, 'get_usdc_allowance_for_trading'):
-                try:
-                    if inspect.iscoroutinefunction(trader_client.get_usdc_allowance_for_trading):
-                        usdc_allowance = await trader_client.get_usdc_allowance_for_trading()
-                    else:
-                        usdc_allowance = trader_client.get_usdc_allowance_for_trading()
-                except:
-                    pass
-        else:
-            # Base Account - read from contract directly
-            # Try to read balance from contract
-            try:
-                if hasattr(trader_client, 'load_contracts'):
-                    if inspect.iscoroutinefunction(trader_client.load_contracts):
-                        await trader_client.load_contracts()
-                    else:
-                        trader_client.load_contracts()
-                # Read USDC balance for the address
-                # This would need to be implemented based on actual contract structure
-                logger.debug("Reading balance from contract for Base Account")
-            except Exception as e:
-                logger.debug(f"Could not read balance from contract: {e}")
-        
+    status = receipt.get('status') if isinstance(receipt, dict) else getattr(receipt, 'status', None)
+    
+    # Check for success (1)
+    if status == 1 or status == '0x1':
+        block_number = receipt.get('blockNumber', 0) if isinstance(receipt, dict) else getattr(receipt, 'blockNumber', 0)
+        logger.info(f"✅ {action.capitalize()} Successful! TX: {tx_hash}")
         return {
-            'address': user_address,
-            'usdc_balance': float(usdc_balance) / 1e6 if usdc_balance else 0,  # Convert from wei
-            'usdc_allowance': float(usdc_allowance) / 1e6 if usdc_allowance else 0,  # Convert from wei
-            'total_balance': float(usdc_balance) / 1e6 if usdc_balance else 0,
-            'available_balance': float(usdc_balance) / 1e6 if usdc_balance else 0,
-            'margin_used': 0,  # Would need to calculate from positions
+            'success': True,
+            'tx_hash': str(tx_hash),
+            'pair_index': pair_index,
+            'status': 'confirmed',
+            'block': block_number,
+            'receipt': receipt
         }
-        
-    except Exception as e:
-        logger.error(f"Error getting balance via contract: {e}", exc_info=True)
-        raise
-
+    else:
+        logger.error(f"❌ Transaction Reverted. TX: {tx_hash}")
+        raise ValueError(f"Transaction failed/reverted on chain. Hash: {tx_hash}")

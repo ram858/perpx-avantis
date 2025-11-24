@@ -317,7 +317,7 @@ export function usePositions() {
           
           // Initial fetch (only if conditions are met)
           fetchPositions();
-        });
+        }); 
         
         return () => {
           cancelled = true;

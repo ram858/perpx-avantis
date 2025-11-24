@@ -140,7 +140,7 @@ export class TradingSessionManager {
 
     const update = {
       type: 'trading_update',
-      data: session.status
+      data: this.sanitizeSessionStatus(session.status)
     };
 
     // Security: Remove debug logging in production
@@ -165,10 +165,10 @@ export class TradingSessionManager {
       session.subscribers.add(ws);
       console.log(`[SESSION_MANAGER] Client subscribed to session ${sessionId}`);
       
-      // Send current status immediately
+      // Send current status immediately (sanitized - no private key)
       const update = {
         type: 'trading_update',
-        data: session.status
+        data: this.sanitizeSessionStatus(session.status)
       };
       
       if (ws.readyState === WebSocket.OPEN) {
@@ -195,13 +195,22 @@ export class TradingSessionManager {
     return session?.walletAddress || session?.config.walletAddress;
   }
 
-  getSessionStatus(sessionId: string): SessionStatus | null {
-    const session = this.sessions.get(sessionId);
-    return session ? session.status : null;
+  private sanitizeSessionStatus(status: SessionStatus): Omit<SessionStatus, 'config'> & { config: Omit<TradingConfig, 'privateKey'> } {
+    // Remove privateKey from config before returning
+    const { privateKey, ...sanitizedConfig } = status.config;
+    return {
+      ...status,
+      config: sanitizedConfig
+    };
   }
 
-  getAllSessions(): SessionStatus[] {
-    return Array.from(this.sessions.values()).map(session => session.status);
+  getSessionStatus(sessionId: string): (Omit<SessionStatus, 'config'> & { config: Omit<TradingConfig, 'privateKey'> }) | null {
+    const session = this.sessions.get(sessionId);
+    return session ? this.sanitizeSessionStatus(session.status) : null;
+  }
+
+  getAllSessions(): (Omit<SessionStatus, 'config'> & { config: Omit<TradingConfig, 'privateKey'> })[] {
+    return Array.from(this.sessions.values()).map(session => this.sanitizeSessionStatus(session.status));
   }
 
   stopSession(sessionId: string): boolean {

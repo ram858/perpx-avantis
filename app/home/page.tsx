@@ -483,19 +483,25 @@ const TradingCard = ({
                 </div>
                 <div className="space-y-1.5">
                   {/* ETH Balance */}
-                  {ethBalanceFormatted && parseFloat(ethBalanceFormatted) > 0 && (
-                    <div className="flex items-center justify-between p-1.5 bg-[#1a1a1a] rounded-md">
-                      <div className="flex items-center space-x-1.5">
-                        <div className="w-5 h-5 rounded-full bg-[#627eea] flex items-center justify-center text-white font-bold text-[9px]">
-                          Ξ
+                  {(() => {
+                    // Parse ETH balance - handle formats like "0.001 ETH" or "0.001"
+                    const ethBalanceNum = ethBalanceFormatted 
+                      ? parseFloat(ethBalanceFormatted.replace(/[^0-9.]/g, '')) || 0
+                      : 0;
+                    return ethBalanceNum > 0 ? (
+                      <div className="flex items-center justify-between p-1.5 bg-[#1a1a1a] rounded-md">
+                        <div className="flex items-center space-x-1.5">
+                          <div className="w-5 h-5 rounded-full bg-[#627eea] flex items-center justify-center text-white font-bold text-[9px]">
+                            Ξ
+                          </div>
+                          <span className="text-yellow-100 text-xs font-medium">ETH</span>
                         </div>
-                        <span className="text-yellow-100 text-xs font-medium">ETH</span>
+                        <div className="text-right">
+                          <p className="text-yellow-100 text-xs font-semibold">{ethBalanceNum.toFixed(4)}</p>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-yellow-100 text-xs font-semibold">{parseFloat(ethBalanceFormatted).toFixed(4)}</p>
-                      </div>
-                    </div>
-                  )}
+                    ) : null;
+                  })()}
                   
                   {/* Other Token Holdings */}
                   {holdings.filter(h => h.token.symbol !== 'ETH' && parseFloat(h.balance) > 0).map((holding, index) => (
@@ -1198,10 +1204,15 @@ export default function HomePage() {
   const { positionData } = usePositions()
   
   // Auto-refresh session status on mount and periodically
+  // NOTE: Only restore sessions if user explicitly started trading (not on page load)
   useEffect(() => {
     if (isConnected) {
-      // Check for active sessions on mount (only restore if actually running)
-      refreshSessionStatus(true);
+      // Don't auto-restore sessions on mount - only refresh if we already have a session
+      // This prevents errors when trying to restore sessions that don't exist
+      if (tradingSession && tradingSession.status === 'running') {
+        // Only refresh existing running sessions
+        refreshSessionStatus(false);
+      }
       
       // Set up periodic refresh every 10 seconds ONLY if we have an active running session
       const interval = setInterval(() => {
@@ -1216,17 +1227,21 @@ export default function HomePage() {
     }
   }, [isConnected, tradingSession?.status, refreshSessionStatus]);
   
-  // Only restore session if we have actual open positions AND no session
+  // Only restore session if we have actual open positions AND no session AND user has balance
   // This handles the case where positions exist but session state was lost
   useEffect(() => {
-    if (isConnected && positionData && positionData.openPositions > 0 && !tradingSession) {
+    if (isConnected && positionData && positionData.openPositions > 0 && !tradingSession && avantisBalance > 0) {
       // If we have positions but no session, try to restore it (but only if it's actually running)
-      refreshSessionStatus(true);
+      // Only restore if user has balance (indicates they've started trading)
+      refreshSessionStatus(true).catch(err => {
+        // Silently fail - don't show errors for session restoration attempts
+        console.log('[HomePage] Could not restore session (this is normal if no active session):', err.message);
+      });
     } else if (isConnected && !positionData?.openPositions && tradingSession && tradingSession.status !== 'running') {
       // If no positions and session is not running, clear it
       // This prevents showing stale sessions
     }
-  }, [isConnected, positionData?.openPositions, tradingSession, refreshSessionStatus]);
+  }, [isConnected, positionData?.openPositions, tradingSession, avantisBalance, refreshSessionStatus]);
 
   // Auto-create wallet if user doesn't have one - optimized with useCallback
   // NOTE: For web users, wallet is created during OTP verification, so this is mainly for Farcaster users

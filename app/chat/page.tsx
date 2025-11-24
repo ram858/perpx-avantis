@@ -4,7 +4,7 @@ import type React from "react"
 import Image from "next/image"
 
 import { Button } from "@/components/ui/button"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import Link from "next/link"
 import { useTradingSession } from "@/lib/hooks/useTradingSession"
 import { usePositions } from "@/lib/hooks/usePositions"
@@ -15,6 +15,7 @@ import { getStorageItem } from "@/lib/utils/safeStorage"
 
 export default function ChatPage() {
   const searchParams = useSearchParams()
+  const hasStartedTradingRef = useRef(false) // Prevent duplicate trading starts
   const [expandedSections, setExpandedSections] = useState<string[]>([])
   const [tradingPhase, setTradingPhase] = useState<"initial" | "active" | "closing" | "completed" | "conversation">(
     "conversation",
@@ -79,10 +80,16 @@ export default function ChatPage() {
   useEffect(() => {
     if (!tradingSession) {
       setTradingPhase('initial')
+    } else {
+      // Only refresh if we have a session and it's running
+      // Don't refresh on every render to prevent flickering
+      if (tradingSession.status === 'running') {
+        refreshSessionStatus().catch(() => {
+          // Silently handle errors to prevent flickering
+        })
+      }
     }
-    
-    refreshSessionStatus()
-  }, [tradingSession, refreshSessionStatus])
+  }, [tradingSession?.id]) // Only depend on session ID, not the entire session object
 
   // Auto-start trading if parameters are provided
   useEffect(() => {
@@ -104,7 +111,8 @@ export default function ChatPage() {
       return
     }
 
-    if (profit && investment && !tradingSession) {
+    if (profit && investment && !tradingSession && !hasStartedTradingRef.current) {
+      hasStartedTradingRef.current = true // Prevent multiple starts
       const profitNum = parseInt(profit)
       const investmentNum = parseInt(investment)
       
@@ -160,6 +168,8 @@ export default function ChatPage() {
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         }])
         
+        let successMessageAdded = false; // Prevent duplicate messages
+        
         startTrading({
           profitGoal: profitNum,
           maxBudget: investmentNum,
@@ -175,7 +185,10 @@ export default function ChatPage() {
               // Update the relevant step (fee step is skipped now)
               if (step === 'session') {
                 content = content.replace(/🔄 Starting trading session\.\.\./, `✅ ${message}`);
-                content += `\n\n🚀 **Trading session is now active!**\n\n📈 Monitoring markets and executing trades on Avantis...`;
+                // Only add the active message if not already present
+                if (!content.includes('🚀 **Trading session is now active!**')) {
+                  content += `\n\n🚀 **Trading session is now active!**\n\n📈 Monitoring markets and executing trades on Avantis...`;
+                }
               } else if (step === 'complete') {
                 content = content.replace(/🔄.*/, '');
                 content += `\n\n${message}`;
@@ -186,11 +199,22 @@ export default function ChatPage() {
             return prev;
           });
         }).then(() => {
-          setMessages(prev => [...prev, {
-            type: "bot",
-            content: `✅ **Trading session started successfully!**\n\n📊 The bot is now actively monitoring markets and will open positions on Avantis when profitable opportunities are detected.\n\n💡 Positions will appear in your Avantis dashboard when opened.\n\n💡 You can monitor your positions and PnL in real-time above.`,
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          }])
+          // Only add success message once (check if it already exists)
+          setMessages(prev => {
+            const hasSuccessMessage = prev.some(msg => 
+              msg.type === "bot" && 
+              msg.content.includes("Trading session started successfully")
+            );
+            
+            if (!hasSuccessMessage) {
+              return [...prev, {
+                type: "bot",
+                content: `✅ **Trading session started successfully!**\n\n📊 The bot is now actively monitoring markets and will open positions on Avantis when profitable opportunities are detected.\n\n💡 Positions will appear in your Avantis dashboard when opened.\n\n💡 You can monitor your positions and PnL in real-time above.`,
+                timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+              }];
+            }
+            return prev;
+          });
         }).catch(error => {
           console.error('[ChatPage] Trading start error:', error);
           const errorMessage = error instanceof Error ? error.message : String(error);

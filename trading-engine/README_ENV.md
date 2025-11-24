@@ -53,7 +53,7 @@ Example Docker:
 COPY trading-engine/.env /app/trading-engine/.env
 
 # Or use environment variables
-ENV AVANTIS_API_URL=http://localhost:8000
+ENV AVANTIS_API_URL=http://localhost:3002
 ENV BASE_RPC_URL=https://mainnet.base.org
 ```
 

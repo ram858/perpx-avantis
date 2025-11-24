@@ -331,6 +331,15 @@ class WebTradingBot {
                         }
                         else {
                             log('WEB_BOT', `${symbol} => ❌ No trade | Reason: ${reason}`);
+                            // Log detailed rejection reason for debugging
+                            if (reason && reason.length > 0) {
+                                const reasonLines = reason.split('\n');
+                                reasonLines.forEach(line => {
+                                    if (line.trim()) {
+                                        log('WEB_BOT', `   ${line.trim()}`);
+                                    }
+                                });
+                            }
                         }
                     }
                 }

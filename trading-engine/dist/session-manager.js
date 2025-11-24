@@ -100,7 +100,7 @@ class TradingSessionManager {
             return;
         const update = {
             type: 'trading_update',
-            data: session.status
+            data: this.sanitizeSessionStatus(session.status)
         };
         // Security: Remove debug logging in production
         session.subscribers.forEach(ws => {
@@ -123,10 +123,10 @@ class TradingSessionManager {
         if (session) {
             session.subscribers.add(ws);
             console.log(`[SESSION_MANAGER] Client subscribed to session ${sessionId}`);
-            // Send current status immediately
+            // Send current status immediately (sanitized - no private key)
             const update = {
                 type: 'trading_update',
-                data: session.status
+                data: this.sanitizeSessionStatus(session.status)
             };
             if (ws.readyState === ws_1.default.OPEN) {
                 ws.send(JSON.stringify(update));
@@ -150,12 +150,20 @@ class TradingSessionManager {
         const session = this.sessions.get(sessionId);
         return session?.walletAddress || session?.config.walletAddress;
     }
+    sanitizeSessionStatus(status) {
+        // Remove privateKey from config before returning
+        const { privateKey, ...sanitizedConfig } = status.config;
+        return {
+            ...status,
+            config: sanitizedConfig
+        };
+    }
     getSessionStatus(sessionId) {
         const session = this.sessions.get(sessionId);
-        return session ? session.status : null;
+        return session ? this.sanitizeSessionStatus(session.status) : null;
     }
     getAllSessions() {
-        return Array.from(this.sessions.values()).map(session => session.status);
+        return Array.from(this.sessions.values()).map(session => this.sanitizeSessionStatus(session.status));
     }
     stopSession(sessionId) {
         const session = this.sessions.get(sessionId);

@@ -173,6 +173,8 @@ async function getAvantisBalance(privateKey: string): Promise<number> {
   try {
     const avantisApiUrl = getAvantisApiUrl();
     const baseUrl = avantisApiUrl.endsWith('/') ? avantisApiUrl.slice(0, -1) : avantisApiUrl;
+    
+    // Use the /api/balance endpoint with private_key as query parameter
     const response = await fetch(`${baseUrl}/api/balance?private_key=${encodeURIComponent(privateKey)}`, {
       method: 'GET',
       headers: {
@@ -185,9 +187,29 @@ async function getAvantisBalance(privateKey: string): Promise<number> {
       return 0;
     }
 
-    const result = await response.json() as { balance?: number; usdc_balance?: number };
-    // Return USDC balance (trading balance)
-    return result.usdc_balance || result.balance || 0;
+    const result = await response.json() as { 
+      usdc_balance?: number; 
+      avantis_balance?: number;
+      available_balance?: number;
+      balance?: number;
+      total_balance?: number;
+      usdc_allowance?: number;
+    };
+    
+    // Return USDC balance (trading balance) - try multiple possible fields
+    // Note: usdc_balance might be very small (like 2e-05), but usdc_allowance shows approved amount
+    // For trading, we should use available_balance or usdc_balance
+    const balance = result.available_balance || result.usdc_balance || result.avantis_balance || result.balance || result.total_balance || 0;
+    
+    // Log for debugging
+    console.log(`[AVANTIS] Balance check result:`, {
+      usdc_balance: result.usdc_balance,
+      available_balance: result.available_balance,
+      usdc_allowance: result.usdc_allowance,
+      returned_balance: balance
+    });
+    
+    return balance;
   } catch (error) {
     console.error(`[AVANTIS] ❌ Error getting balance:`, error);
     return 0;

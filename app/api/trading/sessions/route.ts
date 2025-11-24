@@ -1,14 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { AuthService } from '@/lib/services/AuthService'
-
-// Lazy initialization - create services at runtime, not build time
-function getAuthService(): AuthService {
-  return new AuthService()
-}
+import { verifyTokenAndGetContext } from '@/lib/utils/authHelper'
 
 export async function GET(request: NextRequest) {
   try {
-    const authService = getAuthService()
     // Verify authentication
     const authHeader = request.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -16,7 +10,7 @@ export async function GET(request: NextRequest) {
     }
 
     const token = authHeader.substring(7)
-    const payload = await authService.verifyToken(token)
+    const authContext = await verifyTokenAndGetContext(token)
     
     // Call the trading engine to get sessions
     const tradingEngineUrl = process.env.TRADING_ENGINE_URL || 'http://localhost:3001'

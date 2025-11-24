@@ -33,8 +33,13 @@ export declare class TradingSessionManager {
      * Get wallet address for a session
      */
     getSessionWalletAddress(sessionId: string): string | undefined;
-    getSessionStatus(sessionId: string): SessionStatus | null;
-    getAllSessions(): SessionStatus[];
+    private sanitizeSessionStatus;
+    getSessionStatus(sessionId: string): (Omit<SessionStatus, 'config'> & {
+        config: Omit<TradingConfig, 'privateKey'>;
+    }) | null;
+    getAllSessions(): (Omit<SessionStatus, 'config'> & {
+        config: Omit<TradingConfig, 'privateKey'>;
+    })[];
     stopSession(sessionId: string): boolean;
     forceStopSession(sessionId: string): boolean;
     cleanup(): void;

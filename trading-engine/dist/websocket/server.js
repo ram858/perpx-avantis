@@ -1,6 +1,19 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TradingWebSocketServer = void 0;
+// Load environment variables from trading-engine/.env
+const dotenv_1 = __importDefault(require("dotenv"));
+const path_1 = __importDefault(require("path"));
+const fs_1 = __importDefault(require("fs"));
+// Load .env from trading-engine directory if it exists
+// Use __dirname which is available in CommonJS (ts-node uses CommonJS)
+const envPath = path_1.default.resolve(__dirname, '../.env');
+if (fs_1.default.existsSync(envPath)) {
+    dotenv_1.default.config({ path: envPath });
+}
 const ws_1 = require("ws");
 class TradingWebSocketServer {
     constructor(port, sessionManager) {

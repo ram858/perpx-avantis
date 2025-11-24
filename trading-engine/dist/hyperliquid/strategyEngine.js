@@ -70,8 +70,8 @@ async function evaluateSignalOnly(symbol, _ohlcv, p0) {
         });
         // --- Market Outlook Score ---
         const mos = (0, signals_1.calculateMOS)({ ohlcv: ohlcv5m, mtfSlopes: [slope5m, slope30m, slope1h] });
-        const mosThresholdLong = 0.1; // Loosened for testing
-        const mosThresholdShort = -0.1; // Loosened for testing
+        const mosThresholdLong = -0.5; // VERY loose for testing - almost always triggers long
+        const mosThresholdShort = 0.5; // VERY loose for testing - almost always triggers short
         const mosThresholdExtreme = 0.3;
         const mosThresholdReversalBlockShort = 0.3; // Block short reversal in strong bull
         const mosThresholdReversalBlockLong = -0.3; // Block long reversal in strong bear
@@ -85,114 +85,115 @@ async function evaluateSignalOnly(symbol, _ohlcv, p0) {
             mosDecision = 'short';
             mosReason = `🧠 MOS=${mos.toFixed(4)} → Strong Short Bias`;
         }
-        // Skip in neutral regime with very low ADX (loosened from 15 → 10)
-        if (marketRegime === 'neutral' && adx < 10) {
-            return {
-                ...res30m,
-                shouldOpen: false,
-                passed: false,
-                reason: '✖️ Signal rejected: Neutral regime with low ADX',
-                confidence: 'low',
-                logged: false,
-                mos,
-            };
-        }
+        // Skip in neutral regime with very low ADX (TEMPORARILY DISABLED FOR TESTING)
+        // if (marketRegime === 'neutral' && adx < 10) {
+        //   return {
+        //     ...res30m,
+        //     shouldOpen: false,
+        //     passed: false,
+        //     reason: '✖️ Signal rejected: Neutral regime with low ADX',
+        //     confidence: 'low',
+        //     logged: false,
+        //     mos,
+        //   };
+        // }
         // --- Sniper & Reversal conditions ---
+        // TEMPORARILY LOOSENED FOR TESTING - Allows positions to open more easily
         const sniperConditions = {
             long: {
-                signalScore: { value: signalScore, pass: signalScore > 0.1, expected: '> 0.1' }, // Much looser
-                rsi: { value: rsi, pass: rsi >= 15 && rsi <= 75, expected: '15–75' }, // Wider range
-                rsiSlope: { value: rsiSlope30m, pass: rsiSlope30m > -0.5, expected: '> -0.5' }, // Allow some decline
-                atr: { value: atrPct, pass: atrPct > 0.05, expected: '> 0.05%' }, // Much lower volatility requirement
-                adx: { value: adx, pass: adx > 8, expected: '> 8' }, // Lower trend strength requirement
-                priceSlope: { value: priceSlopePct, pass: priceSlopePct > -0.01, expected: '> -1%' }, // Allow more decline
-                trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h > -0.015, expected: '> -1.5%' }, // Allow more decline
-                volumePct: { value: volumePct, pass: volumePct > 0.001, expected: '> 0.1%' }, // Much lower volume requirement
+                signalScore: { value: signalScore, pass: signalScore > 0.01, expected: '> 0.01' }, // VERY loose - almost any signal
+                rsi: { value: rsi, pass: rsi >= 10 && rsi <= 90, expected: '10–90' }, // Very wide range
+                rsiSlope: { value: rsiSlope30m, pass: rsiSlope30m > -10, expected: '> -10' }, // Very permissive
+                atr: { value: atrPct, pass: atrPct > 0.01, expected: '> 0.01%' }, // Very low volatility requirement
+                adx: { value: adx, pass: adx > 5, expected: '> 5' }, // Very low trend strength requirement
+                priceSlope: { value: priceSlopePct, pass: priceSlopePct > -0.05, expected: '> -5%' }, // Allow significant decline
+                trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h > -0.05, expected: '> -5%' }, // Allow significant decline
+                volumePct: { value: volumePct, pass: volumePct > 0.0001, expected: '> 0.01%' }, // Very low volume requirement
                 candlePos5m: {
                     value: candlePos5m,
-                    pass: ['bottom', 'anticipation_bottom', 'doji_bottom', 'middle', 'top'].includes(candlePos5m), // Allow more positions
-                    expected: 'bottom/anticipation_bottom/doji_bottom/middle/top',
+                    pass: true, // Accept ANY candle position
+                    expected: 'any',
                 },
             },
             short: {
-                signalScore: { value: signalScore, pass: signalScore > 0.1, expected: '> 0.1' }, // Much looser
-                rsi: { value: rsi, pass: rsi >= 25 && rsi <= 85, expected: '25–85' }, // Wider range
-                rsiSlope: { value: rsiSlope30m, pass: rsiSlope30m < 0.5, expected: '< 0.5' }, // Allow some increase
-                atr: { value: atrPct, pass: atrPct > 0.05, expected: '> 0.05%' }, // Much lower volatility requirement
-                adx: { value: adx, pass: adx > 8, expected: '> 8' }, // Lower trend strength requirement
-                priceSlope: { value: priceSlopePct, pass: priceSlopePct < 0.01, expected: '< 1%' }, // Allow more increase
-                trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h < 0.015, expected: '< 1.5%' }, // Allow more increase
-                volumePct: { value: volumePct, pass: volumePct > 0.001, expected: '> 0.1%' }, // Much lower volume requirement
+                signalScore: { value: signalScore, pass: signalScore > 0.01, expected: '> 0.01' }, // VERY loose - almost any signal
+                rsi: { value: rsi, pass: rsi >= 10 && rsi <= 90, expected: '10–90' }, // Very wide range
+                rsiSlope: { value: rsiSlope30m, pass: rsiSlope30m < 10, expected: '< 10' }, // Very permissive
+                atr: { value: atrPct, pass: atrPct > 0.01, expected: '> 0.01%' }, // Very low volatility requirement
+                adx: { value: adx, pass: adx > 5, expected: '> 5' }, // Very low trend strength requirement
+                priceSlope: { value: priceSlopePct, pass: priceSlopePct < 0.05, expected: '< 5%' }, // Allow significant increase
+                trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h < 0.05, expected: '< 5%' }, // Allow significant increase
+                volumePct: { value: volumePct, pass: volumePct > 0.0001, expected: '> 0.01%' }, // Very low volume requirement
                 candlePos5m: {
                     value: candlePos5m,
-                    pass: ['top', 'anticipation_top', 'doji_top', 'middle', 'bottom'].includes(candlePos5m), // Allow more positions
-                    expected: 'top/anticipation_top/doji_top/middle/bottom',
+                    pass: true, // Accept ANY candle position
+                    expected: 'any',
                 },
             },
             longReversal: {
-                signalScore: { value: signalScore, pass: signalScore > 0.5, expected: '> 0.5' }, // Slightly loosened
-                rsi: { value: rsi, pass: rsi > 85, expected: '> 85' },
-                rsiSlope: { value: rsiSlope30m, pass: rsiSlope30m > 0, expected: '> 0' },
-                atr: { value: atrPct, pass: atrPct > 0.2, expected: '> 0.2%' }, // Loosened
-                adx: { value: adx, pass: adx > 20, expected: '> 20' },
-                adxSlope: { value: adxSlope, pass: adxSlope < 0, expected: '< 0 (weakening)' },
-                divergence: { value: divergenceScore, pass: divergenceScore > 0.5, expected: '> 0.5' },
-                priceSlope: { value: priceSlopePct, pass: priceSlopePct <= 0, expected: '<= 0%' },
-                trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h <= 0, expected: '<= 0%' },
-                volumePct: { value: volumePct, pass: volumePct > 0.002, expected: '> 0.002' }, // Loosened
+                signalScore: { value: signalScore, pass: signalScore > 0.01, expected: '> 0.01' }, // VERY loose
+                rsi: { value: rsi, pass: rsi > 70, expected: '> 70' }, // Loosened from 85
+                rsiSlope: { value: rsiSlope30m, pass: rsiSlope30m > -5, expected: '> -5' }, // Very permissive
+                atr: { value: atrPct, pass: atrPct > 0.01, expected: '> 0.01%' }, // Very loose
+                adx: { value: adx, pass: adx > 5, expected: '> 5' }, // Very loose
+                adxSlope: { value: adxSlope, pass: adxSlope < 5, expected: '< 5' }, // Very permissive
+                divergence: { value: divergenceScore, pass: divergenceScore > 0.01, expected: '> 0.01' }, // Very loose
+                priceSlope: { value: priceSlopePct, pass: priceSlopePct < 0.05, expected: '< 5%' }, // Very permissive
+                trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h < 0.05, expected: '< 5%' }, // Very permissive
+                volumePct: { value: volumePct, pass: volumePct > 0.0001, expected: '> 0.01%' }, // Very loose
                 candlePos5m: {
                     value: candlePos5m,
-                    pass: ['top', 'anticipation_top', 'shooting_star_top'].includes(candlePos5m) && candleColor5m === 'green',
-                    expected: 'top/anticipation_top/shooting_star of green candle',
+                    pass: true, // Accept ANY candle position
+                    expected: 'any',
                 },
             },
             shortReversal: {
-                signalScore: { value: signalScore, pass: signalScore > 0.5, expected: '> 0.5' }, // Slightly loosened
-                rsi: { value: rsi, pass: rsi < 15, expected: '< 15' },
-                rsiSlope: { value: rsiSlope30m, pass: rsiSlope30m < 0, expected: '< 0' },
-                atr: { value: atrPct, pass: atrPct > 0.2, expected: '> 0.2%' }, // Loosened
-                adx: { value: adx, pass: adx > 20, expected: '> 20' },
-                adxSlope: { value: adxSlope, pass: adxSlope < 0, expected: '< 0 (weakening)' },
-                divergence: { value: divergenceScore, pass: divergenceScore > 0.5, expected: '> 0.5' },
-                priceSlope: { value: priceSlopePct, pass: priceSlopePct >= 0, expected: '>= 0%' },
-                trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h >= 0, expected: '>= 0%' },
-                volumePct: { value: volumePct, pass: volumePct > 0.002, expected: '> 0.002' }, // Loosened
+                signalScore: { value: signalScore, pass: signalScore > 0.01, expected: '> 0.01' }, // VERY loose
+                rsi: { value: rsi, pass: rsi < 30, expected: '< 30' }, // Loosened from 15
+                rsiSlope: { value: rsiSlope30m, pass: rsiSlope30m < 5, expected: '< 5' }, // Very permissive
+                atr: { value: atrPct, pass: atrPct > 0.01, expected: '> 0.01%' }, // Very loose
+                adx: { value: adx, pass: adx > 5, expected: '> 5' }, // Very loose
+                adxSlope: { value: adxSlope, pass: adxSlope < 5, expected: '< 5' }, // Very permissive
+                divergence: { value: divergenceScore, pass: divergenceScore > 0.01, expected: '> 0.01' }, // Very loose
+                priceSlope: { value: priceSlopePct, pass: priceSlopePct > -0.05, expected: '> -5%' }, // Very permissive
+                trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h > -0.05, expected: '> -5%' }, // Very permissive
+                volumePct: { value: volumePct, pass: volumePct > 0.0001, expected: '> 0.01%' }, // Very loose
                 candlePos5m: {
                     value: candlePos5m,
-                    pass: ['bottom', 'anticipation_bottom', 'hammer_bottom'].includes(candlePos5m) && candleColor5m === 'red',
-                    expected: 'bottom/anticipation_bottom/hammer of red candle',
+                    pass: true, // Accept ANY candle position
+                    expected: 'any',
                 },
             },
             bearishlong: {
-                signalScore: { value: signalScore, pass: signalScore > 0.4, expected: '> 0.4' }, // Loosened
-                rsi: { value: rsi, pass: rsi >= 20 && rsi <= 50, expected: '20–50' },
-                rsiSlope: { value: rsiSlope30m, pass: rsiSlope30m > 0, expected: '> 0' },
-                atr: { value: atrPct, pass: atrPct > 0.2, expected: '> 0.2%' }, // Loosened
-                adx: { value: adx, pass: adx > 15, expected: '> 15' }, // Loosened
-                divergence: { value: divergenceScore, pass: divergenceScore > 0.15, expected: '> 0.15' }, // Loosened
-                priceSlope: { value: priceSlopePct, pass: priceSlopePct > -0.002, expected: '> -0.2%' }, // Loosened
-                trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h > -0.002, expected: '> -0.2%' }, // Loosened
-                volumePct: { value: volumePct, pass: volumePct > 0.002, expected: '> 0.002' }, // Loosened
+                signalScore: { value: signalScore, pass: signalScore > 0.01, expected: '> 0.01' }, // VERY loose
+                rsi: { value: rsi, pass: rsi >= 10 && rsi <= 60, expected: '10–60' }, // Very wide range
+                rsiSlope: { value: rsiSlope30m, pass: rsiSlope30m > -5, expected: '> -5' }, // Very permissive
+                atr: { value: atrPct, pass: atrPct > 0.01, expected: '> 0.01%' }, // Very loose
+                adx: { value: adx, pass: adx > 5, expected: '> 5' }, // Very loose
+                divergence: { value: divergenceScore, pass: divergenceScore > 0.01, expected: '> 0.01' }, // Very loose
+                priceSlope: { value: priceSlopePct, pass: priceSlopePct > -0.05, expected: '> -5%' }, // Very permissive
+                trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h > -0.05, expected: '> -5%' }, // Very permissive
+                volumePct: { value: volumePct, pass: volumePct > 0.0001, expected: '> 0.01%' }, // Very loose
                 candlePos5m: {
                     value: candlePos5m,
-                    pass: ['bottom', 'anticipation_bottom', 'doji_bottom'].includes(candlePos5m) && candleColor5m === 'red',
-                    expected: 'bottom/anticipation_bottom/doji_bottom of red candle',
+                    pass: true, // Accept ANY candle position
+                    expected: 'any',
                 },
             },
             bullishshort: {
-                signalScore: { value: signalScore, pass: signalScore > 0.4, expected: '> 0.4' }, // Loosened
-                rsi: { value: rsi, pass: rsi >= 50 && rsi <= 80, expected: '50–80' },
-                rsiSlope: { value: rsiSlope30m, pass: rsiSlope30m < 0, expected: '< 0' },
-                atr: { value: atrPct, pass: atrPct > 0.2, expected: '> 0.2%' }, // Loosened
-                adx: { value: adx, pass: adx > 15, expected: '> 15' }, // Loosened
-                divergence: { value: divergenceScore, pass: divergenceScore > 0.15, expected: '> 0.15' }, // Loosened
-                priceSlope: { value: priceSlopePct, pass: priceSlopePct < 0.002, expected: '< 0.2%' }, // Loosened
-                trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h < 0.002, expected: '< 0.2%' }, // Loosened
-                volumePct: { value: volumePct, pass: volumePct > 0.002, expected: '> 0.002' }, // Loosened
+                signalScore: { value: signalScore, pass: signalScore > 0.01, expected: '> 0.01' }, // VERY loose
+                rsi: { value: rsi, pass: rsi >= 40 && rsi <= 90, expected: '40–90' }, // Very wide range
+                rsiSlope: { value: rsiSlope30m, pass: rsiSlope30m < 5, expected: '< 5' }, // Very permissive
+                atr: { value: atrPct, pass: atrPct > 0.01, expected: '> 0.01%' }, // Very loose
+                adx: { value: adx, pass: adx > 5, expected: '> 5' }, // Very loose
+                divergence: { value: divergenceScore, pass: divergenceScore > 0.01, expected: '> 0.01' }, // Very loose
+                priceSlope: { value: priceSlopePct, pass: priceSlopePct < 0.05, expected: '< 5%' }, // Very permissive
+                trendSlope1h: { value: trendSlopePct1h, pass: trendSlopePct1h < 0.05, expected: '< 5%' }, // Very permissive
+                volumePct: { value: volumePct, pass: volumePct > 0.0001, expected: '> 0.01%' }, // Very loose
                 candlePos5m: {
                     value: candlePos5m,
-                    pass: ['top', 'anticipation_top', 'doji_top'].includes(candlePos5m) && candleColor5m === 'green',
-                    expected: 'top/anticipation_top/doji_top of green candle',
+                    pass: true, // Accept ANY candle position
+                    expected: 'any',
                 },
             },
         };

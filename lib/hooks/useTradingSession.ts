@@ -54,20 +54,21 @@ export function useTradingSession() {
               openPositions: session.positions?.length || 0,
               cycle: (session as any).cycle || prev.cycle || 0,
             } : null);
-          } else {
-            // Session is not running - clear it
-            console.log('[useTradingSession] Session is not running, clearing:', session.status);
+          } else if (session.status === 'error' || session.status === 'completed' || session.status === 'stopped') {
+            // Only clear if session is definitively ended (not just temporarily unavailable)
+            console.log('[useTradingSession] Session ended, clearing:', session.status);
             setTradingSession(null);
           }
+          // If status is 'not_found' or other transient states, keep existing session to prevent flickering
         } else {
-          // Session not found - clear it
-          console.log('[useTradingSession] Session not found, clearing');
-          setTradingSession(null);
+          // Session not found - but don't clear immediately (might be transient)
+          console.log('[useTradingSession] Session not found in API response, keeping existing session state');
+          // Don't clear - keep existing session to prevent flickering
         }
       } catch (err) {
-        console.error('Failed to refresh session status:', err);
-        // On error, clear session to avoid showing stale data
-        setTradingSession(null);
+        console.warn('[useTradingSession] Failed to refresh session status (non-critical):', err);
+        // Don't clear session on error - keep existing state to prevent flickering
+        // Only log the error, don't update state
       }
     } else if (forceRestore) {
       // Only restore if explicitly requested (forceRestore = true)
@@ -259,13 +260,14 @@ export function useTradingSession() {
         if (!tradingSession || tradingSession.status !== 'running') return;
 
         const interval = setInterval(() => {
-          refreshSessionStatus();
-          // Don't call fetchPositions here - it's already handled by usePositions hook
-          // fetchPositions();
-        }, 10000); // Refresh every 10 seconds (less frequent)
+          refreshSessionStatus().catch(err => {
+            // Silently handle errors - don't log to prevent console spam
+            // Session state will be preserved to prevent flickering
+          });
+        }, 15000); // Refresh every 15 seconds (less frequent to reduce flickering)
 
         return () => clearInterval(interval);
-      }, [tradingSession?.status]); // Only depend on status, not the entire session object
+      }, [tradingSession?.id, tradingSession?.status]); // Depend on id and status to prevent unnecessary re-runs
 
   return {
     tradingSession,

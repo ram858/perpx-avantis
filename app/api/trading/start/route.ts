@@ -1,21 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { AuthService } from '@/lib/services/AuthService'
+import { verifyTokenAndGetContext } from '@/lib/utils/authHelper'
 import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService'
+import { WebWalletService } from '@/lib/services/WebWalletService'
 
 // Lazy initialization - create services at runtime, not build time
-function getAuthService(): AuthService {
-  return new AuthService()
+function getFarcasterWalletService(): BaseAccountWalletService {
+  return new BaseAccountWalletService()
 }
 
-function getWalletService(): BaseAccountWalletService {
-  return new BaseAccountWalletService()
+function getWebWalletService(): WebWalletService {
+  return new WebWalletService()
 }
 
 export async function POST(request: NextRequest) {
   try {
-    // Initialize services at runtime
-    const authService = getAuthService()
-    const walletService = getWalletService()
     console.log('[API] Trading start endpoint called')
     
     // Verify authentication
@@ -27,10 +25,10 @@ export async function POST(request: NextRequest) {
 
     const token = authHeader.substring(7)
     
-    // Verify token with proper error handling
-    let payload
+    // Verify token and get context (supports both Farcaster and web users)
+    let authContext
     try {
-      payload = await authService.verifyToken(token)
+      authContext = await verifyTokenAndGetContext(token)
     } catch (authError) {
       console.error('[API] Token verification failed:', authError)
       const errorMessage = authError instanceof Error ? authError.message : 'Token verification failed'
@@ -56,34 +54,89 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // FID is required for user identification
-    if (!payload.fid) {
-      console.error('[API] No FID in token payload')
-      return NextResponse.json(
-        { error: 'User authentication (FID) required. This app runs in Base app only.' },
-        { status: 400 }
-      )
-    }
-    
     // Parse request body
     const config = await request.json()
     console.log('[API] Trading config:', config)
     
-    // Get or create trading wallet (required for automated trading)
-    const wallet = await walletService.ensureTradingWallet(payload.fid);
+    // Get trading wallet based on user context
+    let wallet: { address: string; privateKey: string } | null = null
+    let userId: string | number
+    
+    if (authContext.context === 'farcaster') {
+      // Farcaster user
+      if (!authContext.fid) {
+        console.error('[API] No FID in token payload')
+        return NextResponse.json(
+          { error: 'User authentication (FID) required.' },
+          { status: 400 }
+        )
+      }
+      
+      userId = authContext.fid
+      const farcasterWalletService = getFarcasterWalletService()
+      const farcasterWallet = await farcasterWalletService.ensureTradingWallet(authContext.fid)
+      
+      if (!farcasterWallet || !farcasterWallet.privateKey) {
+        console.error('[API] Failed to get trading wallet with private key for FID:', authContext.fid)
+        return NextResponse.json(
+          { error: 'No trading wallet found. Please ensure your trading wallet is properly set up.' },
+          { status: 404 }
+        )
+      }
+      
+      wallet = {
+        address: farcasterWallet.address,
+        privateKey: farcasterWallet.privateKey
+      }
+      console.log('[API] Using trading wallet for automated trading:', wallet.address, 'for FID:', authContext.fid)
+    } else {
+      // Web user
+      if (!authContext.webUserId) {
+        console.error('[API] No webUserId in token payload')
+        return NextResponse.json(
+          { error: 'User authentication (webUserId) required.' },
+          { status: 400 }
+        )
+      }
+      
+      userId = authContext.webUserId
+      const webWalletService = getWebWalletService()
+      const webWallet = await webWalletService.ensureTradingWallet(authContext.webUserId)
+      
+      if (!webWallet) {
+        console.error('[API] Failed to get trading wallet for webUserId:', authContext.webUserId)
+        return NextResponse.json(
+          { error: 'No trading wallet found. Please ensure your trading wallet is properly set up.' },
+          { status: 404 }
+        )
+      }
+      
+      const privateKey = await webWalletService.getPrivateKey(authContext.webUserId, 'ethereum')
+      if (!privateKey) {
+        console.error('[API] Failed to get private key for webUserId:', authContext.webUserId)
+        return NextResponse.json(
+          { error: 'Trading wallet private key not available.' },
+          { status: 404 }
+        )
+      }
+      
+      wallet = {
+        address: webWallet.address,
+        privateKey: privateKey
+      }
+      console.log('[API] Using trading wallet for automated trading:', wallet.address, 'for webUserId:', authContext.webUserId)
+    }
     
     if (!wallet || !wallet.privateKey) {
-      console.error('[API] Failed to get trading wallet with private key for FID:', payload.fid);
       return NextResponse.json(
         { error: 'No trading wallet found. Please ensure your trading wallet is properly set up.' },
         { status: 404 }
-      );
+      )
     }
     
-    const walletAddress = wallet.address;
-    const privateKey = wallet.privateKey;
-    console.log('[API] Using trading wallet for automated trading:', walletAddress, 'for FID:', payload.fid);
-    console.log('[API] Private key available:', privateKey ? `${privateKey.slice(0, 10)}...${privateKey.slice(-4)}` : 'MISSING');
+    const walletAddress = wallet.address
+    const privateKey = wallet.privateKey
+    console.log('[API] Private key available:', privateKey ? `${privateKey.slice(0, 10)}...${privateKey.slice(-4)}` : 'MISSING')
     
     // Call the trading engine to start trading
     const tradingEngineUrl = process.env.TRADING_ENGINE_URL || 'http://localhost:3001'
@@ -107,7 +160,9 @@ export async function POST(request: NextRequest) {
           maxPerSession: config.maxPositions || config.maxPerSession || 3,
           lossThreshold: config.lossThreshold || 10,
           avantisApiWallet: privateKey, // Private key for Avantis trading
-          userFid: payload.fid,
+          userFid: authContext.context === 'farcaster' ? authContext.fid : undefined, // FID for Farcaster users
+          userPhoneNumber: authContext.context === 'web' ? undefined : undefined, // Not used for web users
+          webUserId: authContext.context === 'web' ? authContext.webUserId : undefined, // Web user ID
           walletAddress: walletAddress, // Trading wallet address
         }),
         // Add timeout to prevent hanging

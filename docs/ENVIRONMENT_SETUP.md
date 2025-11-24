@@ -21,7 +21,7 @@ NEXT_PUBLIC_APP_URL=https://your-app-domain.com
 
 # Avantis Configuration
 NEXT_PUBLIC_AVANTIS_NETWORK=base-mainnet
-NEXT_PUBLIC_AVANTIS_API_URL=http://localhost:8000
+NEXT_PUBLIC_AVANTIS_API_URL=http://localhost:3002
 
 # WebSocket Configuration
 NEXT_PUBLIC_WS_URL=ws://localhost:3002
@@ -61,7 +61,7 @@ WEBSOCKET_PORT=3002
 TRADING_ENGINE_URL=http://localhost:3001
 
 # Avantis API Configuration
-AVANTIS_API_URL=http://localhost:8000
+AVANTIS_API_URL=http://localhost:3002
 AVANTIS_NETWORK=base-mainnet
 
 # Base Network RPC URLs
