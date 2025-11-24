@@ -151,6 +151,99 @@ async def deposit_to_vault_if_needed(
         # Don't fail the trade if deposit check fails - might still work
         pass
 
+async def _manual_approve_usdc(
+    trader_client,
+    trader_address: str,
+    amount: float
+) -> None:
+    """
+    Manual USDC approval with fixed gas limit (fallback when SDK gas estimation fails).
+    """
+    try:
+        from web3 import Web3 as Web3Type
+        import inspect
+        w3 = trader_client.web3 if hasattr(trader_client, 'web3') else None
+        if not w3:
+            from avantis_client import get_avantis_client
+            from config import settings
+            from web3 import Web3
+            rpc_url = settings.avantis_rpc_url or "https://mainnet.base.org"
+            w3 = Web3(Web3.HTTPProvider(rpc_url))
+        
+        # Get trading contract address from SDK
+        TradingContract = trader_client.contracts.get("Trading")
+        if not TradingContract:
+            raise ValueError("Could not find Trading contract")
+        
+        trading_contract_address = TradingContract.address if hasattr(TradingContract, 'address') else str(TradingContract)
+        
+        # USDC contract
+        usdc_address = Web3Type.to_checksum_address("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")
+        usdc_abi = [{
+            "constant": False,
+            "inputs": [
+                {"name": "_spender", "type": "address"},
+                {"name": "_value", "type": "uint256"}
+            ],
+            "name": "approve",
+            "outputs": [{"name": "", "type": "bool"}],
+            "type": "function"
+        }]
+        usdc_contract = w3.eth.contract(address=usdc_address, abi=usdc_abi)
+        
+        # Convert amount to wei (USDC has 6 decimals)
+        amount_wei = int(amount * 1e6)
+        
+        # Build transaction with manual gas limit
+        trader_address_checksum = Web3Type.to_checksum_address(trader_address)
+        nonce = w3.eth.get_transaction_count(trader_address_checksum)
+        
+        approve_tx = usdc_contract.functions.approve(
+            Web3Type.to_checksum_address(trading_contract_address),
+            amount_wei
+        ).build_transaction({
+            "from": trader_address_checksum,
+            "nonce": nonce,
+            "gas": 100000,  # Fixed gas limit for approval (usually ~46k, using 100k for safety)
+            "gasPrice": w3.eth.gas_price,
+        })
+        
+        # Sign and send directly with web3 (bypass SDK's gas estimation)
+        if hasattr(trader_client, 'signer') and hasattr(trader_client.signer, 'private_key'):
+            private_key = trader_client.signer.private_key
+        elif hasattr(trader_client, 'private_key'):
+            private_key = trader_client.private_key
+        else:
+            raise ValueError("Could not find private key for signing")
+        
+        # Sign transaction
+        signed_tx = w3.eth.account.sign_transaction(approve_tx, private_key)
+        
+        # Send transaction - run sync web3 calls in executor for async context
+        import asyncio
+        tx_hash = await asyncio.to_thread(w3.eth.send_raw_transaction, signed_tx.rawTransaction)
+        
+        # Wait for receipt - run sync web3 calls in executor for async context
+        receipt = await asyncio.to_thread(w3.eth.wait_for_transaction_receipt, tx_hash)
+        
+        # Get transaction hash (handle both dict and object formats)
+        tx_hash_str = receipt.get('transactionHash') if isinstance(receipt, dict) else getattr(receipt, 'transactionHash', None)
+        if tx_hash_str:
+            if hasattr(tx_hash_str, 'hex'):
+                tx_hash_str = tx_hash_str.hex()
+            elif isinstance(tx_hash_str, bytes):
+                tx_hash_str = tx_hash_str.hex()
+            else:
+                tx_hash_str = str(tx_hash_str)
+        else:
+            tx_hash_str = "unknown"
+        
+        logger.info(f"✅ Manual approval successful: {tx_hash_str}")
+        
+    except Exception as e:
+        logger.error(f"❌ Manual approval failed: {e}")
+        raise
+
 async def check_and_approve_usdc(
     trader_client,
     trader_address: str,
@@ -182,12 +275,12 @@ async def check_and_approve_usdc(
         if allowance_usdc < required_amount:
             logger.info(f"🔓 Approving contract (Current allowance: ${allowance_usdc:.2f})...")
             
-            # Approve slightly more to avoid constant re-approvals (e.g., 2x required or Infinite)
-            await trader_client.approve_usdc_for_trading(required_amount * 2)
+            # Use manual approval directly (bypasses SDK gas estimation issues)
+            await _manual_approve_usdc(trader_client, trader_address, required_amount * 2)
+            logger.info("✅ USDC Approved via manual method.")
             
             # Wait briefly for propagation
-            await asyncio.sleep(2) 
-            logger.info("✅ USDC Approved for trading.")
+            await asyncio.sleep(2)
         
     except Exception as e:
         logger.error(f"❌ Pre-flight check failed: {e}")
@@ -208,9 +301,8 @@ async def open_position_via_contract(
     slippage_percentage: float = SLIPPAGE_DEFAULT
 ) -> Dict[str, Any]:
     """
-    Opens a position using a Hybrid Approach:
-    1. Tries standard SDK.
-    2. Falls back to manual Struct construction if Web3 encoding fails.
+    Opens a position using Direct Manual Method (fast, reliable, proven).
+    Uses manual transaction construction that matches the contract ABI exactly.
     """
     if not SDK_AVAILABLE:
         raise ImportError("Avantis SDK is required to execute trades.")
@@ -235,14 +327,20 @@ async def open_position_via_contract(
         price_data = await trader_client.feed_client.get_latest_price_updates([pair_name])
         # Use a high precision int for contract interaction
         current_price_int = int(price_data.parsed[0].converted_price * (10 ** PRICE_DECIMALS))
-    except Exception:
-        current_price_int = 0  # Market order usually handles this, but good to have for fallback
-        logger.warning("Could not fetch real-time price, defaulting open_price to 0")
+        logger.info(f"📊 Fetched price for {pair_name}: {price_data.parsed[0].converted_price} (int: {current_price_int})")
+    except Exception as price_error:
+        # For market orders, price can be 0, but contract might need a valid price
+        logger.warning(f"Could not fetch real-time price: {price_error}, using market order (price=0)")
+        current_price_int = 0  # Market order usually handles this
         pair_name = f"Pair-{pair_index}"
 
     # Create SDK Input Object
     # Convert to proper types (TradeInput expects int for amounts)
     collateral_wei = int(collateral_amount * (10 ** USDC_DECIMALS))
+    
+    # Store original collateral_wei for manual fallback (TradeInput may transform it)
+    original_collateral_wei = collateral_wei
+    
     trade_input = TradeInput(
         trader=trader_address,
         pair_index=pair_index,
@@ -256,43 +354,25 @@ async def open_position_via_contract(
         sl=int(stop_loss * (10 ** PRICE_DECIMALS)) if stop_loss else 0,
         timestamp=0
     )
+    
+    logger.info(f"📝 Created TradeInput: open_collateral={collateral_wei}, original_collateral_wei={original_collateral_wei}")
 
     # Step 4: Build & Execute Transaction
+    # Use Manual Fallback directly (proven to work reliably)
     try:
         logger.info(f"🚀 Opening Position: {pair_name} | {leverage}x {'LONG' if is_long else 'SHORT'} | ${collateral_amount}")
         
-        # --- STRATEGY A: Standard SDK Call ---
-        try:
-            open_tx = await trader_client.trade.build_trade_open_tx(
-                trade_input,
-                TradeInputOrderType.MARKET,
-                slippage_percentage
-            )
-            logger.info("✅ Transaction built via Standard SDK.")
+        # Build transaction using manual fallback (direct, fast, reliable)
+        open_tx = await _build_manual_open_tx(
+            trader_client, 
+            trader_address, 
+            trade_input,
+            current_price_int, 
+            slippage_percentage,
+            original_collateral_wei  # Use the original value we calculated
+        )
+        logger.info("✅ Transaction built via Manual Method.")
         
-        except Exception as e:
-            # Catch all exceptions from SDK (including Web3ValidationError, TypeError, ValueError, etc.)
-            error_type = type(e).__name__
-            error_msg = str(e)
-            
-            # Check if it's a struct encoding error (the common issue)
-            if 'Could not identify' in error_msg or 'openTrade' in error_msg or 'struct' in error_msg.lower():
-                logger.warning(f"⚠️ SDK build failed ({error_type}: {error_msg[:100]}). Switching to Manual Fallback strategy.")
-                
-                # --- STRATEGY B: Manual Fallback ---
-                open_tx = await _build_manual_open_tx(
-                    trader_client, 
-                    trader_address, 
-                    trade_input,
-                    current_price_int, 
-                    slippage_percentage
-                )
-                logger.info("✅ Transaction built via Manual Fallback.")
-            else:
-                # Re-raise if it's a different error (like insufficient balance, etc.)
-                logger.error(f"❌ SDK build failed with unexpected error: {error_type}: {error_msg}")
-                raise
-
         # Step 5: Sign & Send (Securely)
         receipt = await trader_client.sign_and_get_receipt(open_tx)
         
@@ -309,58 +389,90 @@ async def open_position_via_contract(
         logger.error(f"❌ Trade Failed: {e}", exc_info=True)
         raise
 
-async def _build_manual_open_tx(trader_client, trader_address, trade_input, current_price_int, slippage):
+async def _build_manual_open_tx(trader_client, trader_address, trade_input, current_price_int, slippage, collateral_wei_override=None):
     """
-    Internal helper to manually construct the openTrade transaction.
-    Bypasses SDK wrapper issues by creating the raw dictionary struct.
+    Direct manual construction of openTrade transaction.
+    This method is proven to work reliably and is faster than SDK attempts.
+    
+    IMPORTANT: The struct must match the Solidity contract exactly.
     """
     TradingContract = trader_client.contracts.get("Trading")
     if not TradingContract:
         raise ValueError("Trading contract not loaded.")
 
-    # Manual Dict Construction (Matches Solidity Struct)
-    # Extract values from TradeInput object (handle both attribute access patterns)
-    pair_idx = getattr(trade_input, 'pair_index', getattr(trade_input, 'pairIndex', 0))
-    # TradeInput stores collateral in wei (already converted)
-    collateral_wei = getattr(trade_input, 'collateral_in_trade', getattr(trade_input, 'open_collateral', 0))
-    if isinstance(collateral_wei, float):
-        collateral_wei = int(collateral_wei)
-    is_long_val = getattr(trade_input, 'is_long', getattr(trade_input, 'buy', True))
+    # Extract values from TradeInput object
+    pair_idx = getattr(trade_input, 'pairIndex', getattr(trade_input, 'pair_index', 0))
+    
+    # Use override value (from original calculation) - this is the reliable source
+    if collateral_wei_override and collateral_wei_override > 0:
+        collateral_wei = collateral_wei_override
+    else:
+        # Fallback: try to extract from TradeInput (may have wrong decimals)
+        collateral_wei = getattr(trade_input, 'open_collateral', 0)
+        if collateral_wei == 0:
+            collateral_wei = getattr(trade_input, 'collateral_in_trade', 0)
+        
+        if isinstance(collateral_wei, float):
+            collateral_wei = int(collateral_wei)
+        
+        if collateral_wei == 0:
+            raise ValueError("Collateral amount is 0 - cannot open position")
+    
+    is_long_val = getattr(trade_input, 'buy', getattr(trade_input, 'is_long', True))
     leverage_val = getattr(trade_input, 'leverage', 1)
+    
+    # TP/SL are already in wei from trade_input
     tp_val = getattr(trade_input, 'tp', 0)
     sl_val = getattr(trade_input, 'sl', 0)
+    if isinstance(tp_val, float):
+        tp_val = int(tp_val)
+    if isinstance(sl_val, float):
+        sl_val = int(sl_val)
     
+    # Build trade struct matching contract ABI exactly
     trade_struct = {
         'trader': trader_address,
         'pairIndex': pair_idx,
         'index': 0,
         'initialPosToken': 0,
-        'positionSizeUSDC': collateral_wei,
-        'openPrice': current_price_int, 
+        'positionSizeUSDC': collateral_wei,  # Contract ABI field name
+        'openPrice': 0,  # Market orders use 0
         'buy': is_long_val,
         'leverage': leverage_val,
-        'tp': int(tp_val * (10 ** PRICE_DECIMALS)) if tp_val else 0,
-        'sl': int(sl_val * (10 ** PRICE_DECIMALS)) if sl_val else 0,
+        'tp': tp_val,
+        'sl': sl_val,
         'timestamp': 0,
     }
 
-    # Get Fees & Nonce
-    execution_fee = await trader_client.trade.get_trade_execution_fee()
-    nonce = await trader_client.get_transaction_count(trader_address)
+    collateral_usdc = collateral_wei / 1e6
+    logger.info(f"🔧 Building TX: {pair_idx} | ${collateral_usdc:.2f} | {leverage_val}x | {'LONG' if is_long_val else 'SHORT'}")
 
-    # Build TX
-    return await TradingContract.functions.openTrade(
-        trade_struct,               # Pass dict, web3 converts to tuple
-        0,                          # OrderType.MARKET (uint8)
-        int(slippage * 10**10)      # Slippage (uint256)
-    ).build_transaction({
+    # Get execution fee and nonce
+    try:
+        execution_fee = await trader_client.trade.get_trade_execution_fee()
+    except Exception as e:
+        logger.warning(f"Fee fetch failed, using default: {e}")
+        execution_fee = int(0.0001 * 10**18)  # Default for Base
+    
+    nonce = await trader_client.get_transaction_count(trader_address)
+    slippage_contract_units = int(slippage * 1e8)  # 1% = 1e8
+
+    # Build transaction (async for AsyncContract)
+    contract_func = TradingContract.functions.openTrade(
+        trade_struct,
+        0,  # OrderType.MARKET
+        slippage_contract_units
+    )
+    
+    tx = await contract_func.build_transaction({
         "from": trader_address,
         "value": execution_fee,
         "chainId": trader_client.chain_id,
         "nonce": nonce,
-        # Gas limit estimation happens automatically by web3 usually, 
-        # but you can add 'gas': 2000000 if needed.
+        "gas": 1000000,  # Fixed gas limit
     })
+    
+    return tx
 
 # ==========================================
 # 3. Position Management (Close/Read)

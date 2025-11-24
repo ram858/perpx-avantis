@@ -21,7 +21,7 @@ export declare function calculateBudgetLimits(totalBudget: number, maxPositions:
     isValid: boolean;
     reason?: string;
 };
-export declare function validateAndCapBudget(totalBudget: number, maxPositions: number, symbol?: string): {
+export declare function validateAndCapBudget(totalBudget: number, maxPositions: number, symbol?: string, platform?: 'hyperliquid' | 'avantis'): {
     budgetPerPosition: number;
     isValid: boolean;
     reason?: string;

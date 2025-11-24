@@ -316,7 +316,7 @@ async function runWebSession() {
         const { regime } = await guessMarketRegime(symbol, ohlcv15, ohlcv30);
         
         // Calculate budget per position from user's input, not regime-based budget
-        const budgetValidation = validateAndCapBudget(config.maxBudget, config.maxPerSession, symbol);
+        const budgetValidation = validateAndCapBudget(config.maxBudget, config.maxPerSession, symbol, 'avantis');
         const perPositionBudget = budgetValidation.budgetPerPosition;
 
         // Get maximum leverage for this symbol using user's budget

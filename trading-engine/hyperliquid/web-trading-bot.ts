@@ -125,8 +125,8 @@ export class WebTradingBot {
     let sessionCount = 0;
 
     // Validate and cap budget
-    const validatedBudget = await validateAndCapBudget(maxBudget, maxPerSession);
-    log('WEB_BOT', `Validated budget: $${validatedBudget}`);
+    const validatedBudget = await validateAndCapBudget(maxBudget, maxPerSession, undefined, 'avantis');
+    log('WEB_BOT', `Validated budget: $${validatedBudget.budgetPerPosition.toFixed(2)} per position (${validatedBudget.isValid ? 'valid' : 'invalid'})`);
 
         // Get initial positions - use Avantis only (no Hyperliquid fallback)
         let initialPositions: any[] = [];

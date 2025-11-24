@@ -31,7 +31,12 @@ check_port() {
 echo -e "${BLUE}1️⃣  Starting Avantis Service (Port 3002)...${NC}"
 if check_port 3002; then
     cd "$SCRIPT_DIR/avantis-service"
-    python3 -m uvicorn main:app --host 0.0.0.0 --port 3002 --reload > /tmp/avantis-service.log 2>&1 &
+    if [ -d "venv" ]; then
+        source venv/bin/activate
+        python -m uvicorn main:app --host 0.0.0.0 --port 3002 --reload > /tmp/avantis-service.log 2>&1 &
+    else
+        python3 -m uvicorn main:app --host 0.0.0.0 --port 3002 --reload > /tmp/avantis-service.log 2>&1 &
+    fi
     AVANTIS_PID=$!
     echo -e "${GREEN}   ✅ Avantis Service started (PID: $AVANTIS_PID)${NC}"
     sleep 3

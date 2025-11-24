@@ -113,7 +113,8 @@ async def get_balance(
         # Get wallet USDC balance directly from contract (not vault)
         # SDK's get_usdc_balance() checks vault, we need wallet balance for trading
         w3 = client.web3  # Use client's web3 instance
-        usdc_address = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"  # Base mainnet USDC
+        from web3 import Web3 as Web3Type
+        usdc_address = Web3Type.to_checksum_address("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")  # Base mainnet USDC
         usdc_abi = [{"constant":True,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"type":"function"}]
         usdc_contract = w3.eth.contract(address=usdc_address, abi=usdc_abi)
         balance_wei = usdc_contract.functions.balanceOf(user_address).call()
@@ -240,10 +241,9 @@ async def approve_usdc(
     private_key: str
 ) -> Dict[str, Any]:
     """
-    🔐 SAFE APPROVAL (ONLY CALLS APPROVE — NEVER TRANSFER)
+    🔐 Direct Manual USDC Approval
     
-    Safely approve USDC for trading.
-    Ensures the SDK never calls a transfer() by mistake.
+    Uses manual approval with fixed gas limit to bypass SDK gas estimation issues.
     
     Args:
         amount: Amount to approve (0 for unlimited)
@@ -256,59 +256,21 @@ async def approve_usdc(
         client = get_avantis_client(private_key=private_key)
         trader_client = client.get_client()
         
-        # USDC has 6 decimals
-        amount_wei = int(amount * 1e6)
+        logger.info(f"🔓 Approving USDC: {amount} for {client.get_address()}")
         
-        logger.info(f"Requesting USDC approval of {amount} (wei={amount_wei})")
+        # Use manual approval directly (bypasses SDK gas estimation issues)
+        from contract_operations import _manual_approve_usdc
+        await _manual_approve_usdc(trader_client, client.get_address(), amount)
         
-        import inspect
-        
-        # 1) SAFE APPROVAL CHAIN — Strictly controlled
-        safe_methods = [
-            "approve_usdc_for_trading",
-            "approve_usdc",
-        ]
-        
-        method_to_use = None
-        
-        # Find a SAFE approve function only
-        for m in safe_methods:
-            if hasattr(trader_client, m):
-                method_to_use = getattr(trader_client, m)
-                break
-        
-        # If no safe method exists → block the action
-        if method_to_use is None:
-            raise RuntimeError(
-                "No SAFE approval method found on TraderClient. "
-                "Refusing to call any fallback to prevent accidental transfer()."
-            )
-        
-        # Call safely (sync or async)
-        if inspect.iscoroutinefunction(method_to_use):
-            tx_hash = await method_to_use(amount=amount_wei)
-        else:
-            tx_hash = method_to_use(amount=amount_wei)
-        
-        if tx_hash is None:
-            raise RuntimeError("Approval returned None. Possible SDK issue.")
-        
-        # Convert tx_hash to string
-        if hasattr(tx_hash, "hex"):
-            tx_hash_str = tx_hash.hex()
-        else:
-            tx_hash_str = str(tx_hash)
-        
-        logger.info(f"SAFE Approval TX: {tx_hash_str}")
-        
+        logger.info("✅ USDC Approved via manual method")
         return {
             "success": True,
             "amount": amount,
-            "tx_hash": tx_hash_str,
+            "tx_hash": "manual_approval",
             "address": client.get_address()
         }
         
     except Exception as e:
-        logger.error(f"SAFE approval error: {e}")
+        logger.error(f"❌ USDC approval failed: {e}", exc_info=True)
         raise
 

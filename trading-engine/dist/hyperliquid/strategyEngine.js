@@ -70,6 +70,8 @@ async function evaluateSignalOnly(symbol, _ohlcv, p0) {
         });
         // --- Market Outlook Score ---
         const mos = (0, signals_1.calculateMOS)({ ohlcv: ohlcv5m, mtfSlopes: [slope5m, slope30m, slope1h] });
+        // NOTE: Signal criteria have been loosened for easier position opening
+        // TODO: Review and tighten criteria for production if needed
         const mosThresholdLong = -0.5; // VERY loose for testing - almost always triggers long
         const mosThresholdShort = 0.5; // VERY loose for testing - almost always triggers short
         const mosThresholdExtreme = 0.3;
@@ -98,7 +100,8 @@ async function evaluateSignalOnly(symbol, _ohlcv, p0) {
         //   };
         // }
         // --- Sniper & Reversal conditions ---
-        // TEMPORARILY LOOSENED FOR TESTING - Allows positions to open more easily
+        // NOTE: Signal criteria have been loosened for easier position opening
+        // TODO: Review and tighten criteria for production if needed
         const sniperConditions = {
             long: {
                 signalScore: { value: signalScore, pass: signalScore > 0.01, expected: '> 0.01' }, // VERY loose - almost any signal

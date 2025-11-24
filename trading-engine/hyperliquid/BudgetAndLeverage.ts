@@ -176,11 +176,15 @@ export function calculateBudgetLimits(
   };
 }
 
+// Avantis minimum collateral requirement
+const AVANTIS_MIN_COLLATERAL = 11.5; // USDC
+
 // New function to validate and cap budget per position
 export function validateAndCapBudget(
   totalBudget: number,
   maxPositions: number,
-  symbol?: string
+  symbol?: string,
+  platform: 'hyperliquid' | 'avantis' = 'avantis' // Default to Avantis for web trading
 ): {
   budgetPerPosition: number;
   isValid: boolean;
@@ -190,7 +194,8 @@ export function validateAndCapBudget(
   const budgetLimits = calculateBudgetLimits(totalBudget, maxPositions);
   const warnings: string[] = [];
 
-
+  // Use platform-specific minimum
+  const minRequired = platform === 'avantis' ? AVANTIS_MIN_COLLATERAL : HYPERLIQUID_BUDGET_LIMITS.MIN_BUDGET_PER_POSITION;
 
   if (!budgetLimits.isValid) {
     return {
@@ -201,14 +206,24 @@ export function validateAndCapBudget(
     };
   }
 
-  // Check if budget is too small for effective trading
-  if (budgetLimits.recommendedBudgetPerPosition < 10) {
-    warnings.push(`Low budget per position: $${budgetLimits.recommendedBudgetPerPosition}. Consider increasing total budget or reducing max positions.`);
+  // Check if budget per position meets platform minimum
+  if (budgetLimits.recommendedBudgetPerPosition < minRequired) {
+    return {
+      budgetPerPosition: budgetLimits.recommendedBudgetPerPosition,
+      isValid: false,
+      reason: `Budget per position $${budgetLimits.recommendedBudgetPerPosition.toFixed(2)} is below ${platform === 'avantis' ? 'Avantis' : 'Hyperliquid'} minimum $${minRequired}. Total budget $${totalBudget} with ${maxPositions} positions = $${(totalBudget / maxPositions).toFixed(2)} per position. Increase budget to at least $${(minRequired * maxPositions).toFixed(2)} or reduce max positions to ${Math.floor(totalBudget / minRequired)}.`,
+      warnings
+    };
+  }
+
+  // Check if budget is too small for effective trading (below recommended)
+  if (budgetLimits.recommendedBudgetPerPosition < minRequired * 1.5) {
+    warnings.push(`Budget per position $${budgetLimits.recommendedBudgetPerPosition.toFixed(2)} is close to ${platform === 'avantis' ? 'Avantis' : 'Hyperliquid'} minimum $${minRequired}. Consider increasing total budget for better position sizing.`);
   }
 
   // Check if budget is very large (risk warning)
   if (budgetLimits.recommendedBudgetPerPosition > 10000) {
-    warnings.push(`High budget per position: $${budgetLimits.recommendedBudgetPerPosition}. Ensure proper risk management.`);
+    warnings.push(`High budget per position: $${budgetLimits.recommendedBudgetPerPosition.toFixed(2)}. Ensure proper risk management.`);
   }
 
   const result = {
