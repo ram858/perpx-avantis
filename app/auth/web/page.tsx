@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth/AuthContext'
+import { useBaseMiniApp } from '@/lib/hooks/useBaseMiniApp'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,11 +11,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 export default function WebAuthPage() {
   const router = useRouter()
   const { isAuthenticated, login } = useAuth()
+  const { isBaseContext } = useBaseMiniApp()
   const [step, setStep] = useState<'phone' | 'otp'>('phone')
   const [phoneNumber, setPhoneNumber] = useState('')
   const [otp, setOtp] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // CRITICAL: Don't show phone login in Farcaster mini-app
+  // Redirect to home if in Base context (Farcaster users authenticate via Base SDK)
+  useEffect(() => {
+    if (isBaseContext) {
+      // In Farcaster/Base context - redirect to home (Base SDK handles auth)
+      router.push('/home')
+      return
+    }
+  }, [isBaseContext, router])
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -22,6 +34,18 @@ export default function WebAuthPage() {
       router.push('/home')
     }
   }, [isAuthenticated, router])
+
+  // Don't render phone login if in Farcaster context
+  if (isBaseContext) {
+    return (
+      <div className="min-h-screen bg-[#0d0d0d] flex flex-col items-center justify-center px-6">
+        <div className="text-center space-y-4">
+          <h1 className="text-2xl font-bold text-white">Redirecting...</h1>
+          <p className="text-gray-400">Farcaster authentication in progress</p>
+        </div>
+      </div>
+    )
+  }
 
   const handlePhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

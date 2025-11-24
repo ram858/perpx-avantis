@@ -37,6 +37,7 @@ export interface IntegratedWalletState {
   ethBalance: string;
   ethBalanceFormatted: string;
   holdings: TokenBalance[];
+  tradingHoldings: TokenBalance[]; // Holdings from trading wallet only (for Holdings section)
   totalPortfolioValue: number;
   dailyChange: number;
   dailyChangePercentage: number;
@@ -137,6 +138,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     ethBalance: '0',
     ethBalanceFormatted: '0.00 ETH',
     holdings: [],
+    tradingHoldings: [], // Trading wallet holdings only
     totalPortfolioValue: 0,
     dailyChange: 0,
     dailyChangePercentage: 0,
@@ -413,8 +415,14 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         }
       }
 
-      // Merge holdings from base account and trading vault
+      // Merge holdings from base account and trading vault (for total portfolio view)
       const combinedHoldings = mergeHoldings(baseHoldings, tradingVaultHoldings);
+      
+      // Trading holdings: ONLY from trading vault (for Holdings section display)
+      // This ensures Holdings section matches the main trading balance
+      const tradingOnlyHoldings = tradingVaultHoldings.length > 0 
+        ? tradingVaultHoldings 
+        : (user?.webUserId ? baseHoldings : []); // For web users, trading wallet = main wallet
       
       // Recalculate USD values for combined holdings (fresh prices)
       // This ensures merged holdings have correct USD values
@@ -475,6 +483,9 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         // Only update holdings if we have valid new data, or if we have no previous holdings
         const newHoldings = shouldUpdateHoldings ? combinedHoldings : prev.holdings;
         
+        // Trading holdings: only from trading vault (for Holdings section)
+        const newTradingHoldings = shouldUpdateHoldings ? tradingOnlyHoldings : prev.tradingHoldings;
+        
         // Calculate avantis balance
         // For web users: use USDC balance from main wallet (trading wallet = main wallet)
         // For Farcaster users: use trading vault total (separate trading wallet)
@@ -501,6 +512,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
                              `${balanceData.ethBalanceFormatted} ${nativeSymbol}` ||
                              prev.ethBalanceFormatted,
           holdings: newHoldings,
+          tradingHoldings: newTradingHoldings, // Trading wallet holdings only
           totalPortfolioValue: newTotalPortfolioValue,
           dailyChange: isValidNumber(balanceData.dailyChange) ? balanceData.dailyChange : prev.dailyChange,
           dailyChangePercentage: isValidNumber(balanceData.dailyChangePercentage) ? balanceData.dailyChangePercentage : prev.dailyChangePercentage,

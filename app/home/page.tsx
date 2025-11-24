@@ -1161,6 +1161,7 @@ export default function HomePage() {
     totalPortfolioValue,
     ethBalanceFormatted,
     holdings,
+    tradingHoldings, // Trading wallet holdings only (for Holdings section)
     dailyChange,
     dailyChangePercentage,
     isLoading,
@@ -1355,17 +1356,21 @@ export default function HomePage() {
     ]
   )
 
-  // Memoized holdings calculation - only recalculate when dependencies change
-  // Deduplicate ETH holdings to avoid showing ETH twice
+  // Memoized holdings calculation - use tradingHoldings for Holdings section
+  // This ensures Holdings section shows trading wallet balance (matches main balance)
   const realHoldings = useMemo(() => {
     if (!isConnected) return []
 
-    const nativeSymbol = holdings.find(holding => holding.token.isNative)?.token.symbol || 'ETH'
-    const nativeHolding = holdings.find(
+    // Use tradingHoldings (trading wallet only) instead of merged holdings
+    // This ensures Holdings section matches the main trading balance
+    const holdingsToUse = tradingHoldings && tradingHoldings.length > 0 ? tradingHoldings : holdings
+
+    const nativeSymbol = holdingsToUse.find(holding => holding.token.isNative)?.token.symbol || 'ETH'
+    const nativeHolding = holdingsToUse.find(
       holding => holding.token.symbol.toUpperCase() === nativeSymbol.toUpperCase()
     )
 
-    const otherHoldings = holdings.filter(
+    const otherHoldings = holdingsToUse.filter(
       holding => holding.token.symbol.toUpperCase() !== nativeSymbol.toUpperCase()
     )
 
@@ -1401,7 +1406,7 @@ export default function HomePage() {
     )
 
     return formattedHoldings
-  }, [isConnected, holdings])
+  }, [isConnected, tradingHoldings, holdings])
 
   return (
     <ProtectedRoute>
