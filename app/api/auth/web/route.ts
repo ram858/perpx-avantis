@@ -8,8 +8,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import { WebAuthService } from '@/lib/services/WebAuthService';
 import { WebWalletService } from '@/lib/services/WebWalletService';
 
-const webAuthService = new WebAuthService();
-const webWalletService = new WebWalletService();
+// Lazy-load services to avoid requiring JWT_SECRET at build time
+let webAuthService: WebAuthService | null = null;
+let webWalletService: WebWalletService | null = null;
+
+function getWebAuthService(): WebAuthService {
+  if (!webAuthService) {
+    webAuthService = new WebAuthService();
+  }
+  return webAuthService;
+}
+
+function getWebWalletService(): WebWalletService {
+  if (!webWalletService) {
+    webWalletService = new WebWalletService();
+  }
+  return webWalletService;
+}
 
 /**
  * POST /api/auth/web - Create or authenticate web user
@@ -28,19 +43,22 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const { email, username } = body;
 
+    const authService = getWebAuthService();
+    const walletService = getWebWalletService();
+
     // Create or get web user
-    const user = await webAuthService.createOrGetWebUser({
+    const user = await authService.createOrGetWebUser({
       email,
       username,
     });
 
     // Generate JWT token
-    const token = await webAuthService.generateJwtToken(user);
+    const token = await authService.generateJwtToken(user);
 
     // Automatically create trading wallet for the user
     let wallet;
     try {
-      wallet = await webWalletService.ensureTradingWallet(user.id);
+      wallet = await walletService.ensureTradingWallet(user.id);
       console.log(`[API] Auto-created trading wallet for web user ${user.id}: ${wallet.address}`);
     } catch (walletError) {
       console.error(`[API] Failed to create trading wallet for web user ${user.id}:`, walletError);
@@ -89,11 +107,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const authService = getWebAuthService();
+    const walletService = getWebWalletService();
+
     const token = authHeader.substring(7);
-    const payload = await webAuthService.verifyToken(token);
+    const payload = await authService.verifyToken(token);
 
     // Get user details
-    const user = await webAuthService.getWebUserById(payload.webUserId);
+    const user = await authService.getWebUserById(payload.webUserId);
     if (!user) {
       return NextResponse.json(
         { error: 'User not found' },
@@ -102,7 +123,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get wallet
-    const wallet = await webWalletService.getWallet(payload.webUserId, 'ethereum');
+    const wallet = await walletService.getWallet(payload.webUserId, 'ethereum');
 
     return NextResponse.json({
       success: true,

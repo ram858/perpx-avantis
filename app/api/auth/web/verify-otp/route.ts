@@ -7,8 +7,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import { WebAuthService } from '@/lib/services/WebAuthService';
 import { WebWalletService } from '@/lib/services/WebWalletService';
 
-const webAuthService = new WebAuthService();
-const webWalletService = new WebWalletService();
+// Lazy-load services to avoid requiring JWT_SECRET at build time
+let webAuthService: WebAuthService | null = null;
+let webWalletService: WebWalletService | null = null;
+
+function getWebAuthService(): WebAuthService {
+  if (!webAuthService) {
+    webAuthService = new WebAuthService();
+  }
+  return webAuthService;
+}
+
+function getWebWalletService(): WebWalletService {
+  if (!webWalletService) {
+    webWalletService = new WebWalletService();
+  }
+  return webWalletService;
+}
 
 // Default OTP for testing
 const DEFAULT_OTP = '123456';
@@ -32,16 +47,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const authService = getWebAuthService();
+    const walletService = getWebWalletService();
+
     // Create or get web user by phone number
-    const user = await webAuthService.createOrGetWebUserByPhone(phoneNumber);
+    const user = await authService.createOrGetWebUserByPhone(phoneNumber);
 
     // Generate JWT token
-    const token = await webAuthService.generateJwtToken(user);
+    const token = await authService.generateJwtToken(user);
 
     // Automatically create trading wallet for the user (if doesn't exist)
     let wallet;
     try {
-      wallet = await webWalletService.ensureTradingWallet(user.id);
+      wallet = await walletService.ensureTradingWallet(user.id);
       if (!wallet) {
         throw new Error('Wallet creation returned null');
       }
