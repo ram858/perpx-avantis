@@ -156,8 +156,8 @@ jobs:
             echo "Creating .env.web file..."
             echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" > .env.web
             echo "ENCRYPTION_SECRET=${{ secrets.ENCRYPTION_SECRET }}" >> .env.web
-            echo "TRADING_ENGINE_URL=${{ secrets.TRADING_ENGINE_URL }}" >> .env.web"
-            echo "AVANTIS_API_URL=${{ secrets.AVANTIS_API_URL }}" >> .env.web"
+            echo "TRADING_ENGINE_URL=${{ secrets.TRADING_ENGINE_URL }}" >> .env.web
+            echo "AVANTIS_API_URL=${{ secrets.AVANTIS_API_URL }}" >> .env.web
             echo "AVANTIS_NETWORK=${{ secrets.AVANTIS_NETWORK }}" >> .env.web
             echo "JWT_EXPIRATION_TIME=${{ secrets.JWT_EXPIRATION_TIME }}" >> .env.web
             echo "BASE_RPC_URL=${{ secrets.BASE_RPC_URL }}" >> .env.web
