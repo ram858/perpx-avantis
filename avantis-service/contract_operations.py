@@ -369,7 +369,8 @@ async def open_position_via_contract(
             trade_input,
             current_price_int, 
             slippage_percentage,
-            original_collateral_wei  # Use the original value we calculated
+            original_collateral_wei,  # Use the original value we calculated
+            leverage  # Pass leverage directly (TradeInput.leverage is wrong)
         )
         logger.info("✅ Transaction built via Manual Method.")
         
@@ -389,7 +390,7 @@ async def open_position_via_contract(
         logger.error(f"❌ Trade Failed: {e}", exc_info=True)
         raise
 
-async def _build_manual_open_tx(trader_client, trader_address, trade_input, current_price_int, slippage, collateral_wei_override=None):
+async def _build_manual_open_tx(trader_client, trader_address, trade_input, current_price_int, slippage, collateral_wei_override=None, leverage_override=None):
     """
     Direct manual construction of openTrade transaction.
     This method is proven to work reliably and is faster than SDK attempts.
@@ -419,7 +420,18 @@ async def _build_manual_open_tx(trader_client, trader_address, trade_input, curr
             raise ValueError("Collateral amount is 0 - cannot open position")
     
     is_long_val = getattr(trade_input, 'buy', getattr(trade_input, 'is_long', True))
-    leverage_val = getattr(trade_input, 'leverage', 1)
+    
+    # CRITICAL: Use leverage_override if provided (from original function call)
+    # TradeInput.leverage can be wrong (shows 100000000000x instead of 10x)
+    if leverage_override and 1 <= leverage_override <= 100:
+        leverage_val = leverage_override
+        logger.info(f"✅ Using override leverage: {leverage_val}x")
+    else:
+        leverage_val = getattr(trade_input, 'leverage', 1)
+        # Validate leverage
+        if leverage_val > 100 or leverage_val < 1:
+            logger.warning(f"⚠️ Invalid leverage from TradeInput: {leverage_val}, defaulting to 10x")
+            leverage_val = 10
     
     # TP/SL are already in wei from trade_input
     tp_val = getattr(trade_input, 'tp', 0)

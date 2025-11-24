@@ -27,7 +27,7 @@ RESPONSE=$(curl -s -X POST http://localhost:3002/api/open-position \
   -H "Content-Type: application/json" \
   -d "{
     \"symbol\": \"BTC\",
-    \"collateral\": 12,
+    \"collateral\": 20,
     \"leverage\": 10,
     \"is_long\": true,
     \"private_key\": \"$PRIVATE_KEY\"
