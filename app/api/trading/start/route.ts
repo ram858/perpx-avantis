@@ -3,6 +3,13 @@ import { verifyTokenAndGetContext } from '@/lib/utils/authHelper'
 import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService'
 import { WebWalletService } from '@/lib/services/WebWalletService'
 
+// Simple logging function for debugging (in-memory, for development only)
+const debugLogs: Array<{ timestamp: Date; requestId: string; message: string; data?: any }> = []
+function addLog(requestId: string, message: string, data?: any) {
+  debugLogs.push({ timestamp: new Date(), requestId, message, data })
+  if (debugLogs.length > 50) debugLogs.shift()
+}
+
 // Lazy initialization - create services at runtime, not build time
 function getFarcasterWalletService(): BaseAccountWalletService {
   return new BaseAccountWalletService()
@@ -13,13 +20,15 @@ function getWebWalletService(): WebWalletService {
 }
 
 export async function POST(request: NextRequest) {
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+  console.log(`[API] [${requestId}] Trading start endpoint called`);
+  addLog(requestId, 'Trading start endpoint called');
+  
   try {
-    console.log('[API] Trading start endpoint called')
-    
     // Verify authentication
     const authHeader = request.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.error('[API] Missing or invalid authorization header')
+      console.error(`[API] [${requestId}] Missing or invalid authorization header`);
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -37,15 +46,16 @@ export async function POST(request: NextRequest) {
     // Verify token and get context (supports both Farcaster and web users)
     let authContext
     try {
-      console.log('[API] Verifying token, length:', token.length, 'starts with:', token.substring(0, 20))
-      console.log('[API] Token ends with:', token.substring(token.length - 20))
+      console.log(`[API] [${requestId}] Verifying token, length:`, token.length, 'starts with:', token.substring(0, 20))
+      console.log(`[API] [${requestId}] Token ends with:`, token.substring(token.length - 20))
       authContext = await verifyTokenAndGetContext(token)
-      console.log('[API] Token verified successfully, context:', authContext.context, 'fid:', authContext.fid, 'webUserId:', authContext.webUserId)
+      console.log(`[API] [${requestId}] ✅ Token verified successfully, context:`, authContext.context, 'fid:', authContext.fid, 'webUserId:', authContext.webUserId)
+      addLog(requestId, 'Token verified', { context: authContext.context, fid: authContext.fid, webUserId: authContext.webUserId })
     } catch (authError) {
-      console.error('[API] Token verification failed:', authError)
-      console.error('[API] Error type:', authError instanceof Error ? authError.constructor.name : typeof authError)
-      console.error('[API] Error message:', authError instanceof Error ? authError.message : String(authError))
-      console.error('[API] Error stack:', authError instanceof Error ? authError.stack : 'No stack trace')
+      console.error(`[API] [${requestId}] ❌ Token verification failed:`, authError)
+      console.error(`[API] [${requestId}] Error type:`, authError instanceof Error ? authError.constructor.name : typeof authError)
+      console.error(`[API] [${requestId}] Error message:`, authError instanceof Error ? authError.message : String(authError))
+      console.error(`[API] [${requestId}] Error stack:`, authError instanceof Error ? authError.stack : 'No stack trace')
       const errorMessage = authError instanceof Error ? authError.message : 'Token verification failed'
       
       // Return appropriate error based on the type of authentication failure
@@ -98,7 +108,16 @@ export async function POST(request: NextRequest) {
     
     // Parse request body
     const config = await request.json()
-    console.log('[API] Trading config:', config)
+    console.log(`[API] [${requestId}] Trading config:`, {
+      totalBudget: config.totalBudget,
+      investmentAmount: config.investmentAmount,
+      maxBudget: config.maxBudget,
+      profitGoal: config.profitGoal,
+      targetProfit: config.targetProfit,
+      maxPositions: config.maxPositions,
+      maxPerSession: config.maxPerSession,
+      lossThreshold: config.lossThreshold
+    })
     
     // Get trading wallet based on user context
     let wallet: { address: string; privateKey: string } | null = null
@@ -130,7 +149,9 @@ export async function POST(request: NextRequest) {
         address: farcasterWallet.address,
         privateKey: farcasterWallet.privateKey
       }
-      console.log('[API] Using trading wallet for automated trading:', wallet.address, 'for FID:', authContext.fid)
+      console.log(`[API] [${requestId}] ✅ Using trading wallet for automated trading:`, wallet.address, 'for FID:', authContext.fid)
+      console.log(`[API] [${requestId}] Private key available:`, farcasterWallet.privateKey ? `${farcasterWallet.privateKey.slice(0, 10)}...${farcasterWallet.privateKey.slice(-4)}` : 'MISSING')
+      addLog(requestId, 'Trading wallet loaded', { address: wallet.address, hasPrivateKey: !!farcasterWallet.privateKey })
     } else {
       // Web user
       if (!authContext.webUserId) {
@@ -187,7 +208,18 @@ export async function POST(request: NextRequest) {
     const cleanUrl = tradingEngineUrl.replace(/\/api\/trading-engine\/?$/, '');
     const tradingEngineEndpoint = `${cleanUrl}/api/trading/start`;
     
-    console.log('[API] Calling trading engine at:', tradingEngineEndpoint);
+    console.log(`[API] [${requestId}] 📡 Calling trading engine at:`, tradingEngineEndpoint);
+    addLog(requestId, 'Calling trading engine', { url: tradingEngineEndpoint })
+    console.log(`[API] [${requestId}] Request payload (private key masked):`, {
+      maxBudget: config.totalBudget || config.investmentAmount || config.maxBudget,
+      profitGoal: config.profitGoal || config.targetProfit,
+      maxPerSession: config.maxPositions || config.maxPerSession || 3,
+      lossThreshold: config.lossThreshold || 10,
+      avantisApiWallet: privateKey ? `${privateKey.slice(0, 10)}...${privateKey.slice(-4)}` : 'MISSING',
+      userFid: authContext.context === 'farcaster' ? authContext.fid : undefined,
+      webUserId: authContext.context === 'web' ? authContext.webUserId : undefined,
+      walletAddress: walletAddress,
+    });
     
     let response;
     try {
@@ -235,11 +267,17 @@ export async function POST(request: NextRequest) {
       }, { status: 502 });
     }
 
+    console.log(`[API] [${requestId}] Trading engine response status:`, response.status, response.statusText);
+    addLog(requestId, 'Trading engine response', { status: response.status, statusText: response.statusText })
+    
     if (!response.ok) {
       let errorData;
       // Read response as text first, then try to parse as JSON
       // This avoids "Body has already been read" error
       const responseText = await response.text();
+      console.error(`[API] [${requestId}] ❌ Trading engine returned error status:`, response.status);
+      console.error(`[API] [${requestId}] Trading engine error response text:`, responseText);
+      addLog(requestId, 'Trading engine error', { status: response.status, error: responseText })
       try {
         errorData = JSON.parse(responseText);
       } catch (parseError) {
@@ -248,19 +286,67 @@ export async function POST(request: NextRequest) {
         errorData = { error: `Trading engine error: ${response.status} ${response.statusText}` }
       }
       console.error('[API] Trading engine returned error:', errorData);
+      
+      // If trading engine returns 401, it's an authentication issue with the trading engine
+      if (response.status === 401) {
+        return NextResponse.json({ 
+          success: false, 
+          error: 'Trading engine authentication failed. Please check your wallet configuration.' 
+        }, { status: 401 })
+      }
+      
       return NextResponse.json({ 
         success: false, 
         error: errorData.error || `Failed to start trading (${response.status}): ${response.statusText}` 
       }, { status: response.status })
     }
 
-    const result = await response.json()
-    console.log('[API] Trading session started successfully:', result.sessionId);
-    return NextResponse.json(result)
+    let result;
+    try {
+      result = await response.json();
+    } catch (parseError) {
+      const responseText = await response.text().catch(() => 'Unable to read response');
+      console.error('[API] Failed to parse trading engine response as JSON:', responseText.substring(0, 200));
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Trading engine returned invalid response. Please check if the trading engine is running correctly.' 
+      }, { status: 502 });
+    }
+    
+    console.log(`[API] [${requestId}] Trading engine response:`, JSON.stringify(result, null, 2));
+    addLog(requestId, 'Trading engine response received', { hasSessionId: !!result.sessionId, hasError: !!result.error })
+    
+    // Check if trading engine returned an error in the response body
+    if (result.error) {
+      console.error(`[API] [${requestId}] ❌ Trading engine returned error in response body:`, result.error);
+      addLog(requestId, 'Trading engine error in response', { error: result.error })
+      return NextResponse.json({ 
+        success: false, 
+        error: result.error || 'Trading engine returned an error. Please try again.' 
+      }, { status: 500 });
+    }
+    
+    // Check if sessionId is missing
+    if (!result.sessionId) {
+      console.error(`[API] [${requestId}] ❌ Trading engine response missing sessionId. Full response:`, JSON.stringify(result, null, 2));
+      addLog(requestId, 'Missing sessionId in response', { response: result })
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Trading engine did not return a session ID. The trading engine may not be properly configured. Please check the trading engine logs.' 
+      }, { status: 500 });
+    }
+    
+    console.log(`[API] [${requestId}] ✅ Trading session started successfully:`, result.sessionId);
+    addLog(requestId, 'Trading session started', { sessionId: result.sessionId })
+    return NextResponse.json({
+      success: true,
+      sessionId: result.sessionId,
+      ...result
+    })
   } catch (error) {
-    console.error('[API] Error starting trading:', error);
+    console.error(`[API] [${requestId}] ❌ Error starting trading:`, error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[API] Error details:', {
+    console.error(`[API] [${requestId}] Error details:`, {
       message: errorMessage,
       stack: error instanceof Error ? error.stack : undefined
     });

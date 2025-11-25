@@ -76,9 +76,15 @@ export function useTrading() {
             if (response.status === 401) {
               const authError = errorData.error || 'Unauthorized';
               console.error('[useTrading] Authentication error:', authError);
+              console.error('[useTrading] Full error data:', errorData);
               throw new Error(authError.includes('Unauthorized') 
                 ? 'Authentication failed. Please refresh your session and try again.' 
                 : authError);
+            }
+            
+            // Log other client errors for debugging
+            if (response.status >= 400 && response.status < 500) {
+              console.error('[useTrading] Client error:', response.status, errorData);
             }
             throw new Error(errorData.error || `Request failed with status ${response.status}`);
           }
@@ -134,11 +140,20 @@ export function useTrading() {
         body: JSON.stringify(config),
       });
 
-      addLog('info', 'Trading API response received', { hasSessionId: !!result.sessionId });
+      addLog('info', 'Trading API response received', { hasSessionId: !!result.sessionId, hasSuccess: result.success, result });
+
+      // Check if API returned an error
+      if (result.error || result.success === false) {
+        const errorMsg = result.error || 'Failed to start trading';
+        console.error('[useTrading] Trading start failed with error. Full response:', result);
+        addLog('error', 'Trading start failed', { error: errorMsg, result });
+        throw new Error(errorMsg);
+      }
 
       // Check if we have a sessionId (successful response)
       if (!result.sessionId) {
-        const errorMsg = result.error || 'Failed to start trading';
+        const errorMsg = result.error || 'Failed to start trading - no session ID returned. Please check if the trading engine is running.';
+        console.error('[useTrading] Trading start failed - no session ID. Full response:', result);
         addLog('error', 'Trading start failed - no session ID', { error: errorMsg, result });
         throw new Error(errorMsg);
       }
