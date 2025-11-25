@@ -14,7 +14,7 @@ from web3 import Web3, AsyncWeb3
 logger = logging.getLogger(__name__)
 
 # --- Constants ---
-MIN_COLLATERAL_USDC = 11.5  # Protocol minimum (actual contract requires ~$11.5)
+MIN_COLLATERAL_USDC = 12.0  # Protocol minimum (contract requires ~$12+ based on testing)
 USDC_DECIMALS = 6
 PRICE_DECIMALS = 10         # Avantis uses 10 decimals for price/TP/SL in structs
 SLIPPAGE_DEFAULT = 1.0      # 1%
@@ -112,7 +112,7 @@ async def deposit_to_vault_if_needed(
                         deposit_amount_wei
                     ).build_transaction({
                         "from": trader_address_checksum,
-                        "nonce": w3.eth.get_transaction_count(trader_address_checksum),
+                        "nonce": w3.eth.get_transaction_count(trader_address_checksum, 'pending'),  # FIXED: Include pending transactions
                     })
                     approve_receipt = await trader_client.sign_and_get_receipt(approve_tx)
                     logger.info(f"✅ USDC approved for vault deposit")
@@ -123,7 +123,7 @@ async def deposit_to_vault_if_needed(
                     # Deposit to vault
                     deposit_tx = TradingContract.functions.deposit(deposit_amount_wei).build_transaction({
                         "from": trader_address_checksum,
-                        "nonce": w3.eth.get_transaction_count(trader_address_checksum),
+                        "nonce": w3.eth.get_transaction_count(trader_address_checksum, 'pending'),  # FIXED: Include pending transactions
                     })
                     deposit_receipt = await trader_client.sign_and_get_receipt(deposit_tx)
                     logger.info(f"✅ Deposited ${deposit_amount:.2f} USDC to Avantis vault")
@@ -196,7 +196,8 @@ async def _manual_approve_usdc(
         
         # Build transaction with manual gas limit
         trader_address_checksum = Web3Type.to_checksum_address(trader_address)
-        nonce = w3.eth.get_transaction_count(trader_address_checksum)
+        # FIXED: Use "pending" state to include pending transactions and prevent nonce errors
+        nonce = w3.eth.get_transaction_count(trader_address_checksum, 'pending')
         
         approve_tx = usdc_contract.functions.approve(
             Web3Type.to_checksum_address(trading_contract_address),
@@ -385,7 +386,7 @@ async def open_position_via_contract(
             logger.error(f"❌ Position size below minimum: {error_msg}")
             raise ValueError(
                 f"Position size ${collateral_amount} is below the contract's minimum requirement. "
-                f"Please increase your collateral amount. The minimum is typically around $10.50-$11 USDC."
+                f"Please increase your collateral amount. The minimum is ${MIN_COLLATERAL_USDC} USDC."
             )
         logger.error(f"❌ Trade Failed: {e}", exc_info=True)
         raise
@@ -466,7 +467,33 @@ async def _build_manual_open_tx(trader_client, trader_address, trade_input, curr
         logger.warning(f"Fee fetch failed, using default: {e}")
         execution_fee = int(0.0001 * 10**18)  # Default for Base
     
-    nonce = await trader_client.get_transaction_count(trader_address)
+    # FIXED: Fetch nonce with "pending" state to include pending transactions
+    # This prevents "nonce too low" errors when multiple transactions are sent
+    try:
+        from web3 import Web3 as Web3Type
+        from config import settings
+        import asyncio
+        
+        # Get RPC URL from settings or default
+        rpc_url = settings.avantis_rpc_url or 'https://mainnet.base.org'
+        
+        # Create web3 instance to fetch nonce
+        w3 = Web3Type(Web3Type.HTTPProvider(rpc_url))
+        trader_address_checksum = Web3Type.to_checksum_address(trader_address)
+        
+        # Fetch nonce with "pending" state - CRITICAL to include pending transactions
+        # This prevents "nonce too low" errors
+        nonce = await asyncio.to_thread(
+            w3.eth.get_transaction_count, 
+            trader_address_checksum, 
+            'pending'  # Include pending transactions
+        )
+        
+        logger.info(f"✅ Fetched nonce with pending state: {nonce} (address: {trader_address_checksum[:10]}...)")
+    except Exception as e:
+        logger.error(f"❌ Failed to fetch nonce: {e}", exc_info=True)
+        raise ValueError(f"Could not fetch transaction nonce: {e}")
+    
     slippage_contract_units = int(slippage * 1e8)  # 1% = 1e8
 
     # Build transaction (async for AsyncContract)
@@ -476,13 +503,33 @@ async def _build_manual_open_tx(trader_client, trader_address, trade_input, curr
         slippage_contract_units
     )
     
-    tx = await contract_func.build_transaction({
+    # Get current gas price and add 20% to allow replacing pending transactions
+    try:
+        from web3 import Web3 as Web3Type
+        from config import settings
+        rpc_url = settings.avantis_rpc_url or 'https://mainnet.base.org'
+        w3_gas = Web3Type(Web3Type.HTTPProvider(rpc_url))
+        base_gas_price = await asyncio.to_thread(w3_gas.eth.gas_price)
+        # Add 20% to gas price to allow replacing pending transactions if needed
+        gas_price = int(base_gas_price * 1.2)
+        logger.info(f"⛽ Gas price: {gas_price / 1e9:.2f} gwei (base: {base_gas_price / 1e9:.2f} gwei)")
+    except Exception as e:
+        logger.warning(f"Could not fetch gas price, using default: {e}")
+        gas_price = None  # Let web3 estimate
+    
+    tx_params = {
         "from": trader_address,
         "value": execution_fee,
         "chainId": trader_client.chain_id,
         "nonce": nonce,
         "gas": 1000000,  # Fixed gas limit
-    })
+    }
+    
+    # Add gas price if we fetched it (allows replacing pending transactions)
+    if gas_price:
+        tx_params["gasPrice"] = gas_price
+    
+    tx = await contract_func.build_transaction(tx_params)
     
     return tx
 

@@ -24,26 +24,20 @@ PROFIT_GOAL=5
 MAX_POSITIONS=1
 LOSS_THRESHOLD=10
 
-# Check if private key and wallet address are provided
-if [ -z "$1" ] || [ -z "$2" ]; then
-    echo -e "${RED}❌ Error: Private key and wallet address required${NC}"
-    echo ""
-    echo "Usage: $0 <PRIVATE_KEY> <WALLET_ADDRESS>"
-    echo ""
-    echo "⚠️  WARNING: This will use your private key directly"
-    echo "  Only use with a test wallet, never with main wallet!"
-    echo ""
-    echo "Example:"
-    echo "  $0 0x1234...abcd 0xE0C87bf32C879e2a5F5343e75b6f2cc3d63BE4d5"
-    echo ""
-    echo "Alternative: Use frontend API (safer):"
-    echo "  1. Get JWT token from frontend"
-    echo "  2. Use: ./test-real-trading.sh <JWT_TOKEN>"
-    exit 1
-fi
+# Default wallet credentials (can be overridden via arguments)
+DEFAULT_PRIVATE_KEY="0x70c49ab0812a73eb3bb2808bc2762610720fae5ede86c4a3c473ca5f9cbb536b"
+DEFAULT_WALLET_ADDRESS="0xB37E3f1E7A4Ef800D5E0b18d084d55B9C888C73e"
 
-PRIVATE_KEY=$1
-WALLET_ADDRESS=$2
+# Use provided credentials or defaults
+if [ -z "$1" ] || [ -z "$2" ]; then
+    echo -e "${YELLOW}⚠️  No credentials provided, using defaults${NC}"
+    PRIVATE_KEY="$DEFAULT_PRIVATE_KEY"
+    WALLET_ADDRESS="$DEFAULT_WALLET_ADDRESS"
+    echo "  Wallet: ${WALLET_ADDRESS:0:10}...${WALLET_ADDRESS: -6}"
+else
+    PRIVATE_KEY=$1
+    WALLET_ADDRESS=$2
+fi
 
 # Check services
 echo -e "${BLUE}Checking services...${NC}"
