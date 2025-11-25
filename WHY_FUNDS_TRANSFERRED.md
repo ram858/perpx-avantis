@@ -17,7 +17,7 @@ When you open a position on Avantis, the contract executes these steps **in orde
      - Valid leverage
      - Sufficient liquidity
      - Other contract rules
-   - **This step FAILED** ❌ (due to invalid leverage: 100000000000x)
+   - **This step FAILED** ❌ (due to invalid leverage: 10000x)
 
 3. **Position Creation** (only if validation passes)
    - Contract creates the position struct
@@ -36,7 +36,7 @@ Transaction Flow:
            ↓
 ┌─────────────────────────────────────────┐
 │ 2. Position Validation                  │
-│    Check leverage: 100000000000x        │
+│    Check leverage: 10000x        │
 │    Status: ❌ FAILED (invalid leverage) │
 └─────────────────────────────────────────┘
            ↓

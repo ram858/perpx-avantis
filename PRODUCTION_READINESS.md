@@ -248,3 +248,4 @@ curl https://your-frontend-url/api/status
 - Farcaster users need to deposit from Base Account to Trading wallet
 - Monitor trading performance and adjust criteria as needed
 
+

@@ -3,16 +3,43 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
+import { useAuth } from "@/lib/auth/AuthContext"
+import { useBaseMiniApp } from "@/lib/hooks/useBaseMiniApp"
 
 export default function LoadingPage() {
   const [progress, setProgress] = useState(0)
   const [loadingText, setLoadingText] = useState("Loading PrepX...")
   const router = useRouter()
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth()
+  const { isBaseContext } = useBaseMiniApp()
 
   useEffect(() => {
+    // Wait for auth to finish loading before deciding where to navigate
+    if (isAuthLoading) {
+      return
+    }
+
     // Ultra-fast loading - just show progress animation
     const startTime = Date.now()
     const duration = 800 // Total loading time: 800ms
+    let animationFrameId: number | null = null
+    let hasNavigated = false
+    
+    const navigate = () => {
+      if (hasNavigated) return
+      hasNavigated = true
+      
+      // Navigate based on authentication status
+      if (isAuthenticated) {
+        router.push("/home")
+      } else if (!isBaseContext) {
+        // Web mode and not authenticated - redirect to auth page
+        router.push("/auth/web")
+      } else {
+        // Base context but not authenticated - go to root which will handle Base auth
+        router.push("/")
+      }
+    }
     
     const updateProgress = () => {
       const elapsed = Date.now() - startTime
@@ -27,15 +54,31 @@ export default function LoadingPage() {
       }
       
       if (progressPercent < 100) {
-        requestAnimationFrame(updateProgress)
+        animationFrameId = requestAnimationFrame(updateProgress)
       } else {
         // Navigate immediately when complete
-        router.push("/home")
+        navigate()
       }
     }
     
     updateProgress()
-  }, [router])
+
+    // Fallback timeout to ensure navigation happens even if animation fails
+    const timeoutId = setTimeout(() => {
+      if (!hasNavigated) {
+        setProgress(100)
+        navigate()
+      }
+    }, duration + 100) // Slightly longer than animation duration
+
+    // Cleanup function to cancel animation frame and timeout if component unmounts
+    return () => {
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId)
+      }
+      clearTimeout(timeoutId)
+    }
+  }, [router, isAuthenticated, isAuthLoading, isBaseContext])
 
   return (
     <div className="min-h-screen bg-[#0d0d0d] flex flex-col items-center justify-center px-6 relative overflow-hidden">
