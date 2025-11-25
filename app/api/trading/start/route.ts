@@ -202,11 +202,73 @@ export async function POST(request: NextRequest) {
     console.log('[API] Private key available:', privateKey ? `${privateKey.slice(0, 10)}...${privateKey.slice(-4)}` : 'MISSING')
     
     // Call the trading engine to start trading
+    // TRADING_ENGINE_URL can be:
+    // 1. Direct service: http://localhost:3001
+    // 2. Proxied path: https://avantis.superapp.gg/api/trading-engine
     const tradingEngineUrl = process.env.TRADING_ENGINE_URL || 'http://localhost:3001'
+    console.log(`[API] [${requestId}] TRADING_ENGINE_URL from env:`, tradingEngineUrl);
     
-    // Clean up URL (remove trailing /api/trading-engine if present)
-    const cleanUrl = tradingEngineUrl.replace(/\/api\/trading-engine\/?$/, '');
-    const tradingEngineEndpoint = `${cleanUrl}/api/trading/start`;
+    // Clean up URL (remove trailing slash, but KEEP /api/trading-engine if present)
+    let cleanUrl = tradingEngineUrl.replace(/\/$/, '');
+    console.log(`[API] [${requestId}] Cleaned URL:`, cleanUrl);
+    
+    // Determine the correct endpoint path
+    // Nginx rewrites /api/trading-engine/(.*) to /$1 and proxies to trading-engine
+    // So /api/trading-engine/api/trading/start -> nginx rewrites to /api/trading/start -> proxies to trading-engine:3001/api/trading/start
+    let tradingEngineEndpoint: string;
+    if (cleanUrl.includes('/api/trading-engine')) {
+      // Trading engine is behind nginx proxy at /api/trading-engine
+      // Full URL: https://avantis.superapp.gg/api/trading-engine/api/trading/start
+      // Nginx will rewrite to /api/trading/start and proxy to trading-engine:3001
+      tradingEngineEndpoint = `${cleanUrl}/api/trading/start`;
+      console.log(`[API] [${requestId}] ✅ Using proxied trading engine URL (via nginx)`);
+    } else {
+      // Direct trading engine service (no proxy)
+      // URL: http://localhost:3001/api/trading/start
+      tradingEngineEndpoint = `${cleanUrl}/api/trading/start`;
+      console.log(`[API] [${requestId}] ✅ Using direct trading engine URL`);
+    }
+    
+    console.log(`[API] [${requestId}] Trading engine base URL:`, cleanUrl);
+    console.log(`[API] [${requestId}] Trading engine endpoint:`, tradingEngineEndpoint);
+    
+    // Safety check: ensure we're calling the trading engine, not Next.js route
+    if (tradingEngineEndpoint.includes('avantis.superapp.gg') && !tradingEngineEndpoint.includes('/api/trading-engine')) {
+      console.error(`[API] [${requestId}] ❌ ERROR: Endpoint URL is missing /api/trading-engine prefix!`);
+      console.error(`[API] [${requestId}] This will route to Next.js /api/trading/start instead of trading engine!`);
+      console.error(`[API] [${requestId}] Expected: https://avantis.superapp.gg/api/trading-engine/api/trading/start`);
+      console.error(`[API] [${requestId}] Actual:`, tradingEngineEndpoint);
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Trading engine URL configuration error: Missing /api/trading-engine prefix. Please check TRADING_ENGINE_URL environment variable.' 
+      }, { status: 500 });
+    }
+    
+    // Safety check: ensure we're calling the trading engine, not Next.js route
+    try {
+      const endpointUrl = new URL(tradingEngineEndpoint);
+      const endpointPath = endpointUrl.pathname;
+      
+      // If using avantis.superapp.gg domain, MUST include /api/trading-engine prefix
+      if (endpointUrl.hostname.includes('avantis.superapp.gg') && !endpointPath.includes('/api/trading-engine')) {
+        console.error(`[API] [${requestId}] ❌ ERROR: Endpoint URL is missing /api/trading-engine prefix!`);
+        console.error(`[API] [${requestId}] This will route to Next.js /api/trading/start instead of trading engine!`);
+        console.error(`[API] [${requestId}] TRADING_ENGINE_URL from env:`, tradingEngineUrl);
+        console.error(`[API] [${requestId}] Cleaned URL:`, cleanUrl);
+        console.error(`[API] [${requestId}] Expected: https://avantis.superapp.gg/api/trading-engine/api/trading/start`);
+        console.error(`[API] [${requestId}] Actual:`, tradingEngineEndpoint);
+        return NextResponse.json({ 
+          success: false, 
+          error: 'Trading engine URL configuration error: Missing /api/trading-engine prefix. TRADING_ENGINE_URL must be set to https://avantis.superapp.gg/api/trading-engine (not just the domain).' 
+        }, { status: 500 });
+      }
+    } catch (urlError) {
+      console.error(`[API] [${requestId}] Error parsing trading engine URL:`, urlError);
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid trading engine URL configuration.' 
+      }, { status: 500 });
+    }
     
     console.log(`[API] [${requestId}] 📡 Calling trading engine at:`, tradingEngineEndpoint);
     addLog(requestId, 'Calling trading engine', { url: tradingEngineEndpoint })
