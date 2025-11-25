@@ -13,10 +13,12 @@ import { ProtectedRoute } from "@/components/ProtectedRoute"
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { NavigationHeader } from "@/components/NavigationHeader"
 import { DepositModal } from "@/components/DepositModal"
+import { WalletConnectionModal } from "@/components/WalletConnectionModal"
 import { BuildTimestamp } from "@/components/BuildTimestamp"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useBaseAccountTransactions } from "@/lib/services/BaseAccountTransactionService"
+import { useBaseMiniApp } from "@/lib/hooks/useBaseMiniApp"
 
 // Type definitions
 interface TokenBalance {
@@ -702,6 +704,10 @@ const WalletInfoCard = ({
   const [isFetching, setIsFetching] = useState(false)
   const [hasAttemptedFetch, setHasAttemptedFetch] = useState(false) // Track if we've already tried fetching
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false)
+  const [isWalletConnectionModalOpen, setIsWalletConnectionModalOpen] = useState(false)
+  
+  // Check if we're in Farcaster mini-app or web version
+  const { isBaseContext } = useBaseMiniApp()
 
   // Update local wallet state when props change (but don't fetch)
   useEffect(() => {
@@ -1056,7 +1062,15 @@ const WalletInfoCard = ({
             {/* Deposit Button - Only show if wallet exists */}
             {walletToDisplay.address && (
               <Button
-                onClick={() => setIsDepositModalOpen(true)}
+                onClick={() => {
+                  // In web version, show wallet connection modal
+                  // In Farcaster mini-app, show deposit modal
+                  if (isBaseContext) {
+                    setIsDepositModalOpen(true)
+                  } else {
+                    setIsWalletConnectionModalOpen(true)
+                  }
+                }}
                 className="w-full bg-[#8759ff] hover:bg-[#7c4dff] text-white font-medium py-2.5 rounded-xl shadow-md hover:shadow-lg transition-all duration-200"
               >
                 <span className="flex items-center justify-center space-x-2">
@@ -1071,19 +1085,29 @@ const WalletInfoCard = ({
         </div>
       </div>
 
-      {/* Deposit Modal */}
-      <DepositModal
-        isOpen={isDepositModalOpen}
-        onClose={() => setIsDepositModalOpen(false)}
-        onDeposit={onDeposit}
-        isDepositing={isDepositing}
-        depositError={depositError}
-        recentDepositHash={recentDepositHash}
-        baseAccountAddress={baseAccountAddress || null}
-        tradingWalletAddress={tradingWalletAddress || null}
-        holdings={holdings}
-        ethBalance={ethBalanceFormatted}
-      />
+      {/* Deposit Modal - Only show in Farcaster mini-app */}
+      {isBaseContext && (
+        <DepositModal
+          isOpen={isDepositModalOpen}
+          onClose={() => setIsDepositModalOpen(false)}
+          onDeposit={onDeposit}
+          isDepositing={isDepositing}
+          depositError={depositError}
+          recentDepositHash={recentDepositHash}
+          baseAccountAddress={baseAccountAddress || null}
+          tradingWalletAddress={tradingWalletAddress || null}
+          holdings={holdings}
+          ethBalance={ethBalanceFormatted}
+        />
+      )}
+      
+      {/* Wallet Connection Modal - Only show in web version */}
+      {!isBaseContext && (
+        <WalletConnectionModal
+          isOpen={isWalletConnectionModalOpen}
+          onClose={() => setIsWalletConnectionModalOpen(false)}
+        />
+      )}
     </Card>
   )
 }

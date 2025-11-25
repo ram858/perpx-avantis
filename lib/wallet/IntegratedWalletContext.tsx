@@ -723,9 +723,60 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
   // Effects
   // ============================================================================
 
-  // Load user wallets on mount (ONCE)
+  // Refs for tracking wallet loading state
   const hasLoadedWalletsRef = useRef(false);
   const hasInitialRefreshRef = useRef(false);
+  
+  // Track previous web user ID to detect web user changes (not Farcaster FID)
+  // Farcaster users have stable FID tied to Base Account, so we don't reset on FID changes
+  // Web users can switch accounts (different phone numbers), so we reset on webUserId changes
+  const previousWebUserIdRef = useRef<number | undefined>(undefined);
+
+  // Reset wallet state when WEB USER changes (logout/login with different phone number)
+  // This should NOT affect Farcaster mini-app where FID is stable
+  useEffect(() => {
+    const currentWebUserId = user?.webUserId;
+    const previousWebUserId = previousWebUserIdRef.current;
+
+    // Only reset for web users when webUserId changes
+    // Don't reset for Farcaster users (they have stable FID)
+    if (previousWebUserId !== undefined && 
+        currentWebUserId !== previousWebUserId &&
+        currentWebUserId !== undefined) {
+      console.log('[IntegratedWallet] Web user changed (different phone number), resetting wallet state...');
+      
+      // Reset all wallet state
+      setState({
+        isConnected: false,
+        primaryWallet: null,
+        tradingWallet: null,
+        baseAccountAddress: null,
+        tradingWalletAddress: null,
+        allWallets: [],
+        ethBalance: '0',
+        ethBalanceFormatted: '0.00 ETH',
+        holdings: [],
+        tradingHoldings: [], // Clear trading holdings
+        totalPortfolioValue: 0,
+        dailyChange: 0,
+        dailyChangePercentage: 0,
+        lastDayValue: 0,
+        avantisBalance: 0,
+        isAvantisConnected: false,
+        hasRealAvantisBalance: false,
+        isLoading: false,
+        error: null,
+        hasCompletedInitialLoad: false
+      });
+
+      // Reset refs so wallets can be loaded for new user
+      hasLoadedWalletsRef.current = false;
+      hasInitialRefreshRef.current = false;
+    }
+
+    // Update previous web user ID ref (only track webUserId, not FID)
+    previousWebUserIdRef.current = currentWebUserId;
+  }, [user?.webUserId]);
   
   useEffect(() => {
     // Support both Farcaster (fid) and Web (webUserId) users

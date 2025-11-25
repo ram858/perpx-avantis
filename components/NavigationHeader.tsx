@@ -3,6 +3,7 @@
 import React from 'react';
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useBaseMiniApp } from "@/lib/hooks/useBaseMiniApp";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -25,8 +26,15 @@ export function NavigationHeader({
   breadcrumbs = [],
   actions 
 }: NavigationHeaderProps) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const { isBaseContext } = useBaseMiniApp();
   const router = useRouter();
+
+  const handleLogout = () => {
+    logout();
+    // Redirect to auth page after logout
+    router.push('/auth/web');
+  };
 
   const handleBack = () => {
     if (backHref) {
@@ -61,10 +69,40 @@ export function NavigationHeader({
           </div>
         </div>
         
-        {/* User info */}
+        {/* User info / Logout button */}
         <div className="text-right">
-          <p className="text-sm text-[#b4b4b4]">FID: {user?.fid || 'N/A'}</p>
-          <p className="text-xs text-[#666]">Welcome back!</p>
+          {isBaseContext ? (
+            // Farcaster mini-app: Show FID
+            <>
+              <p className="text-sm text-[#b4b4b4]">FID: {user?.fid || 'N/A'}</p>
+              <p className="text-xs text-[#666]">Welcome back!</p>
+            </>
+          ) : (
+            // Web version: Show logout button
+            <Button
+              onClick={handleLogout}
+              variant="outline"
+              size="sm"
+              className="bg-transparent border-[#444] text-[#e5e5e5] hover:bg-[#333] hover:text-white hover:border-[#555] px-3 py-1.5"
+            >
+              <svg 
+                width="16" 
+                height="16" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round"
+                className="mr-1.5"
+              >
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              <span className="text-sm">Logout</span>
+            </Button>
+          )}
         </div>
       </div>
 

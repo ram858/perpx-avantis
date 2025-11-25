@@ -50,16 +50,7 @@ export function ProtectedRoute({ children, fallback }: ProtectedRouteProps): JSX
   // This prevents showing the message in Farcaster while context is still being detected
   // Only show web preview if SDK is ready AND we're not in Base context
   if (isReady && !isBaseContext && isWebFallbackEnabled) {
-    return (
-      <>
-        <div className="bg-[#1a1a1a] border-b border-[#2f2f2f] text-[#d1d5db] px-4 py-3 text-sm">
-          <p className="max-w-3xl mx-auto text-center">
-            You are viewing the PrepX web preview. Connect through the Base app to unlock trading and Base Account features.
-          </p>
-        </div>
-        {children}
-      </>
-    )
+    return <>{children}</>
   }
 
   // If not in Base context (and SDK is ready), show error

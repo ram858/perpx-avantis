@@ -11,7 +11,13 @@
    - Uses `openPrice=0` for market orders
    - Correct slippage calculation (`int(slippage * 1e8)`)
    - Uses `original_collateral_wei` override to bypass TradeInput transformation issues
-   - **Success**: Position opened with TX: `0x701d98a20bfa1fa2072f57435552ee59ae6b929a42bd56adecff5ab24d579b0a`
+   - **Verified USDC Transfer TX**: `0xd571ee3a329033c2bbdb564b8aec49057788314eafc2c03da7e702ebf3edccc1`
+     - Amount: 20 USDC ($19.99)
+     - From: `0xE0C87bf32C879e2a5F5343e75b6f2cc3d63BE4d5`
+     - To: Avantis Trading Contract (`0x1f4Ef1eD...C93B2016F`)
+     - Status: Confirmed
+     - **Issue**: Funds transferred but position not created (leverage bug - now fixed)
+     - View on BaseScan: https://basescan.org/tx/0xd571ee3a329033c2bbdb564b8aec49057788314eafc2c03da7e702ebf3edccc1
 
 3. **Services Running** - All services operational
    - Avantis Service: Port 3002
