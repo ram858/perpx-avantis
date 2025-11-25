@@ -25,12 +25,27 @@ export async function POST(request: NextRequest) {
 
     const token = authHeader.substring(7)
     
+    // Validate token format (basic check)
+    if (!token || token.length < 10) {
+      console.error('[API] Token appears to be invalid (too short or empty)')
+      return NextResponse.json(
+        { error: 'Invalid token format. Please refresh your session.' },
+        { status: 401 }
+      )
+    }
+    
     // Verify token and get context (supports both Farcaster and web users)
     let authContext
     try {
+      console.log('[API] Verifying token, length:', token.length, 'starts with:', token.substring(0, 20))
+      console.log('[API] Token ends with:', token.substring(token.length - 20))
       authContext = await verifyTokenAndGetContext(token)
+      console.log('[API] Token verified successfully, context:', authContext.context, 'fid:', authContext.fid, 'webUserId:', authContext.webUserId)
     } catch (authError) {
       console.error('[API] Token verification failed:', authError)
+      console.error('[API] Error type:', authError instanceof Error ? authError.constructor.name : typeof authError)
+      console.error('[API] Error message:', authError instanceof Error ? authError.message : String(authError))
+      console.error('[API] Error stack:', authError instanceof Error ? authError.stack : 'No stack trace')
       const errorMessage = authError instanceof Error ? authError.message : 'Token verification failed'
       
       // Return appropriate error based on the type of authentication failure
@@ -48,8 +63,35 @@ export async function POST(request: NextRequest) {
         )
       }
       
+      // More detailed error for debugging
+      // Check if it's a token expiration issue
+      if (errorMessage.includes('expired') || errorMessage.includes('Token expired')) {
+        return NextResponse.json(
+          { 
+            error: 'Your session has expired. Please refresh the app to re-authenticate.',
+            code: 'TOKEN_EXPIRED'
+          },
+          { status: 401 }
+        )
+      }
+      
+      // Check if it's an invalid token issue
+      if (errorMessage.includes('Invalid token') || errorMessage.includes('invalid')) {
+        return NextResponse.json(
+          { 
+            error: 'Invalid authentication token. Please refresh the app to re-authenticate.',
+            code: 'INVALID_TOKEN'
+          },
+          { status: 401 }
+        )
+      }
+      
       return NextResponse.json(
-        { error: 'Unauthorized: Authentication failed. Please log in again.' },
+        { 
+          error: 'Unauthorized: Authentication failed. Please refresh the app to re-authenticate.',
+          code: 'AUTH_FAILED',
+          details: process.env.NODE_ENV === 'development' ? errorMessage : undefined
+        },
         { status: 401 }
       )
     }

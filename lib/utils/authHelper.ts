@@ -50,6 +50,20 @@ export async function verifyTokenAndGetContext(token: string): Promise<AuthConte
       };
     }
   } catch (error) {
+    // Log the specific error for Farcaster token verification
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.log('[authHelper] Farcaster token verification failed:', errorMessage);
+    
+    // If it's a token expiration error, provide more specific message
+    if (errorMessage.includes('expired') || errorMessage.includes('Token expired')) {
+      throw new Error('Token expired. Please refresh your session.');
+    }
+    
+    // If it's an invalid token error, provide more specific message
+    if (errorMessage.includes('Invalid token') || errorMessage.includes('invalid')) {
+      throw new Error('Invalid Farcaster token. Please log in again.');
+    }
+    
     // Not a Farcaster token, try web token
   }
 
@@ -62,7 +76,19 @@ export async function verifyTokenAndGetContext(token: string): Promise<AuthConte
       userId: payload.userId,
     };
   } catch (error) {
-    throw new Error('Invalid token');
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.log('[authHelper] Web token verification failed:', errorMessage);
+    
+    // Provide more specific error message
+    if (errorMessage.includes('expired') || errorMessage.includes('Token expired')) {
+      throw new Error('Token expired. Please refresh your session.');
+    }
+    
+    if (errorMessage.includes('Invalid token') || errorMessage.includes('invalid')) {
+      throw new Error('Invalid web token. Please log in again.');
+    }
+    
+    throw new Error('Invalid token: Token verification failed for both Farcaster and web tokens.');
   }
 }
 
