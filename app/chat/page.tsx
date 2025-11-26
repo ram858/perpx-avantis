@@ -1156,51 +1156,42 @@ export default function ChatPage() {
 
         {tradingPhase === "completed" && (
           <div className="space-y-6 mt-6 px-4 sm:px-6 py-4">
-            {/* Position Closed - INJ/USD */}
-            <Card className="bg-[#1a1a1a] border-l-4 border-l-[#27c47d] border-[#262626] rounded-2xl p-4 mx-2 sm:mx-4">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[#27c47d] text-sm font-medium">Position closed</span>
-                <span className="text-[#b4b4b4] text-sm">9:48 AM</span>
-              </div>
+            {/* Show completed session summary - only if session exists and is completed */}
+            {tradingSession && tradingSession.status === 'completed' && (
+              <Card className="bg-[#1a1a1a] border-l-4 border-l-[#27c47d] border-[#262626] rounded-2xl p-4 mx-2 sm:mx-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[#27c47d] text-sm font-medium">Trading Session Completed</span>
+                  <span className="text-[#b4b4b4] text-sm">
+                    {tradingSession.endTime ? new Date(tradingSession.endTime).toLocaleTimeString() : 'Just now'}
+                  </span>
+                </div>
 
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-[#00d4aa] rounded-full flex items-center justify-center">
-                    <span className="text-white text-xs font-bold">I</span>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <p className="text-[#b4b4b4] text-sm">Total PnL</p>
+                    <p className={`font-semibold ${(tradingSession.totalPnL || 0) >= 0 ? 'text-[#27c47d]' : 'text-[#dc3545]'}`}>
+                      ${(tradingSession.totalPnL || 0).toFixed(2)} USDC
+                    </p>
                   </div>
-                  <span className="text-white font-semibold">INJ/USD</span>
-                  <span className="bg-[#dc3545] text-white px-2 py-1 rounded text-xs font-medium">SELL</span>
+                  <div>
+                    <p className="text-[#b4b4b4] text-sm">Positions</p>
+                    <p className="text-white font-semibold">{tradingSession.positions || 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-[#b4b4b4] text-sm">Session Duration</p>
+                    <p className="text-white">
+                      {tradingSession.startTime && tradingSession.endTime 
+                        ? `${Math.round((new Date(tradingSession.endTime).getTime() - new Date(tradingSession.startTime).getTime()) / 60000)} min`
+                        : 'N/A'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[#b4b4b4] text-sm">Status</p>
+                    <p className="text-white">Completed</p>
+                  </div>
                 </div>
-                <span className="text-[#b4b4b4] text-sm">30x</span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <p className="text-[#b4b4b4] text-sm">PnL</p>
-                  <p className="text-[#27c47d] font-semibold">+9.941 USDC</p>
-                </div>
-                <div>
-                  <p className="text-[#b4b4b4] text-sm">Collateral</p>
-                  <p className="text-white font-semibold">14.988 USDC</p>
-                </div>
-                <div>
-                  <p className="text-[#b4b4b4] text-sm">Entry Price</p>
-                  <p className="text-white">13.68</p>
-                </div>
-                <div>
-                  <p className="text-[#b4b4b4] text-sm">Exit Price</p>
-                  <p className="text-white">13.3833</p>
-                </div>
-                <div>
-                  <p className="text-[#b4b4b4] text-sm">Position Size</p>
-                  <p className="text-white">449.64 USDC</p>
-                </div>
-                <div>
-                  <p className="text-[#b4b4b4] text-sm">Status</p>
-                  <p className="text-white">Closed</p>
-                </div>
-              </div>
-            </Card>
+              </Card>
+            )}
           </div>
         )}
 
@@ -1462,64 +1453,61 @@ export default function ChatPage() {
                 </div>
               </Card>
 
-              {/* Technical Analysis */}
-              <Card className="bg-[#1a1a1a] border-[#262626] rounded-xl p-3 sm:p-4">
-                <div className="flex items-start space-x-2 mb-3">
-                  <span className="text-[#58a6ff] flex-shrink-0">📊</span>
-                  <span className="text-white font-mono text-xs sm:text-sm break-words">
-                    [Check] Regime: bearish, RSI: 38.11, MACD: -0.01224, MACDA: 0.00346, EMA Slope: -0.00752, ADX: 10,
-                    ATR%: 0.59%, Score: 0.40
-                  </span>
-                </div>
-
-                <div className="flex items-start space-x-2 mb-3">
-                  <span className="text-[#b4b4b4] flex-shrink-0">⚪</span>
-                  <span className="text-white font-mono text-xs sm:text-sm break-words">
-                    [Indicators] RSI: 38.11 | MACD Hist: -0.012237 | EMA Slope: -0.00752 | ATR%: 0.59%
-                  </span>
-                </div>
-
-                <div className="flex items-start space-x-2">
-                  <span className="text-[#f472b6] flex-shrink-0">🎯</span>
-                  <span className="text-white font-mono text-xs sm:text-sm break-words">
-                    [Decision] INJ_USD | Open: <span className="text-[#27c47d]">true</span> | Reason: Bearish trend
-                    continuation | Confidence: <span className="text-[#27c47d]">high</span>
-                  </span>
-                </div>
-              </Card>
-
-              {/* Trade Execution */}
-              <Card className="bg-[#1a1a1a] border-[#262626] rounded-xl p-3 sm:p-4">
-                <div className="space-y-3 font-mono text-xs sm:text-sm">
-                  <div className="flex items-start space-x-2">
-                    <span className="text-[#dc3545] flex-shrink-0">📉</span>
-                    <span className="text-white break-words">
-                      INJ_USD | SignalScore: 0.40 | Regime: bearish | Decision:{" "}
-                      <span className="text-[#dc3545]">short</span>
+              {/* Technical Analysis - Only show when trading is active */}
+              {tradingSession && tradingSession.status === 'running' && (
+                <Card className="bg-[#1a1a1a] border-[#262626] rounded-xl p-3 sm:p-4">
+                  <div className="flex items-start space-x-2 mb-3">
+                    <span className="text-[#58a6ff] flex-shrink-0">📊</span>
+                    <span className="text-white font-mono text-xs sm:text-sm break-words">
+                      [Status] Trading bot is monitoring markets and evaluating signals...
                     </span>
                   </div>
+                  {positionData && positionData.positions && positionData.positions.length > 0 && (
+                    <div className="flex items-start space-x-2">
+                      <span className="text-[#f472b6] flex-shrink-0">🎯</span>
+                      <span className="text-white font-mono text-xs sm:text-sm break-words">
+                        [Positions] {positionData.positions.length} active position(s) on AvantisFi | 
+                        Total PnL: <span className={positionData.totalPnL >= 0 ? 'text-[#27c47d]' : 'text-[#dc3545]'}>
+                          ${positionData.totalPnL?.toFixed(2) || '0.00'}
+                        </span>
+                      </span>
+                    </div>
+                  )}
+                </Card>
+              )}
 
-                  <div className="flex items-start space-x-2">
-                    <span className="text-[#dc3545] flex-shrink-0">📈</span>
-                    <span className="text-white break-words">
-                      Executing INJ_USD | <span className="text-[#dc3545]">SHORT</span> | Entry: 13.680000 | Lev: 30x
-                    </span>
+              {/* Trade Execution - Only show if positions actually exist */}
+              {positionData && positionData.positions && positionData.positions.length > 0 ? (
+                <Card className="bg-[#1a1a1a] border-[#262626] rounded-xl p-3 sm:p-4">
+                  <div className="space-y-3 font-mono text-xs sm:text-sm">
+                    <div className="text-[#27c47d] text-sm font-semibold mb-2">
+                      ✅ Real Positions from AvantisFi ({positionData.positions.length})
+                    </div>
+                    {positionData.positions.slice(0, 3).map((pos, idx) => (
+                      <div key={idx} className="flex items-start space-x-2">
+                        <span className="text-[#27c47d] flex-shrink-0">✅</span>
+                        <span className="text-white break-words">
+                          {pos.symbol || pos.coin} | {pos.side?.toUpperCase() || 'N/A'} | 
+                          Entry: {pos.entryPrice?.toFixed(4) || 'N/A'} | 
+                          Leverage: {pos.leverage || 'N/A'}x | 
+                          PnL: <span className={pos.pnl >= 0 ? 'text-[#27c47d]' : 'text-[#dc3545]'}>
+                            ${pos.pnl?.toFixed(2) || '0.00'}
+                          </span>
+                        </span>
+                      </div>
+                    ))}
                   </div>
-
-                  <div className="flex items-start space-x-2">
-                    <span className="text-[#27c47d] flex-shrink-0">✅</span>
-                    <span className="text-white break-all">
-                      Opened INJ_USD | <span className="text-[#dc3545]">SHORT</span> | TX:
-                      0x5c4fac3d32bbf61d97494c5ade6cafd3bc7438b
-                    </span>
+                </Card>
+              ) : (
+                <Card className="bg-[#1a1a1a] border-[#262626] rounded-xl p-3 sm:p-4">
+                  <div className="text-center py-4">
+                    <div className="text-[#b4b4b4] text-sm mb-2">📊 No Open Positions</div>
+                    <div className="text-[#666] text-xs">
+                      Positions will appear here when opened on AvantisFi
+                    </div>
                   </div>
-
-                  <div className="flex items-start space-x-2">
-                    <span className="text-[#b4b4b4] flex-shrink-0">🔒</span>
-                    <span className="text-white">Opened position for INJ_USD</span>
-                  </div>
-                </div>
-              </Card>
+                </Card>
+              )}
 
               <div className="h-4"></div>
             </div>

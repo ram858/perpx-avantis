@@ -31,7 +31,7 @@ echo "  Balance: \$$BALANCE"
 echo ""
 
 echo "Step 2: Attempting to open position..."
-echo "  Using FIXED leverage=10x (prevents 10000x bug from WHY_FUNDS_TRANSFERRED.md)"
+echo "  Using FIXED leverage=10x (prevents 10000x bug from docs/WHY_FUNDS_TRANSFERRED.md)"
 RESPONSE=$(curl -s -X POST "$AVANTIS_API_URL/api/open-position" \
   -H "Content-Type: application/json" \
   -d "{

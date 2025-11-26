@@ -123,6 +123,23 @@ async def health_check():
 # Trading operations endpoints
 @app.post("/api/open-position")
 async def api_open_position(request: OpenPositionRequest):
+    # ==========================================
+    # 🛡️ LAYER 1: API ENTRY POINT SAFEGUARD
+    # ==========================================
+    # CRITICAL: This is the FIRST line of defense - blocks invalid requests immediately
+    # Prevents fund loss from "Transfer First, Validate Later" pattern
+    # User lost $20 yesterday due to LEVERAGE BUG (10000x), not minimum issue
+    # Since leverage is fixed, $20 should work. Minimum is likely $15-$20
+    # GUARANTEE: No request with < $20 reaches trading logic
+    MIN_SAFE_COLLATERAL = 20.0  # Hardcoded to prevent fund loss (leverage bug fixed, $20 should work)
+    if request.collateral < MIN_SAFE_COLLATERAL:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400,
+            detail=f"❌ CRITICAL: Collateral ${request.collateral} is below safe minimum ${MIN_SAFE_COLLATERAL}. "
+                   f"DO NOT attempt trade - funds will be transferred but position will fail! "
+                   f"Minimum required: ${MIN_SAFE_COLLATERAL} USDC"
+        )
     """
     Open a trading position.
     """

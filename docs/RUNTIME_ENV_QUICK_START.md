@@ -83,5 +83,5 @@ Set environment variables in platform dashboard.
 
 ## Full Documentation
 
-See [CI_CD_RUNTIME_ENV.md](./CI_CD_RUNTIME_ENV.md) for detailed instructions.
+See [CI_CD_RUNTIME_ENV.md](./CI_CD_RUNTIME_ENV.md) for detailed instructions. (Note: File is in docs/ folder)
 

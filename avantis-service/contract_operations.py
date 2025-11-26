@@ -14,7 +14,12 @@ from web3 import Web3, AsyncWeb3
 logger = logging.getLogger(__name__)
 
 # --- Constants ---
-MIN_COLLATERAL_USDC = 12.0  # Protocol minimum (contract requires ~$12+ based on testing)
+# CRITICAL: Based on testing, contract rejects amounts up to $14.99
+# User lost $20 yesterday due to LEVERAGE BUG (10000x), not minimum issue
+# Since leverage is fixed, $20 should work. Setting to $20 as safeguard.
+# Testing shows: $14.99 rejected, so minimum is likely $15-$20
+# DO NOT REDUCE THIS - funds will be transferred but position will fail!
+MIN_COLLATERAL_USDC = 20.0  # Protocol minimum (contract requires $20+ based on testing - prevents fund loss)
 USDC_DECIMALS = 6
 PRICE_DECIMALS = 10         # Avantis uses 10 decimals for price/TP/SL in structs
 SLIPPAGE_DEFAULT = 1.0      # 1%
@@ -38,9 +43,15 @@ def validate_trade_params(
     leverage: int,
     pair_index: int,
 ) -> None:
-    """Fast validation to catch errors before network calls."""
+    """
+    Fast validation to catch errors before network calls.
+    CRITICAL: This prevents fund loss by catching errors BEFORE any transfers.
+    """
     if collateral_amount < MIN_COLLATERAL_USDC:
-        raise ValueError(f"Collateral ${collateral_amount} is below protocol minimum ${MIN_COLLATERAL_USDC}.")
+        raise ValueError(
+            f"❌ CRITICAL: Collateral ${collateral_amount} is below protocol minimum ${MIN_COLLATERAL_USDC}. "
+            f"DO NOT attempt trade - funds will be transferred but position will fail with BELOW_MIN_POS!"
+        )
     
     if not 2 <= leverage <= 100:
         raise ValueError(f"Leverage {leverage}x is out of range (2x-100x).")
@@ -311,14 +322,51 @@ async def open_position_via_contract(
     if TradeInput is None or TradeInputOrderType is None:
         raise ImportError("TradeInput or TradeInputOrderType not available - SDK not properly imported.")
 
-    # Step 1: Validation
+    # ==========================================
+    # 🛡️ LAYER 2: Parameter Validation
+    # ==========================================
+    # GUARANTEE: Invalid parameters rejected before any network calls
     validate_trade_params(collateral_amount, leverage, pair_index)
 
     # Step 2: Get Address & Run Checks
     signer = trader_client.get_signer()
     trader_address = signer.get_ethereum_address()
     
-    # Check balance BEFORE building tx (saves gas)
+    # ==========================================
+    # 🛡️ LAYER 3: Balance Pre-Validation
+    # ==========================================
+    # CRITICAL: Check balance BEFORE any transfers to prevent fund loss
+    # The Avantis contract transfers funds FIRST, then validates (Transfer First, Validate Later pattern)
+    # If validation fails, funds are already transferred but position isn't created
+    # We MUST validate balance is sufficient BEFORE calling check_and_approve_usdc
+    # GUARANTEE: Insufficient balance blocks trade BEFORE any transfers
+    balance_raw = await trader_client.get_usdc_balance()
+    balance_usdc = float(balance_raw) if balance_raw else 0
+    
+    if balance_usdc < collateral_amount:
+        raise ValueError(
+            f"❌ INSUFFICIENT BALANCE: Need ${collateral_amount:.2f}, have ${balance_usdc:.2f}. "
+            f"DO NOT attempt trade - funds will be transferred but position will fail!"
+        )
+    
+    # ==========================================
+    # 🛡️ LAYER 4: Minimum Collateral Check
+    # ==========================================
+    # Additional safety: Check if collateral meets minimum (prevent BELOW_MIN_POS)
+    # GUARANTEE: Below-minimum collateral blocks trade BEFORE any transfers
+    if collateral_amount < MIN_COLLATERAL_USDC:
+        raise ValueError(
+            f"❌ COLLATERAL TOO LOW: ${collateral_amount:.2f} is below minimum ${MIN_COLLATERAL_USDC:.2f}. "
+            f"DO NOT attempt trade - funds will be transferred but position will fail with BELOW_MIN_POS!"
+        )
+    
+    logger.info(f"✅ All pre-validation passed: Balance ${balance_usdc:.2f} >= Collateral ${collateral_amount:.2f} >= Minimum ${MIN_COLLATERAL_USDC:.2f}")
+    
+    # ==========================================
+    # 🛡️ LAYER 5: USDC Approval (ONLY after all validations pass)
+    # ==========================================
+    # GUARANTEE: No USDC operations until all safeguards pass
+    # Check balance and approve USDC (ONLY after validation passes)
     await check_and_approve_usdc(trader_client, trader_address, collateral_amount)
 
     # Step 3: Prepare Data

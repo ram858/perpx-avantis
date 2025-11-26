@@ -1198,10 +1198,21 @@ export default function HomePage() {
     hasCompletedInitialLoad
   } = useIntegratedWallet()
 
-  const { isLoading: isTradingLoading, error: tradingError } = useTrading()
+  const { isLoading: isTradingLoading, error: tradingError, getTradingSessions } = useTrading()
   const { totalProfits } = useTradingProfits()
   const { tradingSession, refreshSessionStatus } = useTradingSession()
   const router = useRouter()
+  
+  // State for active sessions list
+  const [activeSessions, setActiveSessions] = useState<Array<{
+    id: string;
+    status: string;
+    startTime: string | Date;
+    totalPnL: number;
+    positions: number;
+    config?: any;
+  }>>([])
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false)
 
   const { signAndSendTransaction, waitForTransaction, isAvailable: isBaseTxAvailable } = useBaseAccountTransactions()
   
@@ -1267,6 +1278,31 @@ export default function HomePage() {
       // This prevents showing stale sessions
     }
   }, [isConnected, positionData?.openPositions, tradingSession, avantisBalance, refreshSessionStatus]);
+  
+  // Fetch active sessions on mount and periodically
+  useEffect(() => {
+    const fetchActiveSessions = async () => {
+      if (!isConnected) return;
+      
+      setIsLoadingSessions(true);
+      try {
+        const sessions = await getTradingSessions();
+        // Filter for running sessions only
+        const running = sessions.filter(s => s.status === 'running');
+        setActiveSessions(running);
+      } catch (error) {
+        console.error('[HomePage] Failed to fetch active sessions:', error);
+        setActiveSessions([]);
+      } finally {
+        setIsLoadingSessions(false);
+      }
+    };
+    
+    fetchActiveSessions();
+    // Refresh every 10 seconds
+    const interval = setInterval(fetchActiveSessions, 10000);
+    return () => clearInterval(interval);
+  }, [isConnected, getTradingSessions]);
 
   // Auto-create wallet if user doesn't have one - optimized with useCallback
   // NOTE: For web users, wallet is created during OTP verification, so this is mainly for Farcaster users
@@ -1497,6 +1533,93 @@ export default function HomePage() {
               tradingError={tradingError}
               isLoading={isLoading}
             />
+          )}
+
+          {/* Active Trading Sessions Section - Shows all running sessions */}
+          {isConnected && (activeSessions.length > 0 || (tradingSession && tradingSession.status === 'running')) && (
+            <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4 sm:p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-white font-semibold text-lg">Active Trading Sessions</h2>
+                <span className="text-[#b4b4b4] text-sm">
+                  {activeSessions.length > 0 ? `${activeSessions.length} active` : 
+                   (tradingSession && tradingSession.status === 'running' ? '1 active' : '0 active')}
+                </span>
+              </div>
+              
+              {isLoadingSessions ? (
+                <div className="text-center py-4 text-[#b4b4b4] text-sm">Loading sessions...</div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Current session if exists */}
+                  {tradingSession && tradingSession.status === 'running' && (
+                    <div 
+                      key={tradingSession.sessionId || tradingSession.id}
+                      className="bg-[#2a2a2a] border border-[#262626] rounded-lg p-4 cursor-pointer hover:bg-[#333] transition-colors"
+                      onClick={() => {
+                        const params = new URLSearchParams({
+                          mode: 'real',
+                          view: 'positions',
+                          sessionId: tradingSession.sessionId || tradingSession.id
+                        });
+                        router.push(`/chat?${params.toString()}`);
+                      }}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-[#27c47d] rounded-full animate-pulse"></div>
+                          <span className="text-white font-medium">Session {(tradingSession.sessionId || tradingSession.id)?.slice(-8)}</span>
+                          <span className="text-[#27c47d] text-xs px-2 py-0.5 rounded bg-[#27c47d]/20">Running</span>
+                        </div>
+                        <span className={`text-sm font-medium ${(tradingSession.totalPnL || 0) >= 0 ? 'text-[#27c47d]' : 'text-[#dc3545]'}`}>
+                          ${(tradingSession.totalPnL || 0).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-[#b4b4b4]">
+                        <span>Positions: {tradingSession.openPositions || 0}</span>
+                        <span>Started: {new Date(tradingSession.startTime).toLocaleTimeString()}</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Other active sessions */}
+                  {activeSessions
+                    .filter(s => s.id !== tradingSession?.sessionId && s.id !== tradingSession?.id)
+                    .map((session) => (
+                      <div
+                        key={session.id}
+                        className="bg-[#2a2a2a] border border-[#262626] rounded-lg p-4 cursor-pointer hover:bg-[#333] transition-colors"
+                        onClick={() => {
+                          const params = new URLSearchParams({
+                            mode: 'real',
+                            view: 'positions',
+                            sessionId: session.id
+                          });
+                          router.push(`/chat?${params.toString()}`);
+                        }}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center space-x-2">
+                            <div className="w-2 h-2 bg-[#27c47d] rounded-full animate-pulse"></div>
+                            <span className="text-white font-medium">Session {session.id.slice(-8)}</span>
+                            <span className="text-[#27c47d] text-xs px-2 py-0.5 rounded bg-[#27c47d]/20">Running</span>
+                          </div>
+                          <span className={`text-sm font-medium ${(session.totalPnL || 0) >= 0 ? 'text-[#27c47d]' : 'text-[#dc3545]'}`}>
+                            ${(session.totalPnL || 0).toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-[#b4b4b4]">
+                          <span>Positions: {session.positions || 0}</span>
+                          <span>Started: {new Date(session.startTime).toLocaleTimeString()}</span>
+                        </div>
+                      </div>
+                    ))}
+                  
+                  {activeSessions.length === 0 && (!tradingSession || tradingSession.status !== 'running') && (
+                    <div className="text-center py-4 text-[#b4b4b4] text-sm">No active sessions</div>
+                  )}
+                </div>
+              )}
+            </Card>
           )}
 
           {/* Active Trading Session Card - Shows real on-chain positions from Avantis */}

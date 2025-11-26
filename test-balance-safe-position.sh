@@ -2,7 +2,7 @@
 
 # Balance-Safe Position Opening Test
 # Tests position opening with balance verification to ensure no funds are lost
-# Based on fixes from WHY_FUNDS_TRANSFERRED.md
+# Based on fixes from docs/WHY_FUNDS_TRANSFERRED.md
 
 echo "🧪 Balance-Safe Position Opening Test"
 echo "======================================"
@@ -116,7 +116,7 @@ echo ""
 # Open position
 echo -e "${BLUE}Step 4: Opening Position (with FIXED leverage=${LEVERAGE}x)...${NC}"
 echo "  This uses the fixed leverage parameter (not calculated)"
-echo "  Prevents the 10000x bug from WHY_FUNDS_TRANSFERRED.md"
+echo "  Prevents the 10000x bug from docs/WHY_FUNDS_TRANSFERRED.md"
 echo ""
 
 OPEN_POSITION_RESPONSE=$(curl -s -X POST "$AVANTIS_API_URL/api/open-position" \
