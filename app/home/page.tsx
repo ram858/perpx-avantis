@@ -707,7 +707,7 @@ const WalletInfoCard = ({
   const [isWalletConnectionModalOpen, setIsWalletConnectionModalOpen] = useState(false)
   
   // Check if we're in Farcaster mini-app or web version
-  const { isBaseContext } = useBaseMiniApp()
+  const { isBaseContext, sdk: baseSdk } = useBaseMiniApp()
 
   // Update local wallet state when props change (but don't fetch)
   useEffect(() => {
@@ -1214,7 +1214,8 @@ export default function HomePage() {
   }>>([])
   const [isLoadingSessions, setIsLoadingSessions] = useState(false)
 
-  const { signAndSendTransaction, waitForTransaction, isAvailable: isBaseTxAvailable } = useBaseAccountTransactions()
+  const { signAndSendTransaction, waitForTransaction, isAvailable: isBaseTxAvailable, estimateGas } = useBaseAccountTransactions()
+  const { sdk: baseSdk } = useBaseMiniApp()
   
   // Handle viewing trades - check for active session
   const handleViewTrades = useCallback(async () => {
@@ -1375,6 +1376,87 @@ export default function HomePage() {
           throw new Error(message)
         }
 
+        // For ETH deposits, validate balance before sending
+        if (asset === 'ETH') {
+          try {
+            // Try to get provider from SDK
+            let provider: any = null
+            if (baseSdk) {
+              provider = await (baseSdk as any).wallet?.getEthereumProvider?.() || (baseSdk as any).provider
+            }
+            
+            // If no SDK provider, try to get from window.ethereum (fallback)
+            if (!provider && typeof window !== 'undefined' && (window as any).ethereum) {
+              provider = (window as any).ethereum
+            }
+            
+            if (provider) {
+              const balanceHex = await provider.request({
+                method: 'eth_getBalance',
+                params: [fromAddress, 'latest']
+              })
+              const balance = BigInt(balanceHex)
+              const depositAmount = BigInt(data.transaction.value)
+              
+              // Estimate gas for the transaction
+              let gasEstimate = BigInt(21000) // Default for simple ETH transfer
+              try {
+                if (estimateGas) {
+                  const estimatedGas = await estimateGas({
+                    from: fromAddress,
+                    to: data.transaction.to,
+                    value: data.transaction.value,
+                    data: data.transaction.data || '0x'
+                  })
+                  gasEstimate = BigInt(estimatedGas)
+                }
+              } catch (gasError) {
+                console.warn('[HomePage] Could not estimate gas, using default:', gasError)
+                // Use a more conservative estimate if gas estimation fails
+                gasEstimate = BigInt(25000) // Slightly higher to be safe
+              }
+              
+              // Get gas price
+              let gasPrice = BigInt('0x3b9aca00') // ~1 gwei default
+              try {
+                const gasPriceHex = await provider.request({
+                  method: 'eth_gasPrice',
+                  params: []
+                })
+                gasPrice = BigInt(gasPriceHex)
+              } catch (priceError) {
+                console.warn('[HomePage] Could not fetch gas price, using default:', priceError)
+                // Use 2 gwei as a safer default for Base network
+                gasPrice = BigInt('0x77359400') // ~2 gwei
+              }
+              
+              const gasCost = gasEstimate * gasPrice
+              const totalNeeded = depositAmount + gasCost
+              
+              if (balance < totalNeeded) {
+                const balanceETH = Number(balance) / 1e18
+                const neededETH = Number(totalNeeded) / 1e18
+                const depositETH = Number(depositAmount) / 1e18
+                const gasETH = Number(gasCost) / 1e18
+                const maxAllowed = Math.max(0, balanceETH - gasETH)
+                const message = `Insufficient balance for gas fees. You have ${balanceETH.toFixed(6)} ETH but need ${neededETH.toFixed(6)} ETH total (${depositETH.toFixed(6)} ETH deposit + ~${gasETH.toFixed(6)} ETH gas). Maximum you can deposit: ${maxAllowed.toFixed(6)} ETH. Use the MAX button to automatically set the correct amount.`
+                setDepositError(message)
+                throw new Error(message)
+              }
+            } else {
+              // No provider available - show warning but continue (transaction will fail with better error)
+              console.warn('[HomePage] No provider available for balance check')
+            }
+          } catch (balanceError) {
+            // If balance check fails, re-throw our custom error
+            if (balanceError instanceof Error && balanceError.message.includes('Insufficient balance')) {
+              throw balanceError
+            }
+            // For other errors, log but continue - transaction will fail with wallet error
+            console.warn('[HomePage] Balance check error:', balanceError)
+          }
+        }
+
         const txRequest = {
           from: fromAddress,
           to: data.transaction.to,
@@ -1412,7 +1494,9 @@ export default function HomePage() {
       waitForTransaction,
       isBaseTxAvailable,
       refreshBalances,
-      refreshWallets
+      refreshWallets,
+      estimateGas,
+      baseSdk
     ]
   )
 

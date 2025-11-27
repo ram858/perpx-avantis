@@ -46,9 +46,20 @@ export function DepositModal({
   const [hasSuccessfulDeposit, setHasSuccessfulDeposit] = useState(false)
   
   // Find available balance for selected asset
-  const selectedAssetBalance = depositAsset === 'ETH' 
+  const rawBalance = depositAsset === 'ETH' 
     ? ethBalance 
     : holdings.find(h => h.token.symbol === 'USDC')?.balanceFormatted || '0'
+  
+  // For ETH, we need to reserve gas fees (approximately 0.0001 ETH for a simple transfer)
+  // For USDC, we can use the full balance
+  const GAS_RESERVE_ETH = 0.0001 // Reserve ~0.0001 ETH for gas fees
+  const selectedAssetBalance = depositAsset === 'ETH'
+    ? (() => {
+        const balance = parseFloat(rawBalance) || 0
+        const maxDepositable = Math.max(0, balance - GAS_RESERVE_ETH)
+        return maxDepositable > 0 ? maxDepositable.toFixed(6) : '0'
+      })()
+    : rawBalance
   
   const selectedAssetUSD = depositAsset === 'ETH'
     ? holdings.find(h => h.token.symbol === 'ETH')?.valueUSD || 0
@@ -72,6 +83,25 @@ export function DepositModal({
 
   const handleDeposit = async () => {
     if (!depositAmount) return
+    
+    // Client-side validation: For ETH deposits, check if amount + gas exceeds balance
+    if (depositAsset === 'ETH') {
+      const depositValue = parseFloat(depositAmount)
+      const balanceValue = parseFloat(rawBalance)
+      const GAS_RESERVE_ETH = 0.0001 // Reserve for gas
+      
+      if (isNaN(depositValue) || depositValue <= 0) {
+        return // Invalid amount
+      }
+      
+      // Check if deposit amount + gas reserve exceeds available balance
+      if (depositValue + GAS_RESERVE_ETH > balanceValue) {
+        const maxAllowed = Math.max(0, balanceValue - GAS_RESERVE_ETH)
+        // This will be caught by onDeposit and shown as error, but we can prevent the call
+        console.warn(`[DepositModal] Deposit amount ${depositValue} ETH + gas reserve ${GAS_RESERVE_ETH} ETH exceeds balance ${balanceValue} ETH. Max allowed: ${maxAllowed} ETH`)
+      }
+    }
+    
     try {
       await onDeposit({ amount: depositAmount, asset: depositAsset })
       setHasSuccessfulDeposit(true)
@@ -210,7 +240,10 @@ export function DepositModal({
                   Amount ({depositAsset})
                 </label>
                 <span className="text-xs text-[#9ca3af]">
-                  Available: <span className="text-white font-medium">{selectedAssetBalance} {depositAsset}</span>
+                  Available: <span className="text-white font-medium">{rawBalance} {depositAsset}</span>
+                  {depositAsset === 'ETH' && parseFloat(rawBalance) > GAS_RESERVE_ETH && (
+                    <span className="text-[#6b7280] ml-1">(max: {selectedAssetBalance} after gas)</span>
+                  )}
                 </span>
               </div>
               <div className="relative">
@@ -225,13 +258,35 @@ export function DepositModal({
                 />
                 <button
                   type="button"
-                  onClick={() => setDepositAmount(selectedAssetBalance)}
+                  onClick={() => {
+                    const maxAmount = selectedAssetBalance.trim()
+                    if (maxAmount && parseFloat(maxAmount) > 0) {
+                      setDepositAmount(maxAmount)
+                    }
+                  }}
                   className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-[#8759ff] hover:bg-[#7c4dff] text-white text-xs rounded transition-colors"
                 >
                   MAX
                 </button>
               </div>
-              {selectedAssetUSD > 0 && (
+              {/* Show warning if ETH deposit amount + gas exceeds balance */}
+              {depositAsset === 'ETH' && depositAmount && parseFloat(depositAmount) > 0 && (() => {
+                const depositValue = parseFloat(depositAmount)
+                const balanceValue = parseFloat(rawBalance)
+                const GAS_RESERVE_ETH = 0.0001
+                const exceedsBalance = depositValue + GAS_RESERVE_ETH > balanceValue
+                const maxAllowed = Math.max(0, balanceValue - GAS_RESERVE_ETH)
+                
+                if (exceedsBalance) {
+                  return (
+                    <p className="text-xs text-red-400 mt-1">
+                      ⚠️ Amount too high. You need {GAS_RESERVE_ETH.toFixed(4)} ETH for gas. Max: {maxAllowed.toFixed(6)} ETH
+                    </p>
+                  )
+                }
+                return null
+              })()}
+              {selectedAssetUSD > 0 && !(depositAsset === 'ETH' && depositAmount && parseFloat(depositAmount) > 0 && parseFloat(depositAmount) + 0.0001 > parseFloat(rawBalance)) && (
                 <p className="text-xs text-[#9ca3af]">
                   ≈ ${selectedAssetUSD.toFixed(2)} USD
                 </p>
@@ -258,7 +313,12 @@ export function DepositModal({
 
             {/* Deposit Button */}
             <Button
-              disabled={isDepositing || !depositAmount || Number(depositAmount) <= 0}
+              disabled={
+                isDepositing || 
+                !depositAmount || 
+                Number(depositAmount) <= 0 ||
+                (depositAsset === 'ETH' && parseFloat(depositAmount) + 0.0001 > parseFloat(rawBalance))
+              }
               onClick={handleDeposit}
               className="w-full bg-[#8759ff] hover:bg-[#7c4dff] text-white font-semibold py-3 disabled:opacity-50 disabled:cursor-not-allowed"
             >

@@ -135,7 +135,8 @@ export class WebWalletService {
       const { data, error } = await (supabase
         .from('web_wallets') as any)
         .select('*')
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
 
       if (error) {
         console.error('[WebWalletService] Error fetching wallets:', error);

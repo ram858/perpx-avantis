@@ -72,31 +72,76 @@ export async function GET(request: NextRequest) {
     } else {
       // Web user - use web wallet service
       if (!authContext.webUserId) {
+        console.error('[user-wallets] Web user ID missing from auth context:', authContext)
         return NextResponse.json(
           { error: 'Web user ID required' },
           { status: 400 }
         )
       }
 
+      console.log(`[user-wallets] Fetching wallets for web user ID: ${authContext.webUserId}`)
       const webWalletService = getWebWalletService()
-      const webWallets = await webWalletService.getAllWallets(authContext.webUserId)
-      for (const wallet of webWallets) {
-        wallets.push({
-          id: `web_${wallet.id}`,
-          address: wallet.address,
-          chain: wallet.chain,
-          createdAt: new Date(wallet.created_at),
-          updatedAt: new Date(wallet.updated_at),
-          walletType: wallet.wallet_type === 'trading' ? 'trading' : 'legacy'
-        })
+      
+      try {
+        const webWallets = await webWalletService.getAllWallets(authContext.webUserId)
+        console.log(`[user-wallets] Found ${webWallets.length} wallets for web user ${authContext.webUserId}`)
+        
+        for (const wallet of webWallets) {
+          wallets.push({
+            id: `web_${wallet.id}`,
+            address: wallet.address,
+            chain: wallet.chain,
+            createdAt: new Date(wallet.created_at),
+            updatedAt: new Date(wallet.updated_at),
+            walletType: wallet.wallet_type === 'trading' ? 'trading' : 'legacy'
+          })
+        }
+        
+        // If no wallets found, automatically create one (should have been created during auth, but create as fallback)
+        if (webWallets.length === 0) {
+          console.warn(`[user-wallets] No wallets found for web user ${authContext.webUserId}. Creating wallet now...`)
+          try {
+            const newWallet = await webWalletService.ensureTradingWallet(authContext.webUserId)
+            console.log(`[user-wallets] ✅ Created trading wallet for web user ${authContext.webUserId}: ${newWallet.address}`)
+            wallets.push({
+              id: `web_${newWallet.id}`,
+              address: newWallet.address,
+              chain: newWallet.chain,
+              createdAt: new Date(newWallet.created_at),
+              updatedAt: new Date(newWallet.updated_at),
+              walletType: newWallet.wallet_type === 'trading' ? 'trading' : 'legacy'
+            })
+          } catch (createError) {
+            console.error(`[user-wallets] ❌ Failed to create wallet for web user ${authContext.webUserId}:`, createError)
+            // Don't throw - return empty array instead
+          }
+        }
+      } catch (walletError) {
+        console.error(`[user-wallets] Error fetching wallets for web user ${authContext.webUserId}:`, walletError)
+        throw walletError // Re-throw to be caught by outer catch block
       }
     }
 
     return NextResponse.json({ wallets })
   } catch (error) {
     console.error('Error fetching user wallets:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+    const errorStack = error instanceof Error ? error.stack : undefined
+    
+    // Log full error details for debugging
+    console.error('Full error details:', {
+      message: errorMessage,
+      stack: errorStack,
+      error: error
+    })
+    
     return NextResponse.json(
-      { error: 'Failed to fetch wallets' },
+      { 
+        error: 'Failed to fetch wallets',
+        message: errorMessage,
+        // Only include stack in development
+        ...(process.env.NODE_ENV === 'development' && errorStack ? { stack: errorStack } : {})
+      },
       { status: 500 }
     )
   }
