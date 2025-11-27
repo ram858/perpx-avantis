@@ -177,7 +177,8 @@ export function calculateBudgetLimits(
 }
 
 // Avantis minimum collateral requirement
-const AVANTIS_MIN_COLLATERAL = 11.5; // USDC
+// Updated to match Avantis UI which allows $10 minimum
+const AVANTIS_MIN_COLLATERAL = 10.0; // USDC
 
 // New function to validate and cap budget per position
 export function validateAndCapBudget(

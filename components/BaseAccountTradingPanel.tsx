@@ -28,7 +28,7 @@ export function BaseAccountTradingPanel({
   const [openParams, setOpenParams] = useState({
     symbol: 'BTC',
     collateral: 100,
-    leverage: 10,
+    leverage: 5, // Default 5x (will adjust based on balance)
     isLong: true,
     tp: '',
     sl: '',
@@ -170,7 +170,7 @@ export function BaseAccountTradingPanel({
                   <Input
                     type="number"
                     value={openParams.leverage}
-                    onChange={(e) => setOpenParams({ ...openParams, leverage: parseInt(e.target.value) || 1 })}
+                    onChange={(e) => setOpenParams({ ...openParams, leverage: parseInt(e.target.value) || 5 })}
                     className="bg-[#1a1a1a] border-[#444] text-white text-sm"
                     placeholder="10"
                   />

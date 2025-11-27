@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 class OpenPositionRequest(BaseModel):
     symbol: str = Field(..., description="Trading symbol (e.g., BTC, ETH)")
     collateral: float = Field(..., gt=0, description="Collateral amount in USDC")
-    leverage: int = Field(..., ge=1, le=50, description="Leverage multiplier")
+    leverage: int = Field(..., ge=2, le=50, description="Leverage multiplier (2x-50x)")
     is_long: bool = Field(..., description="True for long, False for short")
     tp: Optional[float] = Field(None, description="Take profit price")
     sl: Optional[float] = Field(None, description="Stop loss price")
@@ -60,7 +60,7 @@ class ApproveUSDCRequest(BaseModel):
 class PrepareOpenPositionRequest(BaseModel):
     symbol: str = Field(..., description="Trading symbol (e.g., BTC, ETH)")
     collateral: float = Field(..., gt=0, description="Collateral amount in USDC")
-    leverage: int = Field(..., ge=1, le=50, description="Leverage multiplier")
+    leverage: int = Field(..., ge=2, le=50, description="Leverage multiplier (2x-50x)")
     is_long: bool = Field(..., description="True for long, False for short")
     address: str = Field(..., description="Base Account address (required for Base Accounts)")
     tp: Optional[float] = Field(None, description="Take profit price")
@@ -128,10 +128,9 @@ async def api_open_position(request: OpenPositionRequest):
     # ==========================================
     # CRITICAL: This is the FIRST line of defense - blocks invalid requests immediately
     # Prevents fund loss from "Transfer First, Validate Later" pattern
-    # User lost $20 yesterday due to LEVERAGE BUG (10000x), not minimum issue
-    # Since leverage is fixed, $20 should work. Minimum is likely $15-$20
-    # GUARANTEE: No request with < $20 reaches trading logic
-    MIN_SAFE_COLLATERAL = 20.0  # Hardcoded to prevent fund loss (leverage bug fixed, $20 should work)
+    # Updated: Avantis UI allows $10 minimum, so we match that
+    # GUARANTEE: No request with < $10 reaches trading logic
+    MIN_SAFE_COLLATERAL = 10.0  # Matches Avantis UI minimum (allows $10 trades)
     if request.collateral < MIN_SAFE_COLLATERAL:
         from fastapi import HTTPException
         raise HTTPException(

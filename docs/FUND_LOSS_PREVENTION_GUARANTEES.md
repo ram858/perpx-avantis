@@ -9,16 +9,16 @@
 ### Layer 1: API Entry Point (`main.py` line 126-136)
 **Location**: First validation before ANY processing
 ```python
-MIN_SAFE_COLLATERAL = 20.0  # Hardcoded safeguard
+MIN_SAFE_COLLATERAL = 10.0  # Matches Avantis UI minimum
 if request.collateral < MIN_SAFE_COLLATERAL:
     raise HTTPException(...)  # BLOCKS request immediately
 ```
-**Guarantee**: ✅ **No request with < $20 reaches trading logic**
+**Guarantee**: ✅ **No request with < $10 reaches trading logic**
 
 ### Layer 2: Trade Parameters Validation (`contract_operations.py` line 41-60)
 **Location**: `validate_trade_params()` - Called BEFORE any network calls
 ```python
-if collateral_amount < MIN_COLLATERAL_USDC:  # $20.0
+if collateral_amount < MIN_COLLATERAL_USDC:  # $10.0
     raise ValueError("❌ CRITICAL: Collateral below minimum...")
 if not 2 <= leverage <= 100:
     raise ValueError("Leverage out of range...")
@@ -39,17 +39,17 @@ if balance_usdc < collateral_amount:
 ### Layer 4: Minimum Collateral Check (`contract_operations.py` line 345-350)
 **Location**: `open_position_via_contract()` - AFTER balance check, BEFORE approvals
 ```python
-if collateral_amount < MIN_COLLATERAL_USDC:  # $20.0
+if collateral_amount < MIN_COLLATERAL_USDC:  # $10.0
     raise ValueError("❌ COLLATERAL TOO LOW...")
 ```
 **Guarantee**: ✅ **Double-check minimum BEFORE any USDC operations**
 
 ### Layer 5: Leverage Validation
 **Location**: Multiple layers ensure leverage is correct
-- API validation: `leverage: int = Field(..., ge=1, le=50)`
-- Parameter validation: `if not 2 <= leverage <= 100: raise ValueError(...)`
+- API validation: `leverage: int = Field(..., ge=2, le=50)` (standardized to 2x-50x)
+- Parameter validation: `if not 2 <= leverage <= 50: raise ValueError(...)` (standardized to 2x-50x)
 - TradeInput construction: `leverage=leverage` (direct pass, no transformation)
-**Guarantee**: ✅ **Leverage is always 10x (or user-specified valid value), never 10000x**
+**Guarantee**: ✅ **Leverage is always within valid range (2x-50x), never exceeds limits**
 
 ## 🚫 What Cannot Happen
 
@@ -76,12 +76,12 @@ if collateral_amount < MIN_COLLATERAL_USDC:  # $20.0
 User Request
     ↓
 [Layer 1] API Entry Point
-    ├─ Check: collateral >= $20? ❌ → REJECT (no processing)
+    ├─ Check: collateral >= $10? ❌ → REJECT (no processing)
     └─ Check: leverage valid? ❌ → REJECT (no processing)
     ↓ ✅ Pass
 [Layer 2] validate_trade_params()
-    ├─ Check: collateral >= $20? ❌ → REJECT (no network calls)
-    ├─ Check: leverage 2-100x? ❌ → REJECT (no network calls)
+    ├─ Check: collateral >= $10? ❌ → REJECT (no network calls)
+    ├─ Check: leverage 2-50x? ❌ → REJECT (no network calls)
     └─ Check: pair_index valid? ❌ → REJECT (no network calls)
     ↓ ✅ Pass
 [Layer 3] Balance Pre-Validation
@@ -89,7 +89,7 @@ User Request
     └─ Check: balance >= collateral? ❌ → REJECT (no transfers)
     ↓ ✅ Pass
 [Layer 4] Minimum Collateral Check
-    └─ Check: collateral >= $20? ❌ → REJECT (no transfers)
+    └─ Check: collateral >= $10? ❌ → REJECT (no transfers)
     ↓ ✅ Pass
 [Layer 5] check_and_approve_usdc()
     ├─ deposit_to_vault_if_needed() (wallet → vault, safe)
@@ -104,7 +104,7 @@ User Request
 ### 1. API Entry Point Safeguard
 **File**: `avantis-service/main.py`
 **Line**: 126-136
-**Protection**: Blocks requests with < $20 collateral
+**Protection**: Blocks requests with < $10 collateral
 
 ### 2. Parameter Validation
 **File**: `avantis-service/contract_operations.py`
@@ -151,7 +151,7 @@ curl -X POST http://localhost:3002/api/open-position \
 # Test 3: Valid trade (should pass all layers)
 curl -X POST http://localhost:3002/api/open-position \
   -H "Content-Type: application/json" \
-  -d '{"symbol":"BTC","collateral":20.0,"leverage":10,"is_long":true,"private_key":"..."}'
+  -d '{"symbol":"BTC","collateral":10.0,"leverage":10,"is_long":true,"private_key":"..."}'
 # Expected: Position opens successfully
 ```
 
@@ -174,7 +174,7 @@ curl -X POST http://localhost:3002/api/open-position \
 
 5. **Minimum is hardcoded**
    - Cannot be accidentally reduced
-   - Set to $20.0 (safe minimum based on testing)
+   - Set to $10.0 (matches Avantis UI minimum)
 
 ## 🎯 Conclusion
 

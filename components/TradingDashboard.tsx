@@ -333,7 +333,7 @@ export function TradingDashboard() {
               <Input
                 type="number"
                 value={config.leverage}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfig((prev: TradingConfig) => ({ ...prev, leverage: parseFloat(e.target.value) || 1 }))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfig((prev: TradingConfig) => ({ ...prev, leverage: parseFloat(e.target.value) || 10 }))}
                 className="bg-[#2a2a2a] border-[#444] text-white"
                 placeholder="5"
               />

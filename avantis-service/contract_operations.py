@@ -14,12 +14,9 @@ from web3 import Web3, AsyncWeb3
 logger = logging.getLogger(__name__)
 
 # --- Constants ---
-# CRITICAL: Based on testing, contract rejects amounts up to $14.99
-# User lost $20 yesterday due to LEVERAGE BUG (10000x), not minimum issue
-# Since leverage is fixed, $20 should work. Setting to $20 as safeguard.
-# Testing shows: $14.99 rejected, so minimum is likely $15-$20
-# DO NOT REDUCE THIS - funds will be transferred but position will fail!
-MIN_COLLATERAL_USDC = 20.0  # Protocol minimum (contract requires $20+ based on testing - prevents fund loss)
+# Updated: Avantis UI allows $10 minimum, so we match that
+# Previous $20 was too conservative - actual minimum is $10 as confirmed by Avantis UI
+MIN_COLLATERAL_USDC = 10.0  # Protocol minimum (matches Avantis UI - allows $10 minimum)
 USDC_DECIMALS = 6
 PRICE_DECIMALS = 10         # Avantis uses 10 decimals for price/TP/SL in structs
 SLIPPAGE_DEFAULT = 1.0      # 1%
@@ -53,8 +50,8 @@ def validate_trade_params(
             f"DO NOT attempt trade - funds will be transferred but position will fail with BELOW_MIN_POS!"
         )
     
-    if not 2 <= leverage <= 100:
-        raise ValueError(f"Leverage {leverage}x is out of range (2x-100x).")
+    if not 2 <= leverage <= 50:
+        raise ValueError(f"Leverage {leverage}x is out of range (2x-50x).")
     
     if pair_index < 0:
         raise ValueError(f"Invalid pair index: {pair_index}")
@@ -472,15 +469,15 @@ async def _build_manual_open_tx(trader_client, trader_address, trade_input, curr
     
     # CRITICAL: Use leverage_override if provided (from original function call)
     # TradeInput.leverage can be wrong (shows 100000000000x instead of 10x)
-    if leverage_override and 1 <= leverage_override <= 100:
+    if leverage_override and 2 <= leverage_override <= 50:
         leverage_val = leverage_override
         logger.info(f"✅ Using override leverage: {leverage_val}x")
     else:
         leverage_val = getattr(trade_input, 'leverage', 1)
-        # Validate leverage
-        if leverage_val > 100 or leverage_val < 1:
-            logger.warning(f"⚠️ Invalid leverage from TradeInput: {leverage_val}, defaulting to 10x")
-            leverage_val = 10
+        # Validate leverage (standardized to 2x-50x)
+        if leverage_val > 50 or leverage_val < 2:
+            logger.warning(f"⚠️ Invalid leverage from TradeInput: {leverage_val}, defaulting to 5x")
+            leverage_val = 5
     
     # TP/SL are already in wei from trade_input
     tp_val = getattr(trade_input, 'tp', 0)

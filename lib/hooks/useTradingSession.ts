@@ -5,6 +5,7 @@ import { useTrading } from './useTrading';
 import { usePositions } from './usePositions';
 import { useTradingFee } from './useTradingFee';
 import { useIntegratedWallet } from '@/lib/wallet/IntegratedWalletContext';
+import { calculateLeverageFromBalance, getDefaultLeverage } from '@/lib/utils/leverageCalculator';
 
 export interface TradingSessionState {
   id: string;
@@ -29,7 +30,7 @@ export function useTradingSession() {
   const { startTrading: startTradingAPI, stopTrading: stopTradingAPI, getTradingSession, getTradingSessions } = useTrading();
   const { positionData, fetchPositions } = usePositions();
   const { payTradingFee, isPayingFee } = useTradingFee();
-  const { refreshBalances } = useIntegratedWallet();
+  const { refreshBalances, avantisBalance } = useIntegratedWallet();
   
   const [tradingSession, setTradingSession] = useState<TradingSessionState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -162,22 +163,28 @@ export function useTradingSession() {
       //   // Don't fail the trading start if balance refresh fails
       // });
 
-      // Step 3: Start trading session (this should return quickly)
+      // Step 3: Calculate leverage based on balance if not specified
+      const budget = config.maxBudget || config.investmentAmount || 50;
+      const calculatedLeverage = config.leverage 
+        ? config.leverage 
+        : calculateLeverageFromBalance(budget, config.leverage);
+      
+      // Step 4: Start trading session (this should return quickly)
       onProgress?.('session', 'Starting trading session...');
       console.log('[useTradingSession] Starting trading session with config:', {
-        totalBudget: config.maxBudget || config.investmentAmount || 50,
+        totalBudget: budget,
         profitGoal: config.profitGoal || config.targetProfit || 10,
         maxPositions: config.maxPerSession || 3,
-        leverage: config.leverage || 1,
+        leverage: calculatedLeverage, // Balance-based: $10-20=2x-3x, $20+=5x default
         lossThreshold: config.lossThreshold || 10
       });
       
       try {
         const session = await startTradingAPI({
-          totalBudget: config.maxBudget || config.investmentAmount || 50,
+          totalBudget: budget,
           profitGoal: config.profitGoal || config.targetProfit || 10,
           maxPositions: config.maxPerSession || 3,
-          leverage: config.leverage || 1,
+          leverage: calculatedLeverage, // Balance-based: $10-20=2x-3x, $20+=5x default
           lossThreshold: config.lossThreshold || 10
         });
         

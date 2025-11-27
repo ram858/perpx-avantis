@@ -229,8 +229,8 @@ export const TRADING_VALIDATION = {
 
   leverage: (): ValidationRule[] => [
     VALIDATION_RULES.required('Leverage is required'),
-    VALIDATION_RULES.minValue(1, 'Minimum leverage is 1x'),
-    VALIDATION_RULES.maxValue(20, 'Maximum leverage is 20x'),
+    VALIDATION_RULES.minValue(2, 'Minimum leverage is 2x'),
+    VALIDATION_RULES.maxValue(50, 'Maximum leverage is 50x'),
     VALIDATION_RULES.integer('Must be a whole number')
   ],
 } as const

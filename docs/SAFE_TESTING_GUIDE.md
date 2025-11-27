@@ -15,7 +15,7 @@ After the $12 funds transfer issue, we understand your concern. This guide provi
 
 ### 2. **Validation Added** ✅
 - **Minimum Collateral**: $11.5 USDC (enforced before transaction)
-- **Leverage Range**: 2x - 100x (validated before transaction)
+- **Leverage Range**: 2x - 50x (validated before transaction, standardized across all layers)
 - **Location**: `avantis-service/contract_operations.py` line 36-49
 
 ### 3. **Manual Method Used** ✅
@@ -78,7 +78,7 @@ tail -f /tmp/avantis-service.log | grep -i "leverage\|validation\|collateral"
 # Look for these confirmations:
 # ✅ "Using override leverage: 10x" (not 100000000000x)
 # ✅ "Collateral $12.00 is above protocol minimum $11.5"
-# ✅ "Leverage 10x is within valid range (2x-100x)"
+# ✅ "Leverage 10x is within valid range (2x-50x)"
 ```
 
 ---
@@ -112,7 +112,7 @@ Before testing with real funds, verify these:
 
 - [ ] **Validation Active**
   - Minimum collateral check: $11.5 USDC
-  - Leverage range check: 2x-100x
+  - Leverage range check: 2x-50x
   - Location: `avantis-service/contract_operations.py:36-49`
 
 - [ ] **Manual Method Enabled**
