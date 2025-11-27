@@ -182,65 +182,96 @@ export function useBaseMiniApp() {
 
   // Authenticate with Base Account (Quick Auth)
   const authenticate = useCallback(async () => {
-    if (!contextChecked || !isBaseContext || !sdk?.quickAuth) {
+    if (!contextChecked) {
+      console.log('[useBaseMiniApp] Context not checked yet, skipping authentication');
+      return null;
+    }
+    
+    if (!isBaseContext) {
+      console.log('[useBaseMiniApp] Not in Base context, skipping authentication');
+      return null;
+    }
+    
+    if (!sdk?.quickAuth) {
+      console.error('[useBaseMiniApp] SDK or quickAuth not available');
       return null;
     }
 
+    console.log('[useBaseMiniApp] Starting authentication flow...');
     setAuth(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
       // Add overall timeout for authentication (30 seconds)
       const authTimeout = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Authentication timeout')), 30000);
+        setTimeout(() => reject(new Error('Authentication timeout after 30 seconds')), 30000);
       });
 
       const authFlow = async () => {
-        // Get JWT token from Base Account
-        const { token } = await sdk.quickAuth.getToken();
-        console.log('[useBaseMiniApp] Got Base Account token');
-        
-        // Get Base Account address (with its own timeout)
-        const address = await getBaseAccountAddress();
-        console.log('[useBaseMiniApp] Got Base Account address:', address);
-        
-        // Verify token with backend to get user FID and internal JWT
-        const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
-        console.log('[useBaseMiniApp] Verifying token with backend...');
-        
-        // Send Base Account address as query parameter if we have it
-        const addressParam = address ? `?address=${encodeURIComponent(address)}` : '';
-        const response = await sdk.quickAuth.fetch(`${baseUrl}/api/auth/base-account${addressParam}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        try {
+          // Get JWT token from Base Account
+          console.log('[useBaseMiniApp] Step 1: Getting Base Account token...');
+          const { token } = await sdk.quickAuth.getToken();
+          console.log('[useBaseMiniApp] ✅ Got Base Account token');
+          
+          // Get Base Account address (with its own timeout)
+          console.log('[useBaseMiniApp] Step 2: Getting Base Account address...');
+          const address = await getBaseAccountAddress();
+          console.log('[useBaseMiniApp] ✅ Got Base Account address:', address || 'null');
+          
+          // Verify token with backend to get user FID and internal JWT
+          const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+          console.log('[useBaseMiniApp] Step 3: Verifying token with backend at:', `${baseUrl}/api/auth/base-account`);
+          
+          // Send Base Account address as query parameter if we have it
+          const addressParam = address ? `?address=${encodeURIComponent(address)}` : '';
+          const response = await sdk.quickAuth.fetch(`${baseUrl}/api/auth/base-account${addressParam}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || 'Failed to verify Base Account token');
+          console.log('[useBaseMiniApp] Backend response status:', response.status);
+
+          if (!response.ok) {
+            let errorData: any = {};
+            try {
+              errorData = await response.json();
+            } catch (e) {
+              console.error('[useBaseMiniApp] Failed to parse error response:', e);
+            }
+            const errorMessage = errorData.error || `HTTP ${response.status}: Failed to verify Base Account token`;
+            console.error('[useBaseMiniApp] Backend verification failed:', errorMessage);
+            throw new Error(errorMessage);
+          }
+
+          const data = await response.json();
+          console.log('[useBaseMiniApp] ✅ Authentication successful, FID:', data.fid);
+          
+          // Store the internal JWT token (for API calls) along with Base Account token and address
+          setAuth({
+            token: data.token || token, // Use internal JWT for API calls
+            fid: data.fid,
+            address: address || data.address || null, // Base Account address
+            isLoading: false,
+            error: null,
+          });
+
+          return { 
+            token: data.token || token, 
+            fid: data.fid,
+            address: address || data.address || null
+          };
+        } catch (stepError) {
+          console.error('[useBaseMiniApp] Error in authentication step:', stepError);
+          throw stepError;
         }
-
-        const data = await response.json();
-        console.log('[useBaseMiniApp] Authentication successful, FID:', data.fid);
-        
-        // Store the internal JWT token (for API calls) along with Base Account token and address
-        setAuth({
-          token: data.token || token, // Use internal JWT for API calls
-          fid: data.fid,
-          address: address || data.address || null, // Base Account address
-          isLoading: false,
-          error: null,
-        });
-
-        return { 
-          token: data.token || token, 
-          fid: data.fid,
-          address: address || data.address || null
-        };
       };
 
       return await Promise.race([authFlow(), authTimeout]);
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Base Account authentication failed');
-      console.error('[useBaseMiniApp] Authentication error:', error);
+      console.error('[useBaseMiniApp] ❌ Authentication error:', error.message);
+      if (error.stack) {
+        console.error('[useBaseMiniApp] Error stack:', error.stack);
+      }
       setAuth(prev => ({
         ...prev,
         isLoading: false,
@@ -248,7 +279,7 @@ export function useBaseMiniApp() {
       }));
       return null;
     }
-  }, [contextChecked, isBaseContext, getBaseAccountAddress]);
+  }, [contextChecked, isBaseContext, getBaseAccountAddress, sdk]);
 
   return {
     isReady,

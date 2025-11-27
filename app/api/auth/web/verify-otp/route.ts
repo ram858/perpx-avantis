@@ -47,18 +47,75 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const authService = getWebAuthService();
-    const walletService = getWebWalletService();
+    console.log(`[API] Starting OTP verification for phone: ${phoneNumber}`);
+
+    let authService: WebAuthService;
+    let walletService: WebWalletService;
+    
+    try {
+      authService = getWebAuthService();
+      walletService = getWebWalletService();
+      console.log('[API] Services initialized successfully');
+    } catch (serviceError) {
+      console.error('[API] Failed to initialize services:', serviceError);
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Service initialization failed: ${serviceError instanceof Error ? serviceError.message : 'Unknown error'}`,
+        },
+        { status: 500 }
+      );
+    }
 
     // Create or get web user by phone number
-    const user = await authService.createOrGetWebUserByPhone(phoneNumber);
+    let user;
+    try {
+      console.log('[API] Creating/getting web user by phone number...');
+      user = await authService.createOrGetWebUserByPhone(phoneNumber);
+      console.log(`[API] ✅ User created/retrieved: ID ${user.id}`);
+    } catch (userError) {
+      console.error('[API] ❌ Failed to create/get web user:', userError);
+      const errorMessage = userError instanceof Error ? userError.message : 'Unknown error';
+      // Check if it's a database connection error
+      if (errorMessage.includes('fetch failed') || errorMessage.includes('network') || errorMessage.includes('ECONNREFUSED')) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Database connection failed. Please check your Supabase configuration.',
+          },
+          { status: 500 }
+        );
+      }
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Failed to create web user: ${errorMessage}`,
+        },
+        { status: 500 }
+      );
+    }
 
     // Generate JWT token
-    const token = await authService.generateJwtToken(user);
+    let token: string;
+    try {
+      console.log('[API] Generating JWT token...');
+      token = await authService.generateJwtToken(user);
+      console.log('[API] ✅ JWT token generated');
+    } catch (tokenError) {
+      console.error('[API] ❌ Failed to generate JWT token:', tokenError);
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Failed to generate token: ${tokenError instanceof Error ? tokenError.message : 'Unknown error'}`,
+        },
+        { status: 500 }
+      );
+    }
 
     // Automatically create trading wallet for the user (if doesn't exist)
     let wallet;
     try {
+      console.log(`[API] Ensuring trading wallet exists for user ${user.id}...`);
       wallet = await walletService.ensureTradingWallet(user.id);
       if (!wallet) {
         throw new Error('Wallet creation returned null');
@@ -66,11 +123,22 @@ export async function POST(request: NextRequest) {
       console.log(`[API] ✅ Trading wallet ready for web user ${user.id}: ${wallet.address}`);
     } catch (walletError) {
       console.error(`[API] ❌ Failed to create trading wallet for web user ${user.id}:`, walletError);
+      const errorMessage = walletError instanceof Error ? walletError.message : 'Unknown error';
+      // Check if it's a database connection error
+      if (errorMessage.includes('fetch failed') || errorMessage.includes('network') || errorMessage.includes('ECONNREFUSED')) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Database connection failed while creating wallet. Please check your Supabase configuration.',
+          },
+          { status: 500 }
+        );
+      }
       // Return error - wallet creation is critical
       return NextResponse.json(
         {
           success: false,
-          error: `Failed to create trading wallet: ${walletError instanceof Error ? walletError.message : 'Unknown error'}`,
+          error: `Failed to create trading wallet: ${errorMessage}`,
         },
         { status: 500 }
       );
@@ -93,10 +161,14 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('[API] OTP verification error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'OTP verification failed';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    console.error('[API] Error stack:', errorStack);
+    
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : 'OTP verification failed',
+        error: errorMessage,
       },
       { status: 500 }
     );

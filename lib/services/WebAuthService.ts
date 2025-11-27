@@ -46,18 +46,28 @@ export class WebAuthService {
    */
   async createOrGetWebUserByPhone(phoneNumber: string): Promise<WebUser> {
     try {
+      console.log(`[WebAuthService] Getting Supabase client...`);
       const supabase = getSupabaseClient();
+      console.log(`[WebAuthService] Supabase client obtained`);
 
       // Check if user exists by phone number
-      const { data: existingUser } = await (supabase
+      console.log(`[WebAuthService] Checking for existing user with phone: ${phoneNumber}`);
+      const { data: existingUser, error: queryError } = await (supabase
         .from('web_users') as any)
         .select('*')
         .eq('phone_number', phoneNumber)
         .single();
 
+      if (queryError && queryError.code !== 'PGRST116') {
+        // PGRST116 means no rows found, which is fine
+        console.error('[WebAuthService] Error querying user:', queryError);
+        throw new Error(`Database query failed: ${queryError.message}`);
+      }
+
       if (existingUser) {
+        console.log(`[WebAuthService] Found existing user: ID ${existingUser.id}`);
         // Update last login
-        const { data: updatedUser } = await (supabase
+        const { data: updatedUser, error: updateError } = await (supabase
           .from('web_users') as any)
           .update({
             last_login_at: new Date().toISOString(),
@@ -67,10 +77,16 @@ export class WebAuthService {
           .select()
           .single();
 
+        if (updateError) {
+          console.error('[WebAuthService] Error updating user:', updateError);
+          throw new Error(`Failed to update user: ${updateError.message}`);
+        }
+
         return updatedUser as WebUser;
       }
 
       // Create new user with phone number
+      console.log(`[WebAuthService] Creating new user with phone: ${phoneNumber}`);
       const { data: newUser, error } = await (supabase
         .from('web_users') as any)
         .insert({
@@ -84,14 +100,26 @@ export class WebAuthService {
 
       if (error) {
         console.error('[WebAuthService] Error creating user:', error);
+        // Provide more detailed error message
+        if (error.message.includes('fetch') || error.message.includes('network')) {
+          throw new Error(`Database connection failed: ${error.message}. Please check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.`);
+        }
         throw new Error(`Failed to create web user: ${error.message}`);
+      }
+
+      if (!newUser) {
+        throw new Error('User creation returned null data');
       }
 
       console.log(`[WebAuthService] Created new web user: ID ${newUser.id}, Phone: ${phoneNumber}`);
       return newUser as WebUser;
     } catch (error) {
       console.error('[WebAuthService] Unexpected error creating/getting user:', error);
-      throw error;
+      // Re-throw with more context if it's not already an Error
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`Unexpected error: ${String(error)}`);
     }
   }
 

@@ -89,7 +89,15 @@ export default function WebAuthPage() {
         body: JSON.stringify({ phoneNumber, otp }),
       })
 
-      const data = await response.json()
+      let data;
+      try {
+        data = await response.json()
+      } catch (parseError) {
+        console.error('Failed to parse response:', parseError)
+        setError('Invalid response from server. Please try again.')
+        setIsLoading(false)
+        return
+      }
 
       if (response.ok && data.success) {
         // Store token and user in localStorage
@@ -111,10 +119,15 @@ export default function WebAuthPage() {
         // Redirect to home
         router.push('/home')
       } else {
-        setError(data.error || 'Invalid OTP')
+        // Show detailed error message from API
+        const errorMessage = data.error || `Server error (${response.status}). Please try again.`
+        console.error('OTP verification failed:', errorMessage)
+        setError(errorMessage)
       }
     } catch (err) {
-      setError('Network error. Please try again.')
+      const errorMessage = err instanceof Error ? err.message : 'Network error'
+      console.error('Network error during OTP verification:', err)
+      setError(`Network error: ${errorMessage}. Please check your connection and try again.`)
     } finally {
       setIsLoading(false)
     }

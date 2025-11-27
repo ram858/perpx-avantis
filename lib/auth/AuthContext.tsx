@@ -123,12 +123,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       // Wait for Base SDK to be ready
       if (!baseReady) {
+        console.log('⏳ Waiting for Base SDK to be ready...')
         return
       }
 
       try {
         console.log('🔵 Base context detected, authenticating with Base Account...')
-        const baseAuth = await authenticateBase()
+        
+        // Add timeout for authentication (35 seconds to be safe)
+        const authTimeout = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error('Authentication timeout after 35 seconds'))
+          }, 35000)
+        })
+
+        const baseAuth = await Promise.race([
+          authenticateBase(),
+          authTimeout
+        ])
         
         if (baseAuth) {
           // Base Account authentication successful
@@ -144,10 +156,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
           setUser(baseUser)
           console.log('✅ Base Account authentication successful, FID:', baseAuth.fid, 'Address:', baseAuth.address)
         } else {
-          console.error('❌ Base Account authentication failed')
+          console.error('❌ Base Account authentication failed - authenticateBase returned null')
+          // Set error state so user can see what went wrong
+          setToken(null)
+          setUser(null)
         }
       } catch (error) {
-        console.error('Auth check failed:', error)
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        console.error('❌ Auth check failed:', errorMessage)
+        if (error instanceof Error) {
+          console.error('Error stack:', error.stack)
+        }
+        // Log the error for debugging
+        if (typeof window !== 'undefined') {
+          console.error('Full error object:', error)
+        }
         setToken(null)
         setUser(null)
       } finally {
