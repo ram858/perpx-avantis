@@ -43,6 +43,15 @@ def validate_trade_params(
     """
     Fast validation to catch errors before network calls.
     CRITICAL: This prevents fund loss by catching errors BEFORE any transfers.
+    
+    Note on Leverage Limits:
+    - Current validation: 2x-50x (conservative default)
+    - Actual Avantis limits vary by asset class:
+      * Crypto assets: typically up to 100x
+      * Forex: up to 75x
+      * Commodities: varies by asset
+    - The 50x cap here is a conservative safety limit
+    - To support higher leverage for crypto, consider adding asset-specific validation
     """
     if collateral_amount < MIN_COLLATERAL_USDC:
         raise ValueError(
@@ -55,109 +64,6 @@ def validate_trade_params(
     
     if pair_index < 0:
         raise ValueError(f"Invalid pair index: {pair_index}")
-
-async def deposit_to_vault_if_needed(
-    trader_client,
-    trader_address: str,
-    required_amount: float
-) -> None:
-    """
-    Auto-deposit wallet USDC to Avantis vault if vault balance is insufficient.
-    This makes the wallet work as the vault automatically.
-    """
-    try:
-        # Check vault balance (what get_usdc_balance returns)
-        vault_balance_raw = await trader_client.get_usdc_balance()
-        vault_balance = float(vault_balance_raw) if vault_balance_raw else 0
-        
-        # Check wallet USDC balance directly
-        w3 = trader_client.web3 if hasattr(trader_client, 'web3') else None
-        if not w3:
-            # Fallback: get web3 from client
-            from avantis_client import get_avantis_client
-            from config import settings
-            from web3 import Web3
-            rpc_url = settings.avantis_rpc_url or "https://mainnet.base.org"
-            w3 = Web3(Web3.HTTPProvider(rpc_url))
-        
-        from web3 import Web3 as Web3Type
-        usdc_address = Web3Type.to_checksum_address("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")  # Base mainnet USDC
-        usdc_abi = [{"constant":True,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"type":"function"}]
-        usdc_contract = w3.eth.contract(address=usdc_address, abi=usdc_abi)
-        wallet_balance_wei = usdc_contract.functions.balanceOf(trader_address).call()
-        wallet_balance = float(wallet_balance_wei) / 1e6
-        
-        logger.info(f"💰 Vault balance: ${vault_balance:.2f} | Wallet balance: ${wallet_balance:.2f} | Required: ${required_amount:.2f}")
-        
-        # If vault balance is insufficient but wallet has funds, deposit to vault
-        if vault_balance < required_amount and wallet_balance >= required_amount:
-            deposit_amount = min(required_amount * 1.5, wallet_balance * 0.95)  # Deposit 1.5x required or 95% of wallet (leave some for gas)
-            
-            logger.info(f"🏦 Auto-depositing ${deposit_amount:.2f} USDC from wallet to Avantis vault...")
-            
-            # Get vault contract address (avUSDC vault)
-            # Avantis uses ERC-4626 vault - need to find the vault address
-            # For now, try to deposit via Trading contract's deposit function if available
-            try:
-                # Check if Trading contract has deposit function
-                TradingContract = trader_client.contracts.get("Trading")
-                if TradingContract and hasattr(TradingContract.functions, 'deposit'):
-                    deposit_amount_wei = int(deposit_amount * 1e6)
-                    # Approve USDC to trading contract first
-                    trader_address_checksum = Web3Type.to_checksum_address(trader_address)
-                    usdc_contract_approve = w3.eth.contract(
-                        address=usdc_address,
-                        abi=[{
-                            "constant": False,
-                            "inputs": [{"name": "_spender", "type": "address"}, {"name": "_value", "type": "uint256"}],
-                            "name": "approve",
-                            "outputs": [{"name": "", "type": "bool"}],
-                            "type": "function"
-                        }]
-                    )
-                    approve_tx = usdc_contract_approve.functions.approve(
-                        TradingContract.address,
-                        deposit_amount_wei
-                    ).build_transaction({
-                        "from": trader_address_checksum,
-                        "nonce": w3.eth.get_transaction_count(trader_address_checksum, 'pending'),  # FIXED: Include pending transactions
-                    })
-                    approve_receipt = await trader_client.sign_and_get_receipt(approve_tx)
-                    logger.info(f"✅ USDC approved for vault deposit")
-                    
-                    # Wait for approval to propagate
-                    await asyncio.sleep(2)
-                    
-                    # Deposit to vault
-                    deposit_tx = TradingContract.functions.deposit(deposit_amount_wei).build_transaction({
-                        "from": trader_address_checksum,
-                        "nonce": w3.eth.get_transaction_count(trader_address_checksum, 'pending'),  # FIXED: Include pending transactions
-                    })
-                    deposit_receipt = await trader_client.sign_and_get_receipt(deposit_tx)
-                    logger.info(f"✅ Deposited ${deposit_amount:.2f} USDC to Avantis vault")
-                    
-                    # Wait for deposit to propagate
-                    await asyncio.sleep(3)
-                else:
-                    logger.warning("⚠️ Vault deposit function not found. Manual deposit may be required.")
-            except Exception as deposit_error:
-                logger.warning(f"⚠️ Auto-deposit failed: {deposit_error}. Continuing with available vault balance.")
-        
-        # Check vault balance again after potential deposit
-        vault_balance_raw = await trader_client.get_usdc_balance()
-        vault_balance = float(vault_balance_raw) if vault_balance_raw else 0
-        
-        if vault_balance < required_amount:
-            raise ValueError(
-                f"Insufficient USDC in vault. Need ${required_amount:.2f}, Have ${vault_balance:.2f}. "
-                f"Wallet has ${wallet_balance:.2f} but auto-deposit failed or not available."
-            )
-    except ValueError:
-        raise  # Re-raise ValueError as-is
-    except Exception as e:
-        logger.error(f"❌ Vault deposit check failed: {e}")
-        # Don't fail the trade if deposit check fails - might still work
-        pass
 
 async def _manual_approve_usdc(
     trader_client,
@@ -259,37 +165,46 @@ async def check_and_approve_usdc(
     required_amount: float
 ) -> None:
     """
-    Checks balance and allowance. Auto-deposits to vault and approves if necessary.
-    Prevents 'Execution Reverted' gas waste.
+    Checks wallet balance and allowance. Approves if necessary.
+    Does NOT move funds - only grants permission for openTrade to pull funds.
     """
     try:
-        # 1. Auto-deposit wallet funds to vault if needed
-        await deposit_to_vault_if_needed(trader_client, trader_address, required_amount)
+        # 1. Check WALLET Balance (Not Vault Balance)
+        # We need to make sure your wallet has the cash.
+        w3 = trader_client.web3 if hasattr(trader_client, 'web3') else None
+        if not w3:
+            # Fallback: get web3 from client
+            from config import settings
+            from web3 import Web3
+            rpc_url = settings.avantis_rpc_url or "https://mainnet.base.org"
+            w3 = Web3(Web3.HTTPProvider(rpc_url))
         
-        # 2. Check Vault Balance (after potential deposit)
-        balance_raw = await trader_client.get_usdc_balance()
-        balance_usdc = float(balance_raw) if balance_raw else 0
+        from web3 import Web3 as Web3Type
+        usdc_address = Web3Type.to_checksum_address("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")  # Base mainnet USDC
+        usdc_abi = [{"constant":True,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"type":"function"}]
+        usdc_contract = w3.eth.contract(address=usdc_address, abi=usdc_abi)
+        wallet_balance_wei = usdc_contract.functions.balanceOf(trader_address).call()
+        balance_usdc = float(wallet_balance_wei) / 1e6
         
-        logger.info(f"💰 Vault Balance: ${balance_usdc:.2f} | Required: ${required_amount:.2f}")
+        logger.info(f"💰 Wallet Balance: ${balance_usdc:.2f} | Required: ${required_amount:.2f}")
+        
         if balance_usdc < required_amount:
-            raise ValueError(
-                f"Insufficient USDC in vault. Need ${required_amount:.2f}, Have ${balance_usdc:.2f}."
-            )
+            raise ValueError(f"Insufficient USDC in Wallet. Have ${balance_usdc:.2f}, Need ${required_amount:.2f}")
 
-        # 3. Check Allowance
+        # 2. Check Allowance
         allowance_raw = await trader_client.get_usdc_allowance_for_trading()
         allowance_usdc = float(allowance_raw) if allowance_raw else 0
         
-        # 4. Approve if needed
+        # 3. Approve if needed
         if allowance_usdc < required_amount:
             logger.info(f"🔓 Approving contract (Current allowance: ${allowance_usdc:.2f})...")
             
-            # Use manual approval directly (bypasses SDK gas estimation issues)
-            await _manual_approve_usdc(trader_client, trader_address, required_amount * 2)
-            logger.info("✅ USDC Approved via manual method.")
-            
-            # Wait briefly for propagation
+            # This grants Permission, it does not move money yet.
+            await _manual_approve_usdc(trader_client, trader_address, required_amount * 10) 
+            logger.info("✅ USDC Approved.")
             await asyncio.sleep(2)
+        else:
+            logger.info("✅ Allowance sufficient.")
         
     except Exception as e:
         logger.error(f"❌ Pre-flight check failed: {e}")
@@ -329,25 +244,12 @@ async def open_position_via_contract(
     signer = trader_client.get_signer()
     trader_address = signer.get_ethereum_address()
     
-    # ==========================================
-    # 🛡️ LAYER 3: Balance Pre-Validation
-    # ==========================================
-    # CRITICAL: Check balance BEFORE any transfers to prevent fund loss
-    # The Avantis contract transfers funds FIRST, then validates (Transfer First, Validate Later pattern)
-    # If validation fails, funds are already transferred but position isn't created
-    # We MUST validate balance is sufficient BEFORE calling check_and_approve_usdc
-    # GUARANTEE: Insufficient balance blocks trade BEFORE any transfers
-    balance_raw = await trader_client.get_usdc_balance()
-    balance_usdc = float(balance_raw) if balance_raw else 0
-    
-    if balance_usdc < collateral_amount:
-        raise ValueError(
-            f"❌ INSUFFICIENT BALANCE: Need ${collateral_amount:.2f}, have ${balance_usdc:.2f}. "
-            f"DO NOT attempt trade - funds will be transferred but position will fail!"
-        )
+    # CRITICAL: Log the address being used for trading
+    logger.info(f"🔍 [CONTRACT_OPS] Trading address from signer: {trader_address}")
+    logger.info(f"🔍 [CONTRACT_OPS] This address will receive/use funds for position opening")
     
     # ==========================================
-    # 🛡️ LAYER 4: Minimum Collateral Check
+    # 🛡️ LAYER 3: Minimum Collateral Check
     # ==========================================
     # Additional safety: Check if collateral meets minimum (prevent BELOW_MIN_POS)
     # GUARANTEE: Below-minimum collateral blocks trade BEFORE any transfers
@@ -357,14 +259,7 @@ async def open_position_via_contract(
             f"DO NOT attempt trade - funds will be transferred but position will fail with BELOW_MIN_POS!"
         )
     
-    logger.info(f"✅ All pre-validation passed: Balance ${balance_usdc:.2f} >= Collateral ${collateral_amount:.2f} >= Minimum ${MIN_COLLATERAL_USDC:.2f}")
-    
-    # ==========================================
-    # 🛡️ LAYER 5: USDC Approval (ONLY after all validations pass)
-    # ==========================================
-    # GUARANTEE: No USDC operations until all safeguards pass
-    # Check balance and approve USDC (ONLY after validation passes)
-    await check_and_approve_usdc(trader_client, trader_address, collateral_amount)
+    logger.info(f"✅ Pre-validation passed: Collateral ${collateral_amount:.2f} >= Minimum ${MIN_COLLATERAL_USDC:.2f}")
 
     # Step 3: Prepare Data
     # Get current price estimate (needed for manual fallback limit price)
@@ -403,6 +298,72 @@ async def open_position_via_contract(
     
     logger.info(f"📝 Created TradeInput: open_collateral={collateral_wei}, original_collateral_wei={original_collateral_wei}")
 
+    # ==========================================
+    # 💰 CRITICAL: Opening Fee Calculation
+    # ==========================================
+    # Calculate opening fee (0.04% - 0.1% of position size, varies by market skew)
+    # This must be done BEFORE approval to ensure wallet has sufficient balance
+    opening_fee = 0.0
+    opening_fee_percentage = 0.0
+    try:
+        if hasattr(trader_client, 'fee_parameters') and hasattr(trader_client.fee_parameters, 'get_opening_fee'):
+            opening_fee_raw = await trader_client.fee_parameters.get_opening_fee(trade_input=trade_input)
+            # Convert from wei to USDC (6 decimals)
+            opening_fee = float(opening_fee_raw) / (10 ** USDC_DECIMALS) if opening_fee_raw else 0.0
+            opening_fee_percentage = (opening_fee / collateral_amount * 100) if collateral_amount > 0 else 0.0
+            logger.info(f"💰 Opening fee: ${opening_fee:.4f} USDC ({opening_fee_percentage:.4f}%)")
+        else:
+            logger.warning("⚠️ Fee parameters not available, using 0 for opening fee calculation")
+    except Exception as fee_error:
+        logger.warning(f"⚠️ Could not calculate opening fee: {fee_error}. Continuing with collateral only.")
+        opening_fee = 0.0
+    
+    # Calculate total required funds (collateral + opening fee)
+    total_required = collateral_amount + opening_fee
+    
+    # ==========================================
+    # 🛡️ Loss Protection Information (Optional)
+    # ==========================================
+    # Avantis provides loss rebates on trades that help balance platform OI skew
+    loss_protection_percentage = None
+    loss_protection_amount = None
+    try:
+        if hasattr(trader_client, 'trading_parameters') and hasattr(trader_client.trading_parameters, 'get_loss_protection_for_trade_input'):
+            loss_protection_info = await trader_client.trading_parameters.get_loss_protection_for_trade_input(
+                trade_input,
+                opening_fee_usdc=opening_fee
+            )
+            if loss_protection_info:
+                # Extract loss protection data (structure may vary by SDK version)
+                loss_protection_percentage = getattr(loss_protection_info, 'percentage', getattr(loss_protection_info, 'loss_protection_percentage', None))
+                loss_protection_amount = getattr(loss_protection_info, 'amount', getattr(loss_protection_info, 'loss_protection_amount', None))
+                
+                if loss_protection_percentage is not None:
+                    if loss_protection_amount is None:
+                        # Calculate amount if not provided
+                        loss_protection_amount = collateral_amount * (loss_protection_percentage / 100)
+                    logger.info(f"🛡️ Loss protection: {loss_protection_percentage:.2f}% (up to ${loss_protection_amount:.2f})")
+    except Exception as loss_prot_error:
+        # This is informational only - don't fail if it errors
+        logger.debug(f"Could not fetch loss protection info: {loss_prot_error}")
+    
+    # ==========================================
+    # 💰 Trade Cost Breakdown
+    # ==========================================
+    logger.info(f"💰 Trade Cost Breakdown:")
+    logger.info(f"   - Collateral: ${collateral_amount:.2f}")
+    logger.info(f"   - Opening Fee: ${opening_fee:.4f} ({opening_fee_percentage:.4f}%)")
+    logger.info(f"   - Total Required: ${total_required:.2f}")
+    
+    # ==========================================
+    # 🛡️ LAYER 4: USDC Approval (Wallet Balance Check + Approval)
+    # ==========================================
+    # GUARANTEE: No USDC operations until all safeguards pass
+    # check_and_approve_usdc checks wallet balance and approves if needed
+    # It does NOT transfer funds - only grants permission for openTrade to pull funds
+    # CRITICAL: Use total_required (collateral + fee) to ensure sufficient balance
+    await check_and_approve_usdc(trader_client, trader_address, total_required)
+
     # Step 4: Build & Execute Transaction
     # Use Manual Fallback directly (proven to work reliably)
     try:
@@ -423,7 +384,15 @@ async def open_position_via_contract(
         # Step 5: Sign & Send (Securely)
         receipt = await trader_client.sign_and_get_receipt(open_tx)
         
-        return _format_receipt(receipt, pair_index, "open")
+        # Format receipt with opening fee information
+        return _format_receipt(
+            receipt, 
+            pair_index, 
+            "open",
+            opening_fee=opening_fee,
+            total_cost=total_required,
+            collateral_amount=collateral_amount
+        )
     except Exception as e:
         error_msg = str(e)
         # Check for BELOW_MIN_POS error (contract-level validation)
@@ -487,9 +456,12 @@ async def _build_manual_open_tx(trader_client, trader_address, trade_input, curr
     if isinstance(sl_val, float):
         sl_val = int(sl_val)
     
+    # CRITICAL: Verify trader_address is correct before building trade struct
+    logger.info(f"🔍 [CONTRACT_OPS] Building trade struct with trader: {trader_address}")
+    
     # Build trade struct matching contract ABI exactly
     trade_struct = {
-        'trader': trader_address,
+        'trader': trader_address,  # CRITICAL: This must match the signer address
         'pairIndex': pair_idx,
         'index': 0,
         'initialPosToken': 0,
@@ -501,6 +473,8 @@ async def _build_manual_open_tx(trader_client, trader_address, trade_input, curr
         'sl': sl_val,
         'timestamp': 0,
     }
+    
+    logger.info(f"🔍 [CONTRACT_OPS] Trade struct trader field: {trade_struct['trader']}")
 
     collateral_usdc = collateral_wei / 1e6
     logger.info(f"🔧 Building TX: {pair_idx} | ${collateral_usdc:.2f} | {leverage_val}x | {'LONG' if is_long_val else 'SHORT'}")
@@ -541,6 +515,13 @@ async def _build_manual_open_tx(trader_client, trader_address, trade_input, curr
     
     slippage_contract_units = int(slippage * 1e8)  # 1% = 1e8
 
+    # CRITICAL: Log Trading contract address before building transaction
+    trading_contract_address = TradingContract.address if hasattr(TradingContract, 'address') else 'UNKNOWN'
+    logger.info(f"🔍 [CONTRACT_OPS] Trading contract address: {trading_contract_address}")
+    logger.info(f"🔍 [CONTRACT_OPS] Transaction will be sent TO: {trading_contract_address}")
+    logger.info(f"🔍 [CONTRACT_OPS] Funds will be transferred FROM: {trader_address}")
+    logger.info(f"🔍 [CONTRACT_OPS] Trade struct trader field: {trade_struct.get('trader', 'MISSING')}")
+    
     # Build transaction (async for AsyncContract)
     contract_func = TradingContract.functions.openTrade(
         trade_struct,
@@ -554,7 +535,7 @@ async def _build_manual_open_tx(trader_client, trader_address, trade_input, curr
         from config import settings
         rpc_url = settings.avantis_rpc_url or 'https://mainnet.base.org'
         w3_gas = Web3Type(Web3Type.HTTPProvider(rpc_url))
-        base_gas_price = await asyncio.to_thread(w3_gas.eth.gas_price)
+        base_gas_price = await asyncio.to_thread(lambda: w3_gas.eth.gas_price)
         # Add 20% to gas price to allow replacing pending transactions if needed
         gas_price = int(base_gas_price * 1.2)
         logger.info(f"⛽ Gas price: {gas_price / 1e9:.2f} gwei (base: {base_gas_price / 1e9:.2f} gwei)")
@@ -574,7 +555,41 @@ async def _build_manual_open_tx(trader_client, trader_address, trade_input, curr
     if gas_price:
         tx_params["gasPrice"] = gas_price
     
+    # CRITICAL: Build transaction and verify the "to" address
     tx = await contract_func.build_transaction(tx_params)
+    
+    # CRITICAL: Verify transaction destination address
+    if 'to' in tx:
+        tx_to_address = tx['to']
+        logger.info(f"🔍 [CONTRACT_OPS] Transaction 'to' address: {tx_to_address}")
+        
+        # Verify it's the Trading contract, not an EOA
+        if tx_to_address.lower() == trading_contract_address.lower():
+            logger.info(f"✅ [CONTRACT_OPS] Transaction destination is correct: Trading contract")
+        else:
+            logger.error(f"❌ [CONTRACT_OPS] CRITICAL: Transaction destination mismatch!")
+            logger.error(f"   Expected: {trading_contract_address}")
+            logger.error(f"   Actual: {tx_to_address}")
+            logger.error(f"   This will cause funds to go to the wrong address!")
+            raise ValueError(
+                f"Transaction destination address mismatch: Expected Trading contract {trading_contract_address}, "
+                f"but transaction is being sent to {tx_to_address}. This will cause funds to be lost!"
+            )
+    else:
+        logger.warning(f"⚠️ [CONTRACT_OPS] Transaction missing 'to' field - this is unusual")
+    
+    # CRITICAL: Verify trader address in trade struct matches signer address
+    if trade_struct.get('trader', '').lower() != trader_address.lower():
+        logger.error(f"❌ [CONTRACT_OPS] CRITICAL: Trade struct trader mismatch!")
+        logger.error(f"   Signer address: {trader_address}")
+        logger.error(f"   Trade struct trader: {trade_struct.get('trader', 'MISSING')}")
+        logger.error(f"   This will cause funds to go to the wrong address!")
+        raise ValueError(
+            f"Trade struct trader address mismatch: Signer is {trader_address} but trade struct has {trade_struct.get('trader')}. "
+            f"This will cause funds to be sent to the wrong address!"
+        )
+    
+    logger.info(f"✅ [CONTRACT_OPS] All address validations passed")
     
     return tx
 
@@ -701,7 +716,14 @@ async def get_positions_via_contract(trader_client, address: Optional[str] = Non
 # 4. Utilities
 # ==========================================
 
-def _format_receipt(receipt: Any, pair_index: int, action: str) -> Dict[str, Any]:
+def _format_receipt(
+    receipt: Any, 
+    pair_index: int, 
+    action: str,
+    opening_fee: Optional[float] = None,
+    total_cost: Optional[float] = None,
+    collateral_amount: Optional[float] = None
+) -> Dict[str, Any]:
     """Standardizes receipt output."""
     # Handle ReceiptDict or AttributeDict
     tx_hash = receipt.get('transactionHash') if isinstance(receipt, dict) else getattr(receipt, 'transactionHash', None)
@@ -718,7 +740,8 @@ def _format_receipt(receipt: Any, pair_index: int, action: str) -> Dict[str, Any
     if status == 1 or status == '0x1':
         block_number = receipt.get('blockNumber', 0) if isinstance(receipt, dict) else getattr(receipt, 'blockNumber', 0)
         logger.info(f"✅ {action.capitalize()} Successful! TX: {tx_hash}")
-        return {
+        
+        result = {
             'success': True,
             'tx_hash': str(tx_hash),
             'pair_index': pair_index,
@@ -726,6 +749,16 @@ def _format_receipt(receipt: Any, pair_index: int, action: str) -> Dict[str, Any
             'block': block_number,
             'receipt': receipt
         }
+        
+        # Add fee information if provided (for open positions)
+        if opening_fee is not None:
+            result['opening_fee'] = opening_fee
+        if total_cost is not None:
+            result['total_cost'] = total_cost
+        if collateral_amount is not None:
+            result['collateral'] = collateral_amount
+        
+        return result
     else:
         logger.error(f"❌ Transaction Reverted. TX: {tx_hash}")
         raise ValueError(f"Transaction failed/reverted on chain. Hash: {tx_hash}")

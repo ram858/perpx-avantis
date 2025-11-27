@@ -655,10 +655,15 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
       }
     } catch (error) {
       console.error('Error refreshing wallets:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load wallets';
+      // For web users, wallet should already exist - this is a loading error, not creation error
+      const displayError = user?.webUserId 
+        ? `Failed to load wallet: ${errorMessage}. Please check your connection and try again.`
+        : errorMessage;
       setState(prev => ({
         ...prev,
         isLoading: false,
-        error: error instanceof Error ? error.message : 'Failed to load wallets',
+        error: displayError,
         baseAccountAddress: user?.baseAccountAddress || null,
         tradingWalletAddress: null
       }));

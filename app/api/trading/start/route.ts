@@ -151,6 +151,25 @@ export async function POST(request: NextRequest) {
       }
       console.log(`[API] [${requestId}] ✅ Using trading wallet for automated trading:`, wallet.address, 'for FID:', authContext.fid)
       console.log(`[API] [${requestId}] Private key available:`, farcasterWallet.privateKey ? `${farcasterWallet.privateKey.slice(0, 10)}...${farcasterWallet.privateKey.slice(-4)}` : 'MISSING')
+      
+      // CRITICAL: Verify the private key matches the wallet address
+      if (farcasterWallet.privateKey) {
+        const { ethers } = await import('ethers');
+        const derivedWallet = new ethers.Wallet(farcasterWallet.privateKey);
+        const derivedAddress = derivedWallet.address;
+        if (derivedAddress.toLowerCase() !== farcasterWallet.address.toLowerCase()) {
+          console.error(`[API] [${requestId}] ❌ CRITICAL: Private key does NOT match wallet address!`);
+          console.error(`[API] [${requestId}] Wallet address from DB: ${farcasterWallet.address}`);
+          console.error(`[API] [${requestId}] Address from private key: ${derivedAddress}`);
+          console.error(`[API] [${requestId}] This will cause funds to go to the wrong address!`);
+          return NextResponse.json({
+            success: false,
+            error: 'Wallet address mismatch: Private key does not match stored wallet address. Please contact support.'
+          }, { status: 500 });
+        }
+        console.log(`[API] [${requestId}] ✅ Verified: Private key matches wallet address`);
+      }
+      
       addLog(requestId, 'Trading wallet loaded', { address: wallet.address, hasPrivateKey: !!farcasterWallet.privateKey })
     } else {
       // Web user

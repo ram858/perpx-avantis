@@ -214,17 +214,29 @@ export function useTrading() {
       const result = await makeRequest('/api/trading/sessions');
 
       // Check if we have a valid response (successful fetch)
-      if (result.error) {
+      // If result has error but also has sessions array, use the sessions (graceful degradation)
+      if (result.error && (!result.sessions || result.sessions.length === 0)) {
+        // Only throw error if there are no sessions to return
         throw new Error(result.error || 'Failed to fetch trading sessions');
       }
 
-      return result.sessions.map((session: any) => ({
+      // Return sessions array (empty array is valid - means no active sessions)
+      const sessions = result.sessions || [];
+      return sessions.map((session: any) => ({
         ...session,
         startTime: new Date(session.startTime),
         endTime: session.endTime ? new Date(session.endTime) : undefined,
       }));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch trading sessions';
+      
+      // If it's a 404 or network error, return empty array instead of throwing
+      // This prevents UI errors when trading engine is not available
+      if (errorMessage.includes('404') || errorMessage.includes('Failed to fetch') || errorMessage.includes('Network')) {
+        console.warn('[useTrading] Trading sessions endpoint unavailable, returning empty array');
+        return [];
+      }
+      
       setError(errorMessage);
       throw new Error(errorMessage);
     } finally {

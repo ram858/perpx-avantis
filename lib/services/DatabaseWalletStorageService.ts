@@ -93,21 +93,55 @@ export class DatabaseWalletStorageService {
   /**
    * Get a wallet from the database (without decrypting private key)
    */
-  async getWallet(fid: number, chain: string): Promise<StoredWallet | null> {
+  async getWallet(fid: number, chain: string, walletType?: 'trading' | 'base-account'): Promise<StoredWallet | null> {
     try {
       const supabase: SupabaseClient<Database> = getSupabaseClient();
 
-      // @ts-ignore - Supabase type inference issue
-      const { data, error } = await supabase
+      let query = supabase
         .from('wallets')
         .select('*')
         .eq('fid', fid)
-        .eq('chain', chain)
-        .single();
+        .eq('chain', chain);
+      
+      // If wallet_type is specified, filter by it (important when multiple wallets exist)
+      if (walletType) {
+        query = query.eq('wallet_type', walletType);
+      }
+      
+      // @ts-ignore - Supabase type inference issue
+      const { data, error } = await query.single();
 
       if (error) {
         if (error.code === 'PGRST116') {
           // No rows returned - wallet doesn't exist
+          return null;
+        }
+        // If multiple rows exist and wallet_type not specified, try to get trading wallet
+        if (error.code === 'PGRST116' || error.message?.includes('multiple')) {
+          if (!walletType) {
+            console.warn(`[DatabaseWalletStorageService] Multiple wallets found for FID ${fid}, chain ${chain}. Trying to get trading wallet...`);
+            // Try to get trading wallet specifically
+            const { data: tradingData, error: tradingError } = await supabase
+              .from('wallets')
+              .select('*')
+              .eq('fid', fid)
+              .eq('chain', chain)
+              .eq('wallet_type', 'trading')
+              .single();
+            
+            if (!tradingError && tradingData) {
+              const wallet = tradingData as any;
+              return {
+                fid: wallet.fid,
+                address: wallet.address,
+                encryptedPrivateKey: wallet.encrypted_private_key,
+                iv: wallet.iv,
+                chain: wallet.chain,
+                walletType: wallet.wallet_type,
+                createdAt: wallet.created_at,
+              };
+            }
+          }
           return null;
         }
         console.error('[DatabaseWalletStorageService] Error fetching wallet:', error);

@@ -44,8 +44,30 @@ async def open_position(
         raise ValueError("Private key is required. Each user must provide their own private key.")
     
     try:
+        # CRITICAL: Verify private key derives to expected address BEFORE creating client
+        from eth_account import Account
+        from web3 import Web3
+        
+        # Derive address from private key
+        account = Account.from_key(private_key)
+        derived_address = account.address
+        
+        logger.info(f"🔍 [TRADE_OPS] Private key provided: {private_key[:10]}...{private_key[-4:]}")
+        logger.info(f"🔍 [TRADE_OPS] Derived address from private key: {derived_address}")
+        logger.info(f"🔍 [TRADE_OPS] This address will be used for trading operations")
+        
         # Get Avantis client
         client = get_avantis_client(private_key=private_key)
+        
+        # Verify client address matches derived address
+        client_address = client.get_address()
+        if client_address.lower() != derived_address.lower():
+            logger.error(f"❌ [TRADE_OPS] ADDRESS MISMATCH!")
+            logger.error(f"   Derived from PK: {derived_address}")
+            logger.error(f"   Client address: {client_address}")
+            raise ValueError(f"Address mismatch: Private key derives to {derived_address} but client shows {client_address}")
+        
+        logger.info(f"✅ [TRADE_OPS] Address verified: {client_address}")
         trader_client = client.get_client()
         
         # Get pair index using SDK's official method (preferred) or fallback to our registry

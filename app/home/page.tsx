@@ -1315,8 +1315,18 @@ export default function HomePage() {
     // 4. No wallets exist for this user
     // 5. Not already creating a wallet (prevent multiple simultaneous calls)
     // 6. User is Farcaster (web users already have wallet from OTP verification)
-    if (user?.fid && !user?.webUserId && !isLoading && !primaryWallet && allWallets && allWallets.length === 0 && !error) {
-      // Add a small delay to ensure auth is fully complete
+    // 7. For web users, if no wallet is loaded after 2 seconds, try refreshing (wallet should exist)
+    if (user?.webUserId && !isLoading && !primaryWallet && allWallets && allWallets.length === 0) {
+      // Web user - wallet should already exist, try refreshing after a delay
+      const timer = setTimeout(() => {
+        console.log('[HomePage] Web user detected but no wallet loaded, attempting to refresh...');
+        refreshWallets().catch(err => {
+          console.error('[HomePage] Wallet refresh error for web user:', err);
+        });
+      }, 2000);
+      return () => clearTimeout(timer);
+    } else if (user?.fid && !user?.webUserId && !isLoading && !primaryWallet && allWallets && allWallets.length === 0 && !error) {
+      // Farcaster user - create wallet if needed
       const timer = setTimeout(() => {
         createWallet('ethereum').catch(err => {
           console.error('[HomePage] Wallet creation error:', err)
@@ -1324,7 +1334,7 @@ export default function HomePage() {
       }, 500)
       return () => clearTimeout(timer)
     }
-  }, [user?.fid, user?.webUserId, isLoading, primaryWallet, allWallets, createWallet, error])
+  }, [user?.fid, user?.webUserId, isLoading, primaryWallet, allWallets, createWallet, refreshWallets, error])
 
   // NOTE: Automatic post-deposit refresh removed
   // User must manually click refresh button to update balances after deposit confirms
@@ -1603,7 +1613,15 @@ export default function HomePage() {
             <WalletSetupCard 
               isLoading={isLoading} 
               error={error} 
-              onRetry={() => createWallet('ethereum')}
+              onRetry={async () => {
+                // For web users, try refreshing wallets first (wallet should already exist)
+                if (user?.webUserId) {
+                  await refreshWallets();
+                } else {
+                  // For Farcaster users, create wallet
+                  await createWallet('ethereum');
+                }
+              }}
               hasExistingWallet={allWallets && allWallets.length > 0}
             />
           ) : (

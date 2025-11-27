@@ -135,6 +135,29 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Check for active trading sessions that might automatically use deposited funds
+    let activeSessionWarning = null
+    try {
+      const tradingEngineUrl = process.env.TRADING_ENGINE_URL || 'http://localhost:3001'
+      const sessionsResponse = await fetch(`${tradingEngineUrl}/api/trading/sessions`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        }
+      }).catch(() => null)
+      
+      if (sessionsResponse?.ok) {
+        const sessionsData = await sessionsResponse.json()
+        const activeSessions = sessionsData.sessions?.filter((s: any) => s.status === 'running') || []
+        if (activeSessions.length > 0) {
+          activeSessionWarning = `⚠️ WARNING: You have ${activeSessions.length} active trading session(s). Deposited funds may be automatically used to open positions.`
+        }
+      }
+    } catch (sessionCheckError) {
+      // Silently fail - don't block deposit if session check fails
+      console.warn('[API] Failed to check active sessions:', sessionCheckError)
+    }
+
     return NextResponse.json({
       success: true,
       network: {
@@ -145,7 +168,8 @@ export async function POST(request: NextRequest) {
       amount,
       depositAddress: destination,
       transaction,
-      note: `Send ${asset} from your Base wallet to fund your PrepX trading vault`
+      note: `Send ${asset} from your Base wallet to fund your PrepX trading vault`,
+      warning: activeSessionWarning
     })
   } catch (error) {
     console.error('[API] Deposit preparation failed:', error)

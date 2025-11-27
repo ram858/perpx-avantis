@@ -156,7 +156,8 @@ export class BaseAccountWalletService {
   async getWalletWithKey(fid: number, chain: string = 'ethereum'): Promise<BaseAccountWallet | null> {
     try {
       const resolvedChain = this.normalizeChain(chain);
-      const stored = await this.walletStorage.getWallet(fid, resolvedChain);
+      // Always get trading wallet (not base-account) when requesting with key
+      const stored = await this.walletStorage.getWallet(fid, resolvedChain, 'trading');
       
       if (!stored) {
         return null;

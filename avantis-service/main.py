@@ -132,7 +132,6 @@ async def api_open_position(request: OpenPositionRequest):
     # GUARANTEE: No request with < $10 reaches trading logic
     MIN_SAFE_COLLATERAL = 10.0  # Matches Avantis UI minimum (allows $10 trades)
     if request.collateral < MIN_SAFE_COLLATERAL:
-        from fastapi import HTTPException
         raise HTTPException(
             status_code=400,
             detail=f"❌ CRITICAL: Collateral ${request.collateral} is below safe minimum ${MIN_SAFE_COLLATERAL}. "
