@@ -1,11 +1,14 @@
 """Position and balance query operations."""
 from typing import List, Dict, Any, Optional
+from eth_account import Account
+from web3 import Web3
 from avantis_client import get_avantis_client
 from symbols import get_symbol
 from config import settings
 from utils import retry_on_network_error
 from contract_operations import (
-    get_positions_via_contract
+    get_positions_via_contract,
+    get_all_open_trades_for_trader,
 )
 import logging
 
@@ -31,49 +34,68 @@ async def get_positions(
         raise ValueError("Either private_key or address must be provided")
     
     try:
-        client = get_avantis_client(private_key=private_key, address=address)
-        trader_client = client.get_client()
-        user_address = client.get_address()
+        # Derive address from private key if provided
+        if private_key:
+            account = Account.from_key(private_key)
+            trader_address = account.address
+        else:
+            trader_address = Web3.to_checksum_address(address)
         
-        # Get positions using contract methods
-        positions = await get_positions_via_contract(trader_client, address=user_address)
+        # Get all open trades with full enrichment (Trade + TradeInfo + OpenLimitOrder)
+        trades = await get_all_open_trades_for_trader(
+            trader_address=trader_address
+        )
         
         # Format positions for API response and add symbol information
         formatted_positions = []
-        for pos in positions:
-            pair_index = pos.get("pair_index")
+        for trade in trades:
+            pair_index = trade.get("pair_index")
             symbol = get_symbol(pair_index) if pair_index is not None else None
             
-            entry_price = pos.get("entry_price", 0)
-            leverage = pos.get("leverage", 1)
-            is_long = pos.get("is_long", False)
-            liquidation_price = pos.get("liquidation_price")
+            # Extract trade data
+            open_price = trade.get("open_price", 0)
+            leverage = trade.get("leverage", 1)
+            is_long = trade.get("is_long", False)
+            position_size_usdc = trade.get("position_size_usdc", 0)
             
-            # Calculate liquidation price if not provided by SDK
+            # Calculate liquidation price
             # Formula: For LONG: Entry * (1 - (1/Leverage)), For SHORT: Entry * (1 + (1/Leverage))
             # This is a simplified calculation - actual Avantis liquidation considers maintenance margin
-            if not liquidation_price and entry_price > 0 and leverage > 0:
+            liquidation_price = None
+            if open_price > 0 and leverage > 0:
                 if is_long:
                     # Long position: liquidates when price drops
-                    liquidation_price = entry_price * (1 - (1.0 / leverage))
+                    liquidation_price = open_price * (1 - (1.0 / leverage))
                 else:
                     # Short position: liquidates when price rises
-                    liquidation_price = entry_price * (1 + (1.0 / leverage))
+                    liquidation_price = open_price * (1 + (1.0 / leverage))
+            
+            # Extract trade info if available
+            trade_info = trade.get("info", {})
+            open_limit_order = trade.get("open_limit_order")
             
             formatted_positions.append({
                 "pair_index": pair_index,
                 "symbol": symbol,
                 "is_long": is_long,
-                "size": pos.get("size", 0),
-                "entry_price": entry_price,
-                "current_price": pos.get("current_price", 0),
+                "size": position_size_usdc,  # Position size in USDC
+                "entry_price": open_price,
+                "current_price": open_price,  # TODO: Fetch current price from oracle if needed
                 "leverage": leverage,
-                "collateral": pos.get("collateral", 0),
-                "pnl": pos.get("pnl", 0),
-                "pnl_percentage": pos.get("pnl_percentage", 0),
+                "collateral": position_size_usdc / leverage if leverage > 0 else 0,  # Collateral = size / leverage
+                "pnl": 0,  # TODO: Calculate PnL from current price if needed
+                "pnl_percentage": 0,  # TODO: Calculate PnL percentage if needed
                 "liquidation_price": liquidation_price,
-                "take_profit": pos.get("take_profit"),
-                "stop_loss": pos.get("stop_loss"),
+                "take_profit": trade.get("tp"),
+                "stop_loss": trade.get("sl"),
+                "timestamp": trade.get("timestamp"),
+                # Additional enriched data for chat page
+                "open_interest_usdc": trade_info.get("open_interest_usdc", 0),
+                "tp_last_updated": trade_info.get("tp_last_updated"),
+                "sl_last_updated": trade_info.get("sl_last_updated"),
+                "being_market_closed": trade_info.get("being_market_closed", False),
+                "loss_protection": trade_info.get("loss_protection", 0),
+                "open_limit_order": open_limit_order,
             })
         
         logger.debug(f"Retrieved {len(formatted_positions)} positions")
@@ -92,7 +114,7 @@ async def get_balance(
     """
     Get account balance information for a user.
     
-    Uses SDK's get_usdc_balance() which returns wallet balance (not vault balance).
+    Uses direct Web3 contract calls to get wallet USDC balance (not vault balance).
     This allows trading directly from wallet without manual deposit to vault.
     
     Args:
@@ -106,34 +128,44 @@ async def get_balance(
         raise ValueError("Either private_key or address must be provided")
     
     try:
-        client = get_avantis_client(private_key=private_key, address=address)
-        trader_client = client.get_client()
-        user_address = client.get_address()
+        # Derive address from private key if provided
+        if private_key:
+            account = Account.from_key(private_key)
+            user_address = account.address
+        else:
+            user_address = Web3.to_checksum_address(address)
         
-        # Get wallet USDC balance directly from contract (not vault)
-        # SDK's get_usdc_balance() checks vault, we need wallet balance for trading
-        w3 = client.web3  # Use client's web3 instance
-        from web3 import Web3 as Web3Type
-        usdc_address = Web3Type.to_checksum_address("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")  # Base mainnet USDC
-        usdc_abi = [{"constant":True,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"type":"function"}]
+        # Get Web3 instance
+        rpc_url = settings.get_effective_rpc_url()
+        w3 = Web3(Web3.HTTPProvider(rpc_url))
+        if not w3.is_connected():
+            raise RuntimeError(f"Web3 provider not reachable: {rpc_url}")
+        
+        # Get wallet USDC balance directly from contract
+        usdc_address = Web3.to_checksum_address(settings.usdc_token_address)
+        usdc_abi = [
+            {
+                "constant": True,
+                "inputs": [{"name": "_owner", "type": "address"}],
+                "name": "balanceOf",
+                "outputs": [{"name": "", "type": "uint256"}],
+                "type": "function"
+            }
+        ]
         usdc_contract = w3.eth.contract(address=usdc_address, abi=usdc_abi)
         balance_wei = usdc_contract.functions.balanceOf(user_address).call()
         usdc_balance = float(balance_wei) / 1e6  # USDC has 6 decimals
         
         # Get USDC allowance for trading
         try:
-            allowance_raw = await trader_client.get_usdc_allowance_for_trading()
-            usdc_allowance = float(allowance_raw) if allowance_raw else 0.0
+            usdc_allowance = await get_usdc_allowance(private_key=private_key) if private_key else 0.0
         except Exception:
             usdc_allowance = 0.0
         
         # Get positions to calculate margin used
         try:
-            positions, _ = await trader_client.trade.get_trades(user_address)
-            margin_used = sum(
-                float(getattr(t.trade if hasattr(t, 'trade') else t, 'open_collateral', 0)) / 1e6
-                for t in positions
-            )
+            positions = await get_positions(private_key=private_key, address=address)
+            margin_used = sum(pos.get("collateral", 0) for pos in positions)
         except Exception:
             margin_used = 0.0
         
@@ -184,54 +216,55 @@ async def get_usdc_allowance(
     private_key: str
 ) -> float:
     """
-    💳 SAFE ALLOWANCE FETCHING (NO WRONG ABI CALLS)
-    
-    Safely fetch USDC allowance.
-    WILL NOT call any unknown SDK function that may be wrong.
+    Get USDC allowance for trading contract using direct Web3 calls.
     
     Args:
         private_key: User's private key (required - backend wallet)
         
     Returns:
-        USDC allowance amount
+        USDC allowance amount in USDC units (not wei)
     """
     if not private_key:
         raise ValueError("private_key is required")
     
     try:
-        client = get_avantis_client(private_key=private_key)
-        trader_client = client.get_client()
+        # Derive address from private key
+        account = Account.from_key(private_key)
+        owner_address = account.address
         
-        import inspect
+        # Get Web3 instance
+        rpc_url = settings.get_effective_rpc_url()
+        w3 = Web3(Web3.HTTPProvider(rpc_url))
+        if not w3.is_connected():
+            raise RuntimeError(f"Web3 provider not reachable: {rpc_url}")
         
-        # Allowed safe functions
-        safe_methods = [
-            "get_usdc_allowance_for_trading",
-            "get_usdc_allowance",
+        # Get USDC contract
+        usdc_address = Web3.to_checksum_address(settings.usdc_token_address)
+        spender_address = Web3.to_checksum_address(settings.avantis_trading_contract_address)
+        
+        usdc_abi = [
+            {
+                "constant": True,
+                "inputs": [
+                    {"name": "_owner", "type": "address"},
+                    {"name": "_spender", "type": "address"}
+                ],
+                "name": "allowance",
+                "outputs": [{"name": "", "type": "uint256"}],
+                "type": "function"
+            }
         ]
         
-        for m in safe_methods:
-            if hasattr(trader_client, m):
-                method = getattr(trader_client, m)
-                
-                try:
-                    if inspect.iscoroutinefunction(method):
-                        allowance = await method()
-                    else:
-                        allowance = method()
-                    
-                    # Convert wei to USDC
-                    return float(allowance) / 1e6
-                    
-                except Exception:
-                    continue  # try next safe method
+        usdc_contract = w3.eth.contract(address=usdc_address, abi=usdc_abi)
+        allowance_wei = usdc_contract.functions.allowance(owner_address, spender_address).call()
         
-        # Final fallback — return 0 if all methods fail
-        logger.warning("Could not fetch USDC allowance using any method")
-        return 0.0
+        # Convert from wei to USDC (6 decimals)
+        allowance_usdc = float(allowance_wei) / 1e6
+        
+        return allowance_usdc
         
     except Exception as e:
-        logger.error(f"Error getting safe USDC allowance: {e}")
+        logger.error(f"Error getting USDC allowance: {e}")
         raise
 
 
@@ -241,33 +274,80 @@ async def approve_usdc(
     private_key: str
 ) -> Dict[str, Any]:
     """
-    🔐 Direct Manual USDC Approval
-    
-    Uses manual approval with fixed gas limit to bypass SDK gas estimation issues.
+    Approve USDC for trading contract using direct Web3 calls.
     
     Args:
-        amount: Amount to approve (0 for unlimited)
+        amount: Amount to approve (0 for unlimited, use max uint256)
         private_key: User's private key (required - each user provides their own)
         
     Returns:
         Dictionary with approval result
     """
     try:
-        client = get_avantis_client(private_key=private_key)
-        trader_client = client.get_client()
+        # Derive address from private key
+        account = Account.from_key(private_key)
+        owner_address = account.address
         
-        logger.info(f"🔓 Approving USDC: {amount} for {client.get_address()}")
+        # Get Web3 instance
+        rpc_url = settings.get_effective_rpc_url()
+        w3 = Web3(Web3.HTTPProvider(rpc_url))
+        if not w3.is_connected():
+            raise RuntimeError(f"Web3 provider not reachable: {rpc_url}")
         
-        # Use manual approval directly (bypasses SDK gas estimation issues)
-        from contract_operations import _manual_approve_usdc
-        await _manual_approve_usdc(trader_client, client.get_address(), amount)
+        # Get USDC contract
+        usdc_address = Web3.to_checksum_address(settings.usdc_token_address)
+        spender_address = Web3.to_checksum_address(settings.avantis_trading_contract_address)
         
-        logger.info("✅ USDC Approved via manual method")
+        # Convert amount to wei (USDC has 6 decimals)
+        if amount == 0:
+            # Unlimited approval
+            amount_wei = 2**256 - 1
+        else:
+            amount_wei = int(amount * 1e6)
+        
+        usdc_abi = [
+            {
+                "constant": False,
+                "inputs": [
+                    {"name": "_spender", "type": "address"},
+                    {"name": "_value", "type": "uint256"}
+                ],
+                "name": "approve",
+                "outputs": [{"name": "", "type": "bool"}],
+                "type": "function"
+            }
+        ]
+        
+        usdc_contract = w3.eth.contract(address=usdc_address, abi=usdc_abi)
+        
+        # Build transaction
+        nonce = w3.eth.get_transaction_count(owner_address, "pending")
+        tx = usdc_contract.functions.approve(spender_address, amount_wei).build_transaction({
+            "from": owner_address,
+            "nonce": nonce,
+            "chainId": w3.eth.chain_id,
+        })
+        
+        # Estimate gas
+        try:
+            gas = w3.eth.estimate_gas(tx)
+            tx["gas"] = gas
+        except Exception as e:
+            logger.warning(f"Gas estimation failed: {e}, using default")
+            tx["gas"] = 100000  # Default gas limit for approve
+        
+        # Sign and send transaction
+        signed_tx = account.sign_transaction(tx)
+        tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        tx_hash_hex = tx_hash.hex()
+        
+        logger.info(f"✅ USDC approval transaction sent: {tx_hash_hex}")
+        
         return {
             "success": True,
             "amount": amount,
-            "tx_hash": "manual_approval",
-            "address": client.get_address()
+            "tx_hash": tx_hash_hex,
+            "address": owner_address
         }
         
     except Exception as e:

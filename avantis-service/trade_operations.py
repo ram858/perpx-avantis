@@ -7,7 +7,10 @@ from utils import retry_on_network_error
 from contract_operations import (
     open_position_via_contract,
     close_position_via_contract,
-    close_all_positions_via_contract
+    close_all_positions_via_contract,
+    update_tp_sl_via_contract,
+    update_margin_via_contract,
+    cancel_open_limit_order_via_contract,
 )
 from position_queries import get_usdc_allowance, approve_usdc
 import logging
@@ -40,6 +43,11 @@ async def open_position(
     Returns:
         Dictionary with operation result
     """
+    logger.info("="*80)
+    logger.info("🚀 [TRACE] open_position() CALLED")
+    logger.info(f"   Symbol: {symbol}, Collateral: ${collateral}, Leverage: {leverage}x, Long: {is_long}")
+    logger.info("="*80)
+    
     if not private_key:
         raise ValueError("Private key is required. Each user must provide their own private key.")
     
@@ -68,43 +76,32 @@ async def open_position(
             raise ValueError(f"Address mismatch: Private key derives to {derived_address} but client shows {client_address}")
         
         logger.info(f"✅ [TRADE_OPS] Address verified: {client_address}")
-        trader_client = client.get_client()
         
-        # Get pair index using SDK's official method (preferred) or fallback to our registry
-        pair_index = None
-        try:
-            # Try SDK's official method first
-            if hasattr(trader_client, 'pairs_cache') and hasattr(trader_client.pairs_cache, 'get_pair_index'):
-                pair_index = await trader_client.pairs_cache.get_pair_index(f"{symbol}/USD")
-                logger.info(f"✅ Got pair index from SDK: {pair_index} for {symbol}/USD")
-        except Exception as sdk_error:
-            logger.warning(f"SDK pair index lookup failed: {sdk_error}. Using fallback registry.")
-        
-        # Fallback to our own registry if SDK method failed
+        # Get pair index from our registry (no SDK)
+        pair_index = get_pair_index(symbol)
         if pair_index is None:
-            pair_index = get_pair_index(symbol)
-            if pair_index is None:
-                raise SymbolNotFoundError(f"Symbol {symbol} not found in registry and SDK lookup failed")
-            logger.info(f"Using fallback pair index: {pair_index} for {symbol}")
+            raise SymbolNotFoundError(f"Symbol {symbol} not found in registry")
+        logger.info(f"Using pair index: {pair_index} for {symbol}")
         
         # Check and approve USDC if needed
-        await _ensure_usdc_approval(client, collateral)
+        await _ensure_usdc_approval(private_key, collateral)
         
-        # Open position using official SDK method
+        # Open position using direct contract calls
         result = await open_position_via_contract(
-            trader_client=trader_client,
             pair_index=pair_index,
             collateral_amount=collateral,
             leverage=leverage,
             is_long=is_long,
             take_profit=tp,
             stop_loss=sl,
-            slippage_percentage=1.0  # Default 1% slippage
+            slippage_percentage=1.0,  # Default 1% slippage
+            private_key=private_key
         )
         
         logger.info(f"Opened position: {symbol} | {('LONG' if is_long else 'SHORT')} | "
                    f"Collateral: ${collateral} | Leverage: {leverage}x")
         
+        tx_hash = result.get("tx_hash") if isinstance(result, dict) else str(result)
         return {
             "success": True,
             "pair_index": pair_index,
@@ -112,7 +109,8 @@ async def open_position(
             "is_long": is_long,
             "collateral": collateral,
             "leverage": leverage,
-            "tx_hash": result.get("tx_hash") if isinstance(result, dict) else str(result),
+            "tx_hash": tx_hash,
+            "transaction_hash": tx_hash,  # Frontend compatibility
             "status": result.get("status", "pending") if isinstance(result, dict) else "pending"
         }
         
@@ -140,21 +138,22 @@ async def close_position(
         Dictionary with operation result
     """
     try:
-        client = get_avantis_client(private_key=private_key)
-        trader_client = client.get_client()
-        
-        # Close position using contract methods
+        # Close position using direct contract calls
+        # Note: trade_index defaults to 0 (first position for the pair)
         result = await close_position_via_contract(
-            trader_client=trader_client,
-            pair_index=pair_index
+            pair_index=pair_index,
+            trade_index=0,  # Default to first trade index
+            private_key=private_key
         )
         
         logger.info(f"Closed position: pair_index={pair_index}")
         
+        tx_hash = result.get("tx_hash") if isinstance(result, dict) else str(result)
         return {
             "success": True,
             "pair_index": pair_index,
-            "tx_hash": result.get("tx_hash") if isinstance(result, dict) else str(result),
+            "tx_hash": tx_hash,
+            "transaction_hash": tx_hash,  # Frontend compatibility
             "status": result.get("status", "pending") if isinstance(result, dict) else "pending"
         }
         
@@ -177,13 +176,15 @@ async def close_all_positions(
         Dictionary with operation result
     """
     try:
-        client = get_avantis_client(private_key=private_key)
-        trader_client = client.get_client()
+        # Close all positions using direct contract calls
+        result = await close_all_positions_via_contract(private_key=private_key)
         
-        # Close all positions using contract methods
-        result = await close_all_positions_via_contract(trader_client=trader_client)
+        # Get address for logging
+        from eth_account import Account
+        account = Account.from_key(private_key)
+        address = account.address
         
-        logger.info(f"Closed all positions for address: {client.get_address()}")
+        logger.info(f"Closed all positions for address: {address}")
         
         return {
             "success": True,
@@ -197,25 +198,21 @@ async def close_all_positions(
         raise
 
 
-async def _ensure_usdc_approval(client, amount: float) -> None:
+async def _ensure_usdc_approval(private_key: str, amount: float) -> None:
     """
     🔐 SAFE USDC Approval Check
     
-    Ensure USDC is approved for trading using safe functions.
+    Ensure USDC is approved for trading using direct Web3 calls.
     Uses the safe get_usdc_allowance and approve_usdc functions.
     
     Args:
-        client: AvantisClient instance (must have private_key)
+        private_key: User's private key
         amount: Amount to approve
     """
     try:
-        # Get private key from client (required for safe functions)
-        if not client.private_key:
-            raise ValueError("Client must have private_key for safe USDC approval")
-        
         # Use safe function to check current allowance
         try:
-            allowance = await get_usdc_allowance(private_key=client.private_key)
+            allowance = await get_usdc_allowance(private_key=private_key)
         except Exception as e:
             logger.warning(f"Could not check USDC allowance: {e}. Assuming approval needed.")
             allowance = 0
@@ -227,7 +224,7 @@ async def _ensure_usdc_approval(client, amount: float) -> None:
             try:
                 result = await approve_usdc(
                     amount=amount,
-                    private_key=client.private_key
+                    private_key=private_key
                 )
                 logger.info(f"✅ SAFE USDC approval successful: {result.get('tx_hash', 'N/A')}")
             except Exception as approval_error:
@@ -239,5 +236,159 @@ async def _ensure_usdc_approval(client, amount: float) -> None:
     except Exception as e:
         logger.error(f"USDC approval check failed: {e}")
         # Don't continue - approval is critical for trading
+        raise
+
+
+@retry_on_network_error()
+async def update_tp_sl(
+    pair_index: int,
+    trade_index: int,
+    new_tp: Optional[float],
+    new_sl: Optional[float],
+    private_key: str,
+) -> Dict[str, Any]:
+    """
+    Update take profit and/or stop loss for a position.
+    
+    Args:
+        pair_index: Avantis pair index
+        trade_index: Trade index (defaults to 0 for first position)
+        new_tp: New take profit price (optional)
+        new_sl: New stop loss price (optional)
+        private_key: User's private key (required - each user provides their own)
+        
+    Returns:
+        Dictionary with operation result
+    """
+    if not private_key:
+        raise ValueError("Private key is required. Each user must provide their own private key.")
+    
+    if new_tp is None and new_sl is None:
+        raise ValueError("At least one of new_tp or new_sl must be provided.")
+    
+    try:
+        result = await update_tp_sl_via_contract(
+            pair_index=pair_index,
+            trade_index=trade_index,
+            new_tp=new_tp,
+            new_sl=new_sl,
+            private_key=private_key,
+        )
+        
+        logger.info(f"Updated TP/SL: pair_index={pair_index}, trade_index={trade_index}")
+        
+        return {
+            "success": True,
+            "pair_index": pair_index,
+            "trade_index": trade_index,
+            "new_tp": new_tp,
+            "new_sl": new_sl,
+            "tx_hash": result.get("tx_hash") if isinstance(result, dict) else str(result),
+            "status": result.get("status", "pending") if isinstance(result, dict) else "pending"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error updating TP/SL: {e}")
+        raise
+
+
+@retry_on_network_error()
+async def update_margin(
+    pair_index: int,
+    trade_index: int,
+    update_type: int,
+    amount_usdc: float,
+    private_key: str,
+) -> Dict[str, Any]:
+    """
+    Update margin (deposit or withdraw) for a position.
+    
+    Args:
+        pair_index: Avantis pair index
+        trade_index: Trade index (defaults to 0 for first position)
+        update_type: 0 = DEPOSIT, 1 = WITHDRAW
+        amount_usdc: Amount in USDC
+        private_key: User's private key (required - each user provides their own)
+        
+    Returns:
+        Dictionary with operation result
+    """
+    if not private_key:
+        raise ValueError("Private key is required. Each user must provide their own private key.")
+    
+    if update_type not in [0, 1]:
+        raise ValueError("update_type must be 0 (DEPOSIT) or 1 (WITHDRAW)")
+    
+    if amount_usdc <= 0:
+        raise ValueError("Amount must be greater than 0")
+    
+    try:
+        result = await update_margin_via_contract(
+            pair_index=pair_index,
+            trade_index=trade_index,
+            update_type=update_type,
+            amount_usdc=amount_usdc,
+            private_key=private_key,
+        )
+        
+        logger.info(
+            f"Updated margin: pair_index={pair_index}, trade_index={trade_index}, "
+            f"type={'DEPOSIT' if update_type == 0 else 'WITHDRAW'}, amount=${amount_usdc}"
+        )
+        
+        return {
+            "success": True,
+            "pair_index": pair_index,
+            "trade_index": trade_index,
+            "update_type": "DEPOSIT" if update_type == 0 else "WITHDRAW",
+            "amount_usdc": amount_usdc,
+            "tx_hash": result.get("tx_hash") if isinstance(result, dict) else str(result),
+            "status": result.get("status", "pending") if isinstance(result, dict) else "pending"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error updating margin: {e}")
+        raise
+
+
+@retry_on_network_error()
+async def cancel_limit_order(
+    pair_index: int,
+    index: int,
+    private_key: str,
+) -> Dict[str, Any]:
+    """
+    Cancel an open limit order.
+    
+    Args:
+        pair_index: Avantis pair index
+        index: Limit order index
+        private_key: User's private key (required - each user provides their own)
+        
+    Returns:
+        Dictionary with operation result
+    """
+    if not private_key:
+        raise ValueError("Private key is required. Each user must provide their own private key.")
+    
+    try:
+        result = await cancel_open_limit_order_via_contract(
+            pair_index=pair_index,
+            index=index,
+            private_key=private_key,
+        )
+        
+        logger.info(f"Canceled limit order: pair_index={pair_index}, index={index}")
+        
+        return {
+            "success": True,
+            "pair_index": pair_index,
+            "index": index,
+            "tx_hash": result.get("tx_hash") if isinstance(result, dict) else str(result),
+            "status": result.get("status", "pending") if isinstance(result, dict) else "pending"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error canceling limit order: {e}")
         raise
 

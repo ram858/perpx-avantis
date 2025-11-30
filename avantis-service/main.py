@@ -8,7 +8,14 @@ from pydantic import BaseModel, Field
 from config import settings
 
 # Import operation modules
-from trade_operations import open_position, close_position, close_all_positions
+from trade_operations import (
+    open_position,
+    close_position,
+    close_all_positions,
+    update_tp_sl,
+    update_margin,
+    cancel_limit_order,
+)
 from position_queries import (
     get_positions,
     get_balance,
@@ -77,11 +84,33 @@ class PrepareApproveUSDCRequest(BaseModel):
     address: str = Field(..., description="Base Account address (required for Base Accounts)")
 
 
+class UpdateTpSlRequest(BaseModel):
+    pair_index: int = Field(..., description="Avantis pair index")
+    trade_index: int = Field(0, description="Trade index (defaults to 0)")
+    new_tp: Optional[float] = Field(None, description="New take profit price (optional)")
+    new_sl: Optional[float] = Field(None, description="New stop loss price (optional)")
+    private_key: str = Field(..., description="User's private key (required)")
+
+
+class UpdateMarginRequest(BaseModel):
+    pair_index: int = Field(..., description="Avantis pair index")
+    trade_index: int = Field(0, description="Trade index (defaults to 0)")
+    update_type: int = Field(..., description="0 = DEPOSIT, 1 = WITHDRAW")
+    amount_usdc: float = Field(..., gt=0, description="Amount in USDC")
+    private_key: str = Field(..., description="User's private key (required)")
+
+
+class CancelLimitOrderRequest(BaseModel):
+    pair_index: int = Field(..., description="Avantis pair index")
+    index: int = Field(..., description="Limit order index")
+    private_key: str = Field(..., description="User's private key (required)")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
     logger.info("Starting Avantis Trading Service...")
-    logger.info(f"Network: {settings.avantis_network}")
+    logger.info(f"Network: Base Mainnet")
     logger.info(f"Supported symbols: {', '.join(get_all_supported_symbols())}")
     yield
     logger.info("Shutting down Avantis Trading Service...")
@@ -112,9 +141,8 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "avantis-trading-service",
-        "network": settings.avantis_network,
+        "network": "base-mainnet",
         "network_name": settings.get_network_name(),
-        "is_testnet": settings.is_testnet(),
         "block_explorer": settings.get_block_explorer_url(),
         "usdc_address": settings.usdc_token_address
     }
@@ -205,6 +233,85 @@ async def api_close_all_positions(request: CloseAllPositionsRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to close all positions: {str(e)}"
+        )
+
+
+@app.post("/api/update-tp-sl")
+async def api_update_tp_sl(request: UpdateTpSlRequest):
+    """
+    Update take profit and/or stop loss for a position.
+    """
+    try:
+        result = await update_tp_sl(
+            pair_index=request.pair_index,
+            trade_index=request.trade_index,
+            new_tp=request.new_tp,
+            new_sl=request.new_sl,
+            private_key=request.private_key
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error in update_tp_sl: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update TP/SL: {str(e)}"
+        )
+
+
+@app.post("/api/update-margin")
+async def api_update_margin(request: UpdateMarginRequest):
+    """
+    Update margin (deposit or withdraw) for a position.
+    """
+    try:
+        if request.update_type not in [0, 1]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="update_type must be 0 (DEPOSIT) or 1 (WITHDRAW)"
+            )
+        result = await update_margin(
+            pair_index=request.pair_index,
+            trade_index=request.trade_index,
+            update_type=request.update_type,
+            amount_usdc=request.amount_usdc,
+            private_key=request.private_key
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error in update_margin: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update margin: {str(e)}"
+        )
+
+
+@app.post("/api/cancel-limit-order")
+async def api_cancel_limit_order(request: CancelLimitOrderRequest):
+    """
+    Cancel an open limit order.
+    """
+    try:
+        result = await cancel_limit_order(
+            pair_index=request.pair_index,
+            index=request.index,
+            private_key=request.private_key
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error in cancel_limit_order: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to cancel limit order: {str(e)}"
         )
 
 
@@ -420,6 +527,43 @@ async def api_get_symbols():
     """
     symbols = get_all_supported_symbols()
     return {"symbols": symbols, "count": len(symbols)}
+
+
+@app.get("/api/min-position")
+async def api_get_min_position(
+    pair_index: int = Query(..., description="Trading pair index"),
+    leverage: int = Query(..., ge=2, le=50, description="Leverage multiplier (2x-50x)")
+):
+    """
+    Get the minimum collateral required for a position at a given leverage.
+    
+    This endpoint queries the on-chain contract to get the actual minimum
+    position size requirement, allowing the frontend to dynamically adjust
+    validation and UI sliders.
+    
+    Returns:
+        Dictionary with minimum collateral in USDC
+    """
+    try:
+        from contract_operations import get_min_position_size_usdc
+        
+        min_collateral = await get_min_position_size_usdc(
+            pair_index=pair_index,
+            leverage=leverage
+        )
+        
+        return {
+            "pair_index": pair_index,
+            "leverage": leverage,
+            "min_collateral_usdc": min_collateral,
+            "min_position_value_usdc": min_collateral * leverage,
+        }
+    except Exception as e:
+        logger.error(f"Error getting min position size: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get minimum position size: {str(e)}"
+        )
 
 
 if __name__ == "__main__":

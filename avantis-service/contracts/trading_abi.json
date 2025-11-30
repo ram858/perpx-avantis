@@ -1,0 +1,77 @@
+[
+  {
+    "inputs": [
+      {
+        "components": [
+          {"internalType": "address", "name": "trader", "type": "address"},
+          {"internalType": "uint256", "name": "pairIndex", "type": "uint256"},
+          {"internalType": "uint256", "name": "index", "type": "uint256"},
+          {"internalType": "uint256", "name": "initialPosToken", "type": "uint256"},
+          {"internalType": "uint256", "name": "positionSizeUSDC", "type": "uint256"},
+          {"internalType": "uint256", "name": "openPrice", "type": "uint256"},
+          {"internalType": "bool", "name": "buy", "type": "bool"},
+          {"internalType": "uint256", "name": "leverage", "type": "uint256"},
+          {"internalType": "uint256", "name": "tp", "type": "uint256"},
+          {"internalType": "uint256", "name": "sl", "type": "uint256"},
+          {"internalType": "uint256", "name": "timestamp", "type": "uint256"}
+        ],
+        "internalType": "struct ITradingStorage.Trade",
+        "name": "t",
+        "type": "tuple"
+      },
+      {"internalType": "uint8", "name": "_type", "type": "uint8"},
+      {"internalType": "uint256", "name": "_slippageP", "type": "uint256"}
+    ],
+    "name": "openTrade",
+    "outputs": [{"internalType": "uint256", "name": "orderId", "type": "uint256"}],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "uint256", "name": "_pairIndex", "type": "uint256"},
+      {"internalType": "uint256", "name": "_index", "type": "uint256"},
+      {"internalType": "uint256", "name": "_amount", "type": "uint256"}
+    ],
+    "name": "closeTradeMarket",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "uint256", "name": "_pairIndex", "type": "uint256"},
+      {"internalType": "uint256", "name": "_index", "type": "uint256"},
+      {"internalType": "uint256", "name": "_newSl", "type": "uint256"},
+      {"internalType": "uint256", "name": "_newTp", "type": "uint256"},
+      {"internalType": "bytes[]", "name": "_priceUpdateData", "type": "bytes[]"}
+    ],
+    "name": "updateTpAndSl",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "uint256", "name": "_pairIndex", "type": "uint256"},
+      {"internalType": "uint256", "name": "_index", "type": "uint256"},
+      {"internalType": "uint8", "name": "_updateType", "type": "uint8"},
+      {"internalType": "uint256", "name": "_amountRaw", "type": "uint256"},
+      {"internalType": "bytes[]", "name": "_priceUpdateData", "type": "bytes[]"}
+    ],
+    "name": "updateMargin",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "uint256", "name": "_pairIndex", "type": "uint256"},
+      {"internalType": "uint256", "name": "_index", "type": "uint256"}
+    ],
+    "name": "cancelOpenLimitOrder",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]

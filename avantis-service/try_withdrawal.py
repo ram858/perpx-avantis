@@ -20,28 +20,23 @@ async def try_emergency_withdrawal(private_key: str):
         logger.info("🔍 CHECKING FOR RECOVERABLE FUNDS")
         logger.info("=" * 60)
         
-        # Initialize client
-        client = get_avantis_client(private_key=private_key)
-        trader_client = client.get_client()
-        wallet_address = client.get_address()
+        # Derive address from private key
+        from eth_account import Account
+        account = Account.from_key(private_key)
+        wallet_address = account.address
         
         logger.info(f"📍 Wallet Address: {wallet_address}")
         
-        # 1. Check vault balance
-        try:
-            vault_balance_raw = await trader_client.get_usdc_balance()
-            vault_balance = float(vault_balance_raw) if vault_balance_raw else 0
-            logger.info(f"💰 Vault Balance: ${vault_balance:.2f} USDC")
-        except Exception as e:
-            logger.warning(f"⚠️ Could not check vault balance: {e}")
-            vault_balance = 0
+        # 1. Check vault balance (not available via direct contracts, skip for now)
+        vault_balance = 0
+        logger.info(f"💰 Vault Balance: ${vault_balance:.2f} USDC (vault balance check not implemented)")
         
         # 2. Check wallet USDC balance directly
         try:
-            w3 = trader_client.web3 if hasattr(trader_client, 'web3') else None
-            if not w3:
-                rpc_url = settings.avantis_rpc_url or "https://mainnet.base.org"
-                w3 = Web3(Web3.HTTPProvider(rpc_url))
+            rpc_url = settings.avantis_rpc_url or "https://mainnet.base.org"
+            w3 = Web3(Web3.HTTPProvider(rpc_url))
+            if not w3.is_connected():
+                raise RuntimeError(f"Web3 provider not reachable: {rpc_url}")
             
             usdc_address = Web3.to_checksum_address("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")
             usdc_abi = [{"constant":True,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"type":"function"}]
@@ -56,7 +51,10 @@ async def try_emergency_withdrawal(private_key: str):
         # 3. Check positions (might have funds locked in positions)
         try:
             from contract_operations import get_positions_via_contract
-            positions = await get_positions_via_contract(trader_client, wallet_address)
+            positions = await get_positions_via_contract(
+                private_key=private_key,
+                address=None
+            )
             logger.info(f"📊 Open Positions: {len(positions)}")
             if positions:
                 total_collateral = sum(float(p.get('collateral', 0)) / 1e6 for p in positions)
@@ -66,12 +64,19 @@ async def try_emergency_withdrawal(private_key: str):
         
         # 4. Try to find and call withdrawal functions on Trading contract
         try:
-            TradingContract = trader_client.contracts.get("Trading")
-            if TradingContract:
+            # Use direct contract access instead of SDK
+            from direct_contracts import AvantisTradingContract
+            trading_contract = AvantisTradingContract(
+                rpc_url=settings.avantis_rpc_url or "https://mainnet.base.org",
+                contract_address=settings.avantis_trading_contract_address,
+                private_key=private_key
+            )
+            
+            if trading_contract:
                 logger.info("\n🔍 Checking Trading Contract for withdrawal functions...")
                 
                 # Check available functions
-                contract_functions = [func for func in dir(TradingContract.functions) if not func.startswith('_')]
+                contract_functions = [func for func in dir(trading_contract.contract.functions) if not func.startswith('_')]
                 withdrawal_functions = [f for f in contract_functions if 'withdraw' in f.lower() or 'redeem' in f.lower() or 'emergency' in f.lower()]
                 
                 if withdrawal_functions:
@@ -81,47 +86,53 @@ async def try_emergency_withdrawal(private_key: str):
                 
                 # Try common withdrawal patterns
                 # Pattern 1: withdraw(uint256 amount)
-                if hasattr(TradingContract.functions, 'withdraw'):
+                if hasattr(trading_contract.contract.functions, 'withdraw'):
                     try:
                         if vault_balance > 0:
                             logger.info(f"\n🔄 Attempting withdraw({vault_balance} USDC)...")
                             withdraw_amount_wei = int(vault_balance * 1e6)
-                            withdraw_tx = TradingContract.functions.withdraw(withdraw_amount_wei).build_transaction({
-                                "from": wallet_address,
-                                "nonce": await trader_client.get_transaction_count(wallet_address),
-                            })
-                            receipt = await trader_client.sign_and_get_receipt(withdraw_tx)
-                            logger.info(f"✅ Withdrawal successful! TX: {receipt.get('transactionHash', 'N/A')}")
+                            fn = trading_contract.contract.functions.withdraw(withdraw_amount_wei)
+                            withdraw_tx = trading_contract.build_transaction(
+                                fn=fn,
+                                from_address=wallet_address,
+                                value_wei=0
+                            )
+                            tx_hash = trading_contract.sign_and_send(withdraw_tx)
+                            logger.info(f"✅ Withdrawal successful! TX: {tx_hash}")
                             return True
                     except Exception as e:
                         logger.warning(f"   ⚠️ withdraw() failed: {e}")
                 
                 # Pattern 2: withdrawAll()
-                if hasattr(TradingContract.functions, 'withdrawAll'):
+                if hasattr(trading_contract.contract.functions, 'withdrawAll'):
                     try:
                         if vault_balance > 0:
                             logger.info(f"\n🔄 Attempting withdrawAll()...")
-                            withdraw_tx = TradingContract.functions.withdrawAll().build_transaction({
-                                "from": wallet_address,
-                                "nonce": await trader_client.get_transaction_count(wallet_address),
-                            })
-                            receipt = await trader_client.sign_and_get_receipt(withdraw_tx)
-                            logger.info(f"✅ Withdrawal successful! TX: {receipt.get('transactionHash', 'N/A')}")
+                            fn = trading_contract.contract.functions.withdrawAll()
+                            withdraw_tx = trading_contract.build_transaction(
+                                fn=fn,
+                                from_address=wallet_address,
+                                value_wei=0
+                            )
+                            tx_hash = trading_contract.sign_and_send(withdraw_tx)
+                            logger.info(f"✅ Withdrawal successful! TX: {tx_hash}")
                             return True
                     except Exception as e:
                         logger.warning(f"   ⚠️ withdrawAll() failed: {e}")
                 
                 # Pattern 3: emergencyWithdraw() or emergencyWithdrawal()
                 for func_name in ['emergencyWithdraw', 'emergencyWithdrawal']:
-                    if hasattr(TradingContract.functions, func_name):
+                    if hasattr(trading_contract.contract.functions, func_name):
                         try:
                             logger.info(f"\n🔄 Attempting {func_name}()...")
-                            withdraw_tx = getattr(TradingContract.functions, func_name)().build_transaction({
-                                "from": wallet_address,
-                                "nonce": await trader_client.get_transaction_count(wallet_address),
-                            })
-                            receipt = await trader_client.sign_and_get_receipt(withdraw_tx)
-                            logger.info(f"✅ Emergency withdrawal successful! TX: {receipt.get('transactionHash', 'N/A')}")
+                            fn = getattr(trading_contract.contract.functions, func_name)()
+                            withdraw_tx = trading_contract.build_transaction(
+                                fn=fn,
+                                from_address=wallet_address,
+                                value_wei=0
+                            )
+                            tx_hash = trading_contract.sign_and_send(withdraw_tx)
+                            logger.info(f"✅ Emergency withdrawal successful! TX: {tx_hash}")
                             return True
                         except Exception as e:
                             logger.warning(f"   ⚠️ {func_name}() failed: {e}")
@@ -142,7 +153,8 @@ async def try_emergency_withdrawal(private_key: str):
         # 6. Check recent transaction receipts for USDC transfers
         try:
             logger.info("\n🔍 Checking recent transaction receipts for USDC transfers...")
-            w3 = trader_client.web3 if hasattr(trader_client, 'web3') else Web3(Web3.HTTPProvider(settings.avantis_rpc_url or "https://mainnet.base.org"))
+            rpc_url = settings.avantis_rpc_url or "https://mainnet.base.org"
+            w3 = Web3(Web3.HTTPProvider(rpc_url))
             
             # Check the two "Open Trade" transactions
             tx_hashes = [

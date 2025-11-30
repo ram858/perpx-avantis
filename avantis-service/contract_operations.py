@@ -1,38 +1,29 @@
+# avantis-service/contract_operations.py
 """
-Contract interaction operations for Avantis trading.
+Contract interaction operations for Avantis trading (direct Web3, no SDK).
+"""
 
-Refactored, Optimized, and Battle-Tested.
-"""
-import logging
 import asyncio
+import logging
 from typing import Optional, Dict, Any, List
-from decimal import Decimal
 
-# Import Web3 libraries (needed for manual fallback)
-from web3 import Web3, AsyncWeb3
+from web3 import Web3
+from web3.types import HexBytes
+
+from config import settings
+from direct_contracts import AvantisTradingContract, TradeParams
 
 logger = logging.getLogger(__name__)
 
 # --- Constants ---
-# Updated: Avantis UI allows $10 minimum, so we match that
-# Previous $20 was too conservative - actual minimum is $10 as confirmed by Avantis UI
-MIN_COLLATERAL_USDC = 10.0  # Protocol minimum (matches Avantis UI - allows $10 minimum)
+MIN_COLLATERAL_USDC = 10.0   # Protocol minimum (matches Avantis UI)
 USDC_DECIMALS = 6
-PRICE_DECIMALS = 10         # Avantis uses 10 decimals for price/TP/SL in structs
-SLIPPAGE_DEFAULT = 1.0      # 1%
+PRICE_DECIMALS = 10          # Avantis uses 10 decimals for price/TP/SL
+SLIPPAGE_DEFAULT = 1.0       # 1%
 
-# --- SDK Import Handling ---
-try:
-    from avantis_trader_sdk.types import TradeInput, TradeInputOrderType
-    SDK_AVAILABLE = True
-except ImportError:
-    SDK_AVAILABLE = False
-    TradeInput = None  # type: ignore
-    TradeInputOrderType = None  # type: ignore
-    logger.warning("⚠️ Avantis SDK not found. Install via: pip install avantis-trader-sdk")
 
 # ==========================================
-# 1. Validation & Pre-flight Checks
+# 1. Validation
 # ==========================================
 
 def validate_trade_params(
@@ -40,725 +31,1060 @@ def validate_trade_params(
     leverage: int,
     pair_index: int,
 ) -> None:
-    """
-    Fast validation to catch errors before network calls.
-    CRITICAL: This prevents fund loss by catching errors BEFORE any transfers.
-    
-    Note on Leverage Limits:
-    - Current validation: 2x-50x (conservative default)
-    - Actual Avantis limits vary by asset class:
-      * Crypto assets: typically up to 100x
-      * Forex: up to 75x
-      * Commodities: varies by asset
-    - The 50x cap here is a conservative safety limit
-    - To support higher leverage for crypto, consider adding asset-specific validation
-    """
     if collateral_amount < MIN_COLLATERAL_USDC:
         raise ValueError(
-            f"❌ CRITICAL: Collateral ${collateral_amount} is below protocol minimum ${MIN_COLLATERAL_USDC}. "
-            f"DO NOT attempt trade - funds will be transferred but position will fail with BELOW_MIN_POS!"
+            f"Collateral ${collateral_amount} is below protocol minimum ${MIN_COLLATERAL_USDC}."
         )
-    
+
     if not 2 <= leverage <= 50:
         raise ValueError(f"Leverage {leverage}x is out of range (2x-50x).")
-    
+
     if pair_index < 0:
         raise ValueError(f"Invalid pair index: {pair_index}")
 
-async def _manual_approve_usdc(
-    trader_client,
-    trader_address: str,
-    amount: float
-) -> None:
-    """
-    Manual USDC approval with fixed gas limit (fallback when SDK gas estimation fails).
-    """
-    try:
-        from web3 import Web3 as Web3Type
-        import inspect
-        w3 = trader_client.web3 if hasattr(trader_client, 'web3') else None
-        if not w3:
-            from avantis_client import get_avantis_client
-            from config import settings
-            from web3 import Web3
-            rpc_url = settings.avantis_rpc_url or "https://mainnet.base.org"
-            w3 = Web3(Web3.HTTPProvider(rpc_url))
-        
-        # Get trading contract address from SDK
-        TradingContract = trader_client.contracts.get("Trading")
-        if not TradingContract:
-            raise ValueError("Could not find Trading contract")
-        
-        trading_contract_address = TradingContract.address if hasattr(TradingContract, 'address') else str(TradingContract)
-        
-        # USDC contract
-        usdc_address = Web3Type.to_checksum_address("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")
-        usdc_abi = [{
-            "constant": False,
-            "inputs": [
-                {"name": "_spender", "type": "address"},
-                {"name": "_value", "type": "uint256"}
-            ],
-            "name": "approve",
-            "outputs": [{"name": "", "type": "bool"}],
-            "type": "function"
-        }]
-        usdc_contract = w3.eth.contract(address=usdc_address, abi=usdc_abi)
-        
-        # Convert amount to wei (USDC has 6 decimals)
-        amount_wei = int(amount * 1e6)
-        
-        # Build transaction with manual gas limit
-        trader_address_checksum = Web3Type.to_checksum_address(trader_address)
-        # FIXED: Use "pending" state to include pending transactions and prevent nonce errors
-        nonce = w3.eth.get_transaction_count(trader_address_checksum, 'pending')
-        
-        approve_tx = usdc_contract.functions.approve(
-            Web3Type.to_checksum_address(trading_contract_address),
-            amount_wei
-        ).build_transaction({
-            "from": trader_address_checksum,
-            "nonce": nonce,
-            "gas": 100000,  # Fixed gas limit for approval (usually ~46k, using 100k for safety)
-            "gasPrice": w3.eth.gas_price,
-        })
-        
-        # Sign and send directly with web3 (bypass SDK's gas estimation)
-        if hasattr(trader_client, 'signer') and hasattr(trader_client.signer, 'private_key'):
-            private_key = trader_client.signer.private_key
-        elif hasattr(trader_client, 'private_key'):
-            private_key = trader_client.private_key
-        else:
-            raise ValueError("Could not find private key for signing")
-        
-        # Sign transaction
-        signed_tx = w3.eth.account.sign_transaction(approve_tx, private_key)
-        
-        # Send transaction - run sync web3 calls in executor for async context
-        import asyncio
-        tx_hash = await asyncio.to_thread(w3.eth.send_raw_transaction, signed_tx.rawTransaction)
-        
-        # Wait for receipt - run sync web3 calls in executor for async context
-        receipt = await asyncio.to_thread(w3.eth.wait_for_transaction_receipt, tx_hash)
-        
-        # Get transaction hash (handle both dict and object formats)
-        tx_hash_str = receipt.get('transactionHash') if isinstance(receipt, dict) else getattr(receipt, 'transactionHash', None)
-        if tx_hash_str:
-            if hasattr(tx_hash_str, 'hex'):
-                tx_hash_str = tx_hash_str.hex()
-            elif isinstance(tx_hash_str, bytes):
-                tx_hash_str = tx_hash_str.hex()
-            else:
-                tx_hash_str = str(tx_hash_str)
-        else:
-            tx_hash_str = "unknown"
-        
-        logger.info(f"✅ Manual approval successful: {tx_hash_str}")
-        
-    except Exception as e:
-        logger.error(f"❌ Manual approval failed: {e}")
-        raise
 
-async def check_and_approve_usdc(
-    trader_client,
-    trader_address: str,
-    required_amount: float
-) -> None:
-    """
-    Checks wallet balance and allowance. Approves if necessary.
-    Does NOT move funds - only grants permission for openTrade to pull funds.
-    """
-    try:
-        # 1. Check WALLET Balance (Not Vault Balance)
-        # We need to make sure your wallet has the cash.
-        w3 = trader_client.web3 if hasattr(trader_client, 'web3') else None
-        if not w3:
-            # Fallback: get web3 from client
-            from config import settings
-            from web3 import Web3
-            rpc_url = settings.avantis_rpc_url or "https://mainnet.base.org"
-            w3 = Web3(Web3.HTTPProvider(rpc_url))
-        
-        from web3 import Web3 as Web3Type
-        usdc_address = Web3Type.to_checksum_address("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")  # Base mainnet USDC
-        usdc_abi = [{"constant":True,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"type":"function"}]
-        usdc_contract = w3.eth.contract(address=usdc_address, abi=usdc_abi)
-        wallet_balance_wei = usdc_contract.functions.balanceOf(trader_address).call()
-        balance_usdc = float(wallet_balance_wei) / 1e6
-        
-        logger.info(f"💰 Wallet Balance: ${balance_usdc:.2f} | Required: ${required_amount:.2f}")
-        
-        if balance_usdc < required_amount:
-            raise ValueError(f"Insufficient USDC in Wallet. Have ${balance_usdc:.2f}, Need ${required_amount:.2f}")
+def _get_rpc_url(rpc_url: Optional[str] = None) -> str:
+    return rpc_url or getattr(settings, "avantis_rpc_url", None) or "https://mainnet.base.org"
 
-        # 2. Check Allowance
-        allowance_raw = await trader_client.get_usdc_allowance_for_trading()
-        allowance_usdc = float(allowance_raw) if allowance_raw else 0
-        
-        # 3. Approve if needed
-        if allowance_usdc < required_amount:
-            logger.info(f"🔓 Approving contract (Current allowance: ${allowance_usdc:.2f})...")
-            
-            # This grants Permission, it does not move money yet.
-            await _manual_approve_usdc(trader_client, trader_address, required_amount * 10) 
-            logger.info("✅ USDC Approved.")
-            await asyncio.sleep(2)
-        else:
-            logger.info("✅ Allowance sufficient.")
-        
-    except Exception as e:
-        logger.error(f"❌ Pre-flight check failed: {e}")
-        raise
 
 # ==========================================
-# 2. Main Trading Functions
+# 2. Main Trading Functions (Direct Contracts)
 # ==========================================
 
 async def open_position_via_contract(
-    trader_client,
     pair_index: int,
     collateral_amount: float,
     leverage: int,
     is_long: bool,
     take_profit: Optional[float] = None,
     stop_loss: Optional[float] = None,
-    slippage_percentage: float = SLIPPAGE_DEFAULT
+    slippage_percentage: float = SLIPPAGE_DEFAULT,
+    private_key: str = "",
+    rpc_url: Optional[str] = None,
+    execution_fee_wei: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
-    Opens a position using Direct Manual Method (fast, reliable, proven).
-    Uses manual transaction construction that matches the contract ABI exactly.
+    Open a position using Trading.openTrade via Web3.py.
     """
-    if not SDK_AVAILABLE:
-        raise ImportError("Avantis SDK is required to execute trades.")
-    
-    if TradeInput is None or TradeInputOrderType is None:
-        raise ImportError("TradeInput or TradeInputOrderType not available - SDK not properly imported.")
+    logger.info("=" * 80)
+    logger.info("📝 [TRACE] open_position_via_contract() CALLED (direct Web3)")
+    logger.info(
+        f"   Pair Index: {pair_index}, Collateral: ${collateral_amount}, "
+        f"Leverage: {leverage}x, Long: {is_long}"
+    )
+    logger.info("=" * 80)
 
-    # ==========================================
-    # 🛡️ LAYER 2: Parameter Validation
-    # ==========================================
-    # GUARANTEE: Invalid parameters rejected before any network calls
+    if not private_key:
+        raise ValueError("Private key is required to execute trades.")
+
     validate_trade_params(collateral_amount, leverage, pair_index)
 
-    # Step 2: Get Address & Run Checks
-    signer = trader_client.get_signer()
-    trader_address = signer.get_ethereum_address()
-    
-    # CRITICAL: Log the address being used for trading
-    logger.info(f"🔍 [CONTRACT_OPS] Trading address from signer: {trader_address}")
-    logger.info(f"🔍 [CONTRACT_OPS] This address will receive/use funds for position opening")
-    
-    # ==========================================
-    # 🛡️ LAYER 3: Minimum Collateral Check
-    # ==========================================
-    # Additional safety: Check if collateral meets minimum (prevent BELOW_MIN_POS)
-    # GUARANTEE: Below-minimum collateral blocks trade BEFORE any transfers
-    if collateral_amount < MIN_COLLATERAL_USDC:
-        raise ValueError(
-            f"❌ COLLATERAL TOO LOW: ${collateral_amount:.2f} is below minimum ${MIN_COLLATERAL_USDC:.2f}. "
-            f"DO NOT attempt trade - funds will be transferred but position will fail with BELOW_MIN_POS!"
-        )
-    
-    logger.info(f"✅ Pre-validation passed: Collateral ${collateral_amount:.2f} >= Minimum ${MIN_COLLATERAL_USDC:.2f}")
+    rpc = _get_rpc_url(rpc_url)
 
-    # Step 3: Prepare Data
-    # Get current price estimate (needed for manual fallback limit price)
+    trading = AvantisTradingContract(
+        rpc_url=rpc,
+        contract_address=settings.avantis_trading_contract_address,
+        private_key=private_key,
+    )
+    if not trading.address:
+        raise ValueError("Failed to derive address from private key")
+    trader_address = trading.address
+    logger.info(f"🔍 Trading from address: {trader_address}")
+
+    # Convert human values → on-chain units
+    collateral_usdc_int = int(collateral_amount * (10 ** USDC_DECIMALS))
+    tp_price = int(take_profit * (10 ** PRICE_DECIMALS)) if take_profit else 0
+    sl_price = int(stop_loss * (10 ** PRICE_DECIMALS)) if stop_loss else 0
+
+    # ------------------------------------------------------------------
+    # BELOW_MIN_POS protection (on-chain rule):
+    # positionSizeUSDC * leverage >= pairMinLevPosUSDC(pairIndex)
+    # Here we treat positionSizeUSDC = collateral_usdc_int (as used in struct).
+    # ------------------------------------------------------------------
     try:
-        pair_name = await trader_client.pairs_cache.get_pair_name_from_index(pair_index)
-        price_data = await trader_client.feed_client.get_latest_price_updates([pair_name])
-        # Use a high precision int for contract interaction
-        current_price_int = int(price_data.parsed[0].converted_price * (10 ** PRICE_DECIMALS))
-        logger.info(f"📊 Fetched price for {pair_name}: {price_data.parsed[0].converted_price} (int: {current_price_int})")
-    except Exception as price_error:
-        # For market orders, price can be 0, but contract might need a valid price
-        logger.warning(f"Could not fetch real-time price: {price_error}, using market order (price=0)")
-        current_price_int = 0  # Market order usually handles this
-        pair_name = f"Pair-{pair_index}"
+        min_pos_raw = await _get_pair_min_lev_pos_usdc(pair_index, rpc_url=rpc)
+        position_value_raw = collateral_usdc_int * leverage  # USDC * 1e6
 
-    # Create SDK Input Object
-    # Convert to proper types (TradeInput expects int for amounts)
-    collateral_wei = int(collateral_amount * (10 ** USDC_DECIMALS))
-    
-    # Store original collateral_wei for manual fallback (TradeInput may transform it)
-    original_collateral_wei = collateral_wei
-    
-    trade_input = TradeInput(
+        if position_value_raw < min_pos_raw:
+            # Compute the minimum collateral required at this leverage
+            min_collateral_usdc = min_pos_raw / (float(10 ** USDC_DECIMALS) * leverage)
+            logger.error(
+                "❌ BELOW_MIN_POS pre-check failed: "
+                f"pair_index={pair_index}, leverage={leverage}, "
+                f"collateral={collateral_amount:.4f} USDC, "
+                f"required_min_collateral≈{min_collateral_usdc:.4f} USDC"
+            )
+            raise ValueError(
+                f"Position size below contract minimum for this pair. "
+                f"With leverage {leverage}x you must use at least "
+                f"≈ {min_collateral_usdc:.2f} USDC collateral. "
+                f"(pairMinLevPosUSDC = {min_pos_raw / 1e6:.2f} USDC)"
+            )
+        else:
+            logger.info(
+                "✅ BELOW_MIN_POS pre-check passed: "
+                f"collateral={collateral_amount:.4f} USDC, leverage={leverage}x, "
+                f"pairMinLevPosUSDC={min_pos_raw / 1e6:.4f} USDC"
+            )
+    except ValueError:
+        # Re-raise ValueError (our validation error) - this should block the trade
+        raise
+    except Exception as e:
+        # If we cannot fetch min pos for some reason, we log but DO NOT block the trade.
+        # You can tighten this to 'raise' if you want to be strict.
+        logger.warning(f"⚠️ Could not fetch pairMinLevPosUSDC for pair_index={pair_index}: {e}")
+
+    params = TradeParams(
         trader=trader_address,
         pair_index=pair_index,
-        trade_index=0,
-        open_collateral=collateral_wei,
-        collateral_in_trade=collateral_wei,
-        open_price=0,  # 0 implies Market Order in SDK
-        is_long=is_long,
+        collateral_usdc=collateral_usdc_int,
         leverage=leverage,
-        tp=int(take_profit * (10 ** PRICE_DECIMALS)) if take_profit else 0,
-        sl=int(stop_loss * (10 ** PRICE_DECIMALS)) if stop_loss else 0,
-        timestamp=0
+        is_long=is_long,
+        tp_price=tp_price,
+        sl_price=sl_price,
+        open_price=0,  # market
+        index=0,
+        initial_pos_token=0,
+        timestamp=0,
     )
-    
-    logger.info(f"📝 Created TradeInput: open_collateral={collateral_wei}, original_collateral_wei={original_collateral_wei}")
 
-    # ==========================================
-    # 💰 CRITICAL: Opening Fee Calculation
-    # ==========================================
-    # Calculate opening fee (0.04% - 0.1% of position size, varies by market skew)
-    # This must be done BEFORE approval to ensure wallet has sufficient balance
-    opening_fee = 0.0
-    opening_fee_percentage = 0.0
-    try:
-        if hasattr(trader_client, 'fee_parameters') and hasattr(trader_client.fee_parameters, 'get_opening_fee'):
-            opening_fee_raw = await trader_client.fee_parameters.get_opening_fee(trade_input=trade_input)
-            # Convert from wei to USDC (6 decimals)
-            opening_fee = float(opening_fee_raw) / (10 ** USDC_DECIMALS) if opening_fee_raw else 0.0
-            opening_fee_percentage = (opening_fee / collateral_amount * 100) if collateral_amount > 0 else 0.0
-            logger.info(f"💰 Opening fee: ${opening_fee:.4f} USDC ({opening_fee_percentage:.4f}%)")
-        else:
-            logger.warning("⚠️ Fee parameters not available, using 0 for opening fee calculation")
-    except Exception as fee_error:
-        logger.warning(f"⚠️ Could not calculate opening fee: {fee_error}. Continuing with collateral only.")
-        opening_fee = 0.0
-    
-    # Calculate total required funds (collateral + opening fee)
-    total_required = collateral_amount + opening_fee
-    
-    # ==========================================
-    # 🛡️ Loss Protection Information (Optional)
-    # ==========================================
-    # Avantis provides loss rebates on trades that help balance platform OI skew
-    loss_protection_percentage = None
-    loss_protection_amount = None
-    try:
-        if hasattr(trader_client, 'trading_parameters') and hasattr(trader_client.trading_parameters, 'get_loss_protection_for_trade_input'):
-            loss_protection_info = await trader_client.trading_parameters.get_loss_protection_for_trade_input(
-                trade_input,
-                opening_fee_usdc=opening_fee
-            )
-            if loss_protection_info:
-                # Extract loss protection data (structure may vary by SDK version)
-                loss_protection_percentage = getattr(loss_protection_info, 'percentage', getattr(loss_protection_info, 'loss_protection_percentage', None))
-                loss_protection_amount = getattr(loss_protection_info, 'amount', getattr(loss_protection_info, 'loss_protection_amount', None))
-                
-                if loss_protection_percentage is not None:
-                    if loss_protection_amount is None:
-                        # Calculate amount if not provided
-                        loss_protection_amount = collateral_amount * (loss_protection_percentage / 100)
-                    logger.info(f"🛡️ Loss protection: {loss_protection_percentage:.2f}% (up to ${loss_protection_amount:.2f})")
-    except Exception as loss_prot_error:
-        # This is informational only - don't fail if it errors
-        logger.debug(f"Could not fetch loss protection info: {loss_prot_error}")
-    
-    # ==========================================
-    # 💰 Trade Cost Breakdown
-    # ==========================================
-    logger.info(f"💰 Trade Cost Breakdown:")
-    logger.info(f"   - Collateral: ${collateral_amount:.2f}")
-    logger.info(f"   - Opening Fee: ${opening_fee:.4f} ({opening_fee_percentage:.4f}%)")
-    logger.info(f"   - Total Required: ${total_required:.2f}")
-    
-    # ==========================================
-    # 🛡️ LAYER 4: USDC Approval (Wallet Balance Check + Approval)
-    # ==========================================
-    # GUARANTEE: No USDC operations until all safeguards pass
-    # check_and_approve_usdc checks wallet balance and approves if needed
-    # It does NOT transfer funds - only grants permission for openTrade to pull funds
-    # CRITICAL: Use total_required (collateral + fee) to ensure sufficient balance
-    await check_and_approve_usdc(trader_client, trader_address, total_required)
+    slippage_p = int(slippage_percentage * 1e8)  # 1% = 1e8
 
-    # Step 4: Build & Execute Transaction
-    # Use Manual Fallback directly (proven to work reliably)
+    if execution_fee_wei is None:
+        # default for Base – you can tune this or estimate via a view method if Avantis exposes one
+        execution_fee_wei = int(0.0001 * 10 ** 18)
+
+    logger.info(
+        f"💰 openTrade: positionSizeUSDC={collateral_usdc_int}, tp={tp_price}, "
+        f"sl={sl_price}, slippageP={slippage_p}, execution_fee_wei={execution_fee_wei}"
+    )
+
+    tx = trading.build_open_trade_tx(
+        params=params,
+        order_type=0,   # OpenLimitOrderType.MARKET
+        slippage_p=slippage_p,
+        execution_fee_wei=execution_fee_wei,
+    )
+    tx_hash = trading.sign_and_send(tx)
+    logger.info(f"🚀 Sent openTrade tx: {tx_hash}")
+
+    # Convert string hash to HexBytes for type checker
+    tx_hash_bytes = HexBytes(tx_hash) if isinstance(tx_hash, str) else tx_hash
+    receipt = await asyncio.to_thread(trading.web3.eth.wait_for_transaction_receipt, tx_hash_bytes)
+
+    return _format_receipt(
+        receipt,
+        pair_index=pair_index,
+        action="open",
+        collateral_amount=collateral_amount,
+    )
+
+
+# ==========================================
+# 3. Position Management (Close / Read / TP-SL)
+# ==========================================
+
+TRADING_STORAGE_ABI = [
+    # openTrades(address _trader, uint256 _pairIndex, uint256 _index) -> Trade
+    {
+        "inputs": [
+            {"internalType": "address", "name": "_trader", "type": "address"},
+            {"internalType": "uint256", "name": "_pairIndex", "type": "uint256"},
+            {"internalType": "uint256", "name": "_index", "type": "uint256"},
+        ],
+        "name": "openTrades",
+        "outputs": [
+            {
+                "components": [
+                    {"internalType": "address", "name": "trader", "type": "address"},
+                    {"internalType": "uint256", "name": "pairIndex", "type": "uint256"},
+                    {"internalType": "uint256", "name": "index", "type": "uint256"},
+                    {"internalType": "uint256", "name": "initialPosToken", "type": "uint256"},
+                    {"internalType": "uint256", "name": "positionSizeUSDC", "type": "uint256"},
+                    {"internalType": "uint256", "name": "openPrice", "type": "uint256"},
+                    {"internalType": "bool", "name": "buy", "type": "bool"},
+                    {"internalType": "uint256", "name": "leverage", "type": "uint256"},
+                    {"internalType": "uint256", "name": "tp", "type": "uint256"},
+                    {"internalType": "uint256", "name": "sl", "type": "uint256"},
+                    {"internalType": "uint256", "name": "timestamp", "type": "uint256"},
+                ],
+                "internalType": "struct ITradingStorage.Trade",
+                "name": "",
+                "type": "tuple",
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    # openTradesInfo(address _trader, uint256 _pairIndex, uint256 _index) -> TradeInfo
+    {
+        "inputs": [
+            {"internalType": "address", "name": "_trader", "type": "address"},
+            {"internalType": "uint256", "name": "_pairIndex", "type": "uint256"},
+            {"internalType": "uint256", "name": "_index", "type": "uint256"},
+        ],
+        "name": "openTradesInfo",
+        "outputs": [
+            {
+                "components": [
+                    {"internalType": "uint256", "name": "openInterestUSDC", "type": "uint256"},
+                    {"internalType": "uint256", "name": "tpLastUpdated", "type": "uint256"},
+                    {"internalType": "uint256", "name": "slLastUpdated", "type": "uint256"},
+                    {"internalType": "bool", "name": "beingMarketClosed", "type": "bool"},
+                    {"internalType": "uint256", "name": "lossProtection", "type": "uint256"},
+                ],
+                "internalType": "struct ITradingStorage.TradeInfo",
+                "name": "",
+                "type": "tuple",
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    # getOpenLimitOrder(address _trader, uint256 _pairIndex, uint256 _index) -> OpenLimitOrder
+    {
+        "inputs": [
+            {"internalType": "address", "name": "_trader", "type": "address"},
+            {"internalType": "uint256", "name": "_pairIndex", "type": "uint256"},
+            {"internalType": "uint256", "name": "_index", "type": "uint256"},
+        ],
+        "name": "getOpenLimitOrder",
+        "outputs": [
+            {
+                "components": [
+                    {"internalType": "address", "name": "trader", "type": "address"},
+                    {"internalType": "uint256", "name": "pairIndex", "type": "uint256"},
+                    {"internalType": "uint256", "name": "index", "type": "uint256"},
+                    {"internalType": "uint256", "name": "positionSize", "type": "uint256"},
+                    {"internalType": "bool", "name": "buy", "type": "bool"},
+                    {"internalType": "uint256", "name": "leverage", "type": "uint256"},
+                    {"internalType": "uint256", "name": "tp", "type": "uint256"},
+                    {"internalType": "uint256", "name": "sl", "type": "uint256"},
+                    {"internalType": "uint256", "name": "price", "type": "uint256"},
+                    {"internalType": "uint256", "name": "slippageP", "type": "uint256"},
+                    {"internalType": "uint256", "name": "block", "type": "uint256"},
+                    {"internalType": "uint256", "name": "executionFee", "type": "uint256"},
+                ],
+                "internalType": "struct ITradingStorage.OpenLimitOrder",
+                "name": "",
+                "type": "tuple",
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    # openTradesCount(address _trader, uint256 _pairIndex) -> uint256
+    {
+        "inputs": [
+            {"internalType": "address", "name": "_trader", "type": "address"},
+            {"internalType": "uint256", "name": "_pairIndex", "type": "uint256"},
+        ],
+        "name": "openTradesCount",
+        "outputs": [
+            {"internalType": "uint256", "name": "", "type": "uint256"},
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    # openLimitOrdersCount(address _trader, uint256 _pairIndex) -> uint256
+    {
+        "inputs": [
+            {"internalType": "address", "name": "_trader", "type": "address"},
+            {"internalType": "uint256", "name": "_pairIndex", "type": "uint256"},
+        ],
+        "name": "openLimitOrdersCount",
+        "outputs": [
+            {"internalType": "uint256", "name": "", "type": "uint256"},
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    # pairMinLevPosUSDC(uint256 _pairIndex) -> uint256
+    {
+        "inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "name": "pairMinLevPosUSDC",
+        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+]
+
+
+def _get_trading_storage_contract(rpc_url: str):
+    w3 = Web3(Web3.HTTPProvider(rpc_url))
+    if not w3.is_connected():
+        raise RuntimeError(f"Web3 provider not reachable: {rpc_url}")
+
+    addr = settings.avantis_trading_storage_contract_address
+    if not addr:
+        raise ValueError("TradingStorage contract address not configured in settings.")
+
+    return w3.eth.contract(
+        address=Web3.to_checksum_address(addr),
+        abi=TRADING_STORAGE_ABI,
+    )
+
+
+# ==========================================
+# Struct Decoders
+# ==========================================
+
+def _decode_trade_struct(raw) -> Dict[str, Any]:
+    """
+    Decode ITradingStorage.Trade into a python dict with both raw + human fields.
+    raw is the tuple returned by openTrades(...).
+    """
+    if not raw or raw[0] == "0x0000000000000000000000000000000000000000":
+        return {}
+
+    return {
+        "trader": raw[0],
+        "pair_index": int(raw[1]),
+        "index": int(raw[2]),
+        "initial_pos_token_raw": int(raw[3]),
+        "position_size_usdc_raw": int(raw[4]),
+        "position_size_usdc": float(raw[4]) / float(10 ** USDC_DECIMALS),
+        "open_price_raw": int(raw[5]),
+        "open_price": float(raw[5]) / float(10 ** PRICE_DECIMALS),
+        "is_long": bool(raw[6]),
+        "leverage": int(raw[7]),
+        "tp_raw": int(raw[8]),
+        "tp": float(raw[8]) / float(10 ** PRICE_DECIMALS) if int(raw[8]) > 0 else 0.0,
+        "sl_raw": int(raw[9]),
+        "sl": float(raw[9]) / float(10 ** PRICE_DECIMALS) if int(raw[9]) > 0 else 0.0,
+        "timestamp": int(raw[10]),
+    }
+
+
+def _decode_trade_info_struct(raw) -> Dict[str, Any]:
+    """
+    Decode ITradingStorage.TradeInfo into a python dict.
+    openInterestUSDC uses 6 decimals.
+    """
+    if not raw:
+        return {}
+
+    return {
+        "open_interest_usdc_raw": int(raw[0]),
+        "open_interest_usdc": float(raw[0]) / float(10 ** USDC_DECIMALS),
+        "tp_last_updated": int(raw[1]),
+        "sl_last_updated": int(raw[2]),
+        "being_market_closed": bool(raw[3]),
+        "loss_protection_raw": int(raw[4]),
+        "loss_protection": float(raw[4]) / float(10 ** USDC_DECIMALS),
+    }
+
+
+def _decode_open_limit_order_struct(raw) -> Dict[str, Any]:
+    """
+    Decode ITradingStorage.OpenLimitOrder into a python dict.
+    price / tp / sl are 10-decimal prices, positionSize is USDC-like (6 decimals).
+    """
+    if not raw or raw[0] == "0x0000000000000000000000000000000000000000":
+        return {}
+
+    return {
+        "trader": raw[0],
+        "pair_index": int(raw[1]),
+        "index": int(raw[2]),
+        "position_size_raw": int(raw[3]),
+        "position_size": float(raw[3]) / float(10 ** USDC_DECIMALS),
+        "is_long": bool(raw[4]),
+        "leverage": int(raw[5]),
+        "tp_raw": int(raw[6]),
+        "tp": float(raw[6]) / float(10 ** PRICE_DECIMALS) if int(raw[6]) > 0 else 0.0,
+        "sl_raw": int(raw[7]),
+        "sl": float(raw[7]) / float(10 ** PRICE_DECIMALS) if int(raw[7]) > 0 else 0.0,
+        "price_raw": int(raw[8]),
+        "price": float(raw[8]) / float(10 ** PRICE_DECIMALS),
+        "slippage_p": int(raw[9]),
+        "block": int(raw[10]),
+        "execution_fee_raw": int(raw[11]),
+        # fee is in native (ETH on Base); keep raw and let front-end format.
+    }
+
+
+async def _get_pair_min_lev_pos_usdc(
+    pair_index: int,
+    rpc_url: Optional[str] = None,
+) -> int:
+    """
+    Fetch pairMinLevPosUSDC(pairIndex) from TradingStorage contract.
+    
+    Returns the minimum leveraged position size in USDC (raw wei, 6 decimals).
+    This is the minimum value of (positionSizeUSDC * leverage) required for this pair.
+    
+    Args:
+        pair_index: Trading pair index
+        rpc_url: Optional RPC URL (uses settings default if not provided)
+        
+    Returns:
+        Minimum leveraged position size in USDC wei (6 decimals)
+    """
+    rpc = _get_rpc_url(rpc_url)
+    storage = _get_trading_storage_contract(rpc)
+    
     try:
-        logger.info(f"🚀 Opening Position: {pair_name} | {leverage}x {'LONG' if is_long else 'SHORT'} | ${collateral_amount}")
-        
-        # Build transaction using manual fallback (direct, fast, reliable)
-        open_tx = await _build_manual_open_tx(
-            trader_client, 
-            trader_address, 
-            trade_input,
-            current_price_int, 
-            slippage_percentage,
-            original_collateral_wei,  # Use the original value we calculated
-            leverage  # Pass leverage directly (TradeInput.leverage is wrong)
-        )
-        logger.info("✅ Transaction built via Manual Method.")
-        
-        # Step 5: Sign & Send (Securely)
-        receipt = await trader_client.sign_and_get_receipt(open_tx)
-        
-        # Format receipt with opening fee information
-        return _format_receipt(
-            receipt, 
-            pair_index, 
-            "open",
-            opening_fee=opening_fee,
-            total_cost=total_required,
-            collateral_amount=collateral_amount
-        )
+        min_pos_raw = storage.functions.pairMinLevPosUSDC(pair_index).call()
+        return int(min_pos_raw)
     except Exception as e:
-        error_msg = str(e)
-        # Check for BELOW_MIN_POS error (contract-level validation)
-        if 'BELOW_MIN_POS' in error_msg or 'execution reverted: BELOW_MIN_POS' in error_msg:
-            logger.error(f"❌ Position size below minimum: {error_msg}")
-            raise ValueError(
-                f"Position size ${collateral_amount} is below the contract's minimum requirement. "
-                f"Please increase your collateral amount. The minimum is ${MIN_COLLATERAL_USDC} USDC."
-            )
-        logger.error(f"❌ Trade Failed: {e}", exc_info=True)
+        logger.warning(f"Failed to fetch pairMinLevPosUSDC for pair_index={pair_index}: {e}")
         raise
 
-async def _build_manual_open_tx(trader_client, trader_address, trade_input, current_price_int, slippage, collateral_wei_override=None, leverage_override=None):
+
+async def get_min_position_size_usdc(
+    pair_index: int,
+    leverage: int,
+    rpc_url: Optional[str] = None,
+) -> float:
     """
-    Direct manual construction of openTrade transaction.
-    This method is proven to work reliably and is faster than SDK attempts.
+    Get the minimum collateral required for a position at a given leverage.
     
-    IMPORTANT: The struct must match the Solidity contract exactly.
+    This is a public function that can be called from the API.
+    It calculates: min_collateral = pairMinLevPosUSDC / (leverage * 1e6)
+    
+    Args:
+        pair_index: Trading pair index
+        leverage: Leverage multiplier (e.g., 10 for 10x)
+        rpc_url: Optional RPC URL (uses settings default if not provided)
+        
+    Returns:
+        Minimum collateral in USDC (human-readable float)
     """
-    TradingContract = trader_client.contracts.get("Trading")
-    if not TradingContract:
-        raise ValueError("Trading contract not loaded.")
-
-    # Extract values from TradeInput object
-    pair_idx = getattr(trade_input, 'pairIndex', getattr(trade_input, 'pair_index', 0))
-    
-    # Use override value (from original calculation) - this is the reliable source
-    if collateral_wei_override and collateral_wei_override > 0:
-        collateral_wei = collateral_wei_override
-    else:
-        # Fallback: try to extract from TradeInput (may have wrong decimals)
-        collateral_wei = getattr(trade_input, 'open_collateral', 0)
-        if collateral_wei == 0:
-            collateral_wei = getattr(trade_input, 'collateral_in_trade', 0)
-        
-        if isinstance(collateral_wei, float):
-            collateral_wei = int(collateral_wei)
-        
-        if collateral_wei == 0:
-            raise ValueError("Collateral amount is 0 - cannot open position")
-    
-    is_long_val = getattr(trade_input, 'buy', getattr(trade_input, 'is_long', True))
-    
-    # CRITICAL: Use leverage_override if provided (from original function call)
-    # TradeInput.leverage can be wrong (shows 100000000000x instead of 10x)
-    if leverage_override and 2 <= leverage_override <= 50:
-        leverage_val = leverage_override
-        logger.info(f"✅ Using override leverage: {leverage_val}x")
-    else:
-        leverage_val = getattr(trade_input, 'leverage', 1)
-        # Validate leverage (standardized to 2x-50x)
-        if leverage_val > 50 or leverage_val < 2:
-            logger.warning(f"⚠️ Invalid leverage from TradeInput: {leverage_val}, defaulting to 5x")
-            leverage_val = 5
-    
-    # TP/SL are already in wei from trade_input
-    tp_val = getattr(trade_input, 'tp', 0)
-    sl_val = getattr(trade_input, 'sl', 0)
-    if isinstance(tp_val, float):
-        tp_val = int(tp_val)
-    if isinstance(sl_val, float):
-        sl_val = int(sl_val)
-    
-    # CRITICAL: Verify trader_address is correct before building trade struct
-    logger.info(f"🔍 [CONTRACT_OPS] Building trade struct with trader: {trader_address}")
-    
-    # Build trade struct matching contract ABI exactly
-    trade_struct = {
-        'trader': trader_address,  # CRITICAL: This must match the signer address
-        'pairIndex': pair_idx,
-        'index': 0,
-        'initialPosToken': 0,
-        'positionSizeUSDC': collateral_wei,  # Contract ABI field name
-        'openPrice': 0,  # Market orders use 0
-        'buy': is_long_val,
-        'leverage': leverage_val,
-        'tp': tp_val,
-        'sl': sl_val,
-        'timestamp': 0,
-    }
-    
-    logger.info(f"🔍 [CONTRACT_OPS] Trade struct trader field: {trade_struct['trader']}")
-
-    collateral_usdc = collateral_wei / 1e6
-    logger.info(f"🔧 Building TX: {pair_idx} | ${collateral_usdc:.2f} | {leverage_val}x | {'LONG' if is_long_val else 'SHORT'}")
-
-    # Get execution fee and nonce
     try:
-        execution_fee = await trader_client.trade.get_trade_execution_fee()
+        min_pos_raw = await _get_pair_min_lev_pos_usdc(pair_index, rpc_url=rpc_url)
+        min_collateral_usdc = min_pos_raw / (float(10 ** USDC_DECIMALS) * leverage)
+        return min_collateral_usdc
     except Exception as e:
-        logger.warning(f"Fee fetch failed, using default: {e}")
-        execution_fee = int(0.0001 * 10**18)  # Default for Base
-    
-    # FIXED: Fetch nonce with "pending" state to include pending transactions
-    # This prevents "nonce too low" errors when multiple transactions are sent
-    try:
-        from web3 import Web3 as Web3Type
-        from config import settings
-        import asyncio
-        
-        # Get RPC URL from settings or default
-        rpc_url = settings.avantis_rpc_url or 'https://mainnet.base.org'
-        
-        # Create web3 instance to fetch nonce
-        w3 = Web3Type(Web3Type.HTTPProvider(rpc_url))
-        trader_address_checksum = Web3Type.to_checksum_address(trader_address)
-        
-        # Fetch nonce with "pending" state - CRITICAL to include pending transactions
-        # This prevents "nonce too low" errors
-        nonce = await asyncio.to_thread(
-            w3.eth.get_transaction_count, 
-            trader_address_checksum, 
-            'pending'  # Include pending transactions
-        )
-        
-        logger.info(f"✅ Fetched nonce with pending state: {nonce} (address: {trader_address_checksum[:10]}...)")
-    except Exception as e:
-        logger.error(f"❌ Failed to fetch nonce: {e}", exc_info=True)
-        raise ValueError(f"Could not fetch transaction nonce: {e}")
-    
-    slippage_contract_units = int(slippage * 1e8)  # 1% = 1e8
+        logger.error(f"Error getting min position size for pair_index={pair_index}, leverage={leverage}: {e}")
+        raise
 
-    # CRITICAL: Log Trading contract address before building transaction
-    trading_contract_address = TradingContract.address if hasattr(TradingContract, 'address') else 'UNKNOWN'
-    logger.info(f"🔍 [CONTRACT_OPS] Trading contract address: {trading_contract_address}")
-    logger.info(f"🔍 [CONTRACT_OPS] Transaction will be sent TO: {trading_contract_address}")
-    logger.info(f"🔍 [CONTRACT_OPS] Funds will be transferred FROM: {trader_address}")
-    logger.info(f"🔍 [CONTRACT_OPS] Trade struct trader field: {trade_struct.get('trader', 'MISSING')}")
-    
-    # Build transaction (async for AsyncContract)
-    contract_func = TradingContract.functions.openTrade(
-        trade_struct,
-        0,  # OrderType.MARKET
-        slippage_contract_units
-    )
-    
-    # Get current gas price and add 20% to allow replacing pending transactions
-    try:
-        from web3 import Web3 as Web3Type
-        from config import settings
-        rpc_url = settings.avantis_rpc_url or 'https://mainnet.base.org'
-        w3_gas = Web3Type(Web3Type.HTTPProvider(rpc_url))
-        base_gas_price = await asyncio.to_thread(lambda: w3_gas.eth.gas_price)
-        # Add 20% to gas price to allow replacing pending transactions if needed
-        gas_price = int(base_gas_price * 1.2)
-        logger.info(f"⛽ Gas price: {gas_price / 1e9:.2f} gwei (base: {base_gas_price / 1e9:.2f} gwei)")
-    except Exception as e:
-        logger.warning(f"Could not fetch gas price, using default: {e}")
-        gas_price = None  # Let web3 estimate
-    
-    tx_params = {
-        "from": trader_address,
-        "value": execution_fee,
-        "chainId": trader_client.chain_id,
-        "nonce": nonce,
-        "gas": 1000000,  # Fixed gas limit
-    }
-    
-    # Add gas price if we fetched it (allows replacing pending transactions)
-    if gas_price:
-        tx_params["gasPrice"] = gas_price
-    
-    # CRITICAL: Build transaction and verify the "to" address
-    tx = await contract_func.build_transaction(tx_params)
-    
-    # CRITICAL: Verify transaction destination address
-    if 'to' in tx:
-        tx_to_address = tx['to']
-        logger.info(f"🔍 [CONTRACT_OPS] Transaction 'to' address: {tx_to_address}")
-        
-        # Verify it's the Trading contract, not an EOA
-        if tx_to_address.lower() == trading_contract_address.lower():
-            logger.info(f"✅ [CONTRACT_OPS] Transaction destination is correct: Trading contract")
-        else:
-            logger.error(f"❌ [CONTRACT_OPS] CRITICAL: Transaction destination mismatch!")
-            logger.error(f"   Expected: {trading_contract_address}")
-            logger.error(f"   Actual: {tx_to_address}")
-            logger.error(f"   This will cause funds to go to the wrong address!")
-            raise ValueError(
-                f"Transaction destination address mismatch: Expected Trading contract {trading_contract_address}, "
-                f"but transaction is being sent to {tx_to_address}. This will cause funds to be lost!"
-            )
-    else:
-        logger.warning(f"⚠️ [CONTRACT_OPS] Transaction missing 'to' field - this is unusual")
-    
-    # CRITICAL: Verify trader address in trade struct matches signer address
-    if trade_struct.get('trader', '').lower() != trader_address.lower():
-        logger.error(f"❌ [CONTRACT_OPS] CRITICAL: Trade struct trader mismatch!")
-        logger.error(f"   Signer address: {trader_address}")
-        logger.error(f"   Trade struct trader: {trade_struct.get('trader', 'MISSING')}")
-        logger.error(f"   This will cause funds to go to the wrong address!")
-        raise ValueError(
-            f"Trade struct trader address mismatch: Signer is {trader_address} but trade struct has {trade_struct.get('trader')}. "
-            f"This will cause funds to be sent to the wrong address!"
-        )
-    
-    logger.info(f"✅ [CONTRACT_OPS] All address validations passed")
-    
-    return tx
-
-# ==========================================
-# 3. Position Management (Close/Read)
-# ==========================================
 
 async def close_position_via_contract(
-    trader_client,
     pair_index: int,
-    trade_index: int = 0
+    trade_index: int,
+    private_key: str,
+    rpc_url: Optional[str] = None,
+    execution_fee_wei: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Closes a specific position."""
-    try:
-        signer = trader_client.get_signer()
-        trader_address = signer.get_ethereum_address()
+    """
+    Close a specific position using Trading.closeTradeMarket.
+    
+    - Resolves the trader address from private_key
+    - Reads the current trade from TradingStorage to get the collateral (positionSizeUSDC)
+    - Calls closeTradeMarket with that amount and execution fee in value
+    """
+    from eth_account import Account
 
-        # Find the trade first to get current collateral (needed for closure)
-        trades, _ = await trader_client.trade.get_trades(trader_address)
-        target_trade = next(
-            (t for t in trades if t.trade.pair_index == pair_index and t.trade.trade_index == trade_index), 
-            None
+    if not private_key:
+        raise ValueError("Private key is required to close positions")
+
+    account = Account.from_key(private_key)
+    trader_address = account.address
+
+    rpc = _get_rpc_url(rpc_url)
+
+    # 1) Read the trade from TradingStorage to know how much to close
+    storage = _get_trading_storage_contract(rpc)
+
+    def _read_trade():
+        return storage.functions.openTrades(
+            trader_address, int(pair_index), int(trade_index)
+        ).call()
+
+    trade_raw = await asyncio.to_thread(_read_trade)
+    trade = _decode_trade_struct(trade_raw)
+
+    if not trade:
+        raise ValueError(
+            f"No open trade found for {trader_address} pair={pair_index} index={trade_index}"
         )
 
-        if not target_trade:
-            raise ValueError(f"Position not found for Pair {pair_index}")
+    amount_usdc_raw = trade["position_size_usdc_raw"]  # full close (positionSizeUSDC)
 
-        # Build Close TX
-        logger.info(f"🔒 Closing position on Pair {pair_index}...")
-        close_tx = await trader_client.trade.build_trade_close_tx(
-            pair_index=pair_index,
-            trade_index=trade_index,
-            collateral_to_close=target_trade.trade.open_collateral,  # Close 100%
-            trader=trader_address
-        )
+    # 2) Get execution fee for closing (reuse whatever you use for openTrade)
+    trading = AvantisTradingContract(
+        rpc_url=rpc,
+        contract_address=settings.avantis_trading_contract_address,
+        private_key=private_key,
+    )
 
-        receipt = await trader_client.sign_and_get_receipt(close_tx)
-        return _format_receipt(receipt, pair_index, "close")
-    except Exception as e:
-        logger.error(f"Error closing position: {e}")
-        raise
+    if execution_fee_wei is None:
+        # Default execution fee for closing (can be tuned)
+        execution_fee_wei = int(0.0003 * 10**18)  # e.g. 0.0003 ETH
 
-async def close_all_positions_via_contract(trader_client) -> Dict[str, Any]:
-    """Closes all open positions for a trader."""
-    try:
-        signer = trader_client.get_signer()
-        trader_address = signer.get_ethereum_address()
-        
-        # Get all trades
-        trades, _ = await trader_client.trade.get_trades(trader_address)
-        
-        if not trades:
-            return {
-                "closed_count": 0,
-                "tx_hashes": [],
-                "total_pnl": 0.0
-            }
-        
-        tx_hashes = []
-        total_pnl = 0.0
-        
-        # Close each position
-        for trade_wrapper in trades:
-            trade_obj = trade_wrapper.trade if hasattr(trade_wrapper, 'trade') else trade_wrapper
-            pair_index = getattr(trade_obj, 'pair_index', getattr(trade_obj, 'pairIndex', 0))
-            trade_index = getattr(trade_obj, 'trade_index', getattr(trade_obj, 'index', 0))
-            
-            try:
-                close_tx = await trader_client.trade.build_trade_close_tx(
-                    pair_index=pair_index,
-                    trade_index=trade_index,
-                    collateral_to_close=trade_obj.open_collateral,
-                    trader=trader_address
-                )
-                receipt = await trader_client.sign_and_get_receipt(close_tx)
-                tx_hash = receipt.get('transactionHash') if isinstance(receipt, dict) else getattr(receipt, 'transactionHash', None)
-                if tx_hash:
-                    tx_hashes.append(str(tx_hash.hex() if hasattr(tx_hash, 'hex') else tx_hash))
-                if hasattr(trade_wrapper, 'pnl'):
-                    total_pnl += float(trade_wrapper.pnl)
-            except Exception as e:
-                logger.warning(f"Failed to close position {pair_index}: {e}")
+    logger.info(
+        f"🔒 Closing position: trader={trader_address}, pair_index={pair_index}, "
+        f"trade_index={trade_index}, amount={amount_usdc_raw / 1e6:.2f} USDC"
+    )
+
+    # 3) Build & send tx
+    tx = trading.build_close_trade_market_tx(
+        pair_index=pair_index,
+        index=trade_index,
+        amount=amount_usdc_raw,
+        execution_fee_wei=execution_fee_wei,
+    )
+    tx_hash = trading.sign_and_send(tx)
+    logger.info(f"🚀 Sent closeTradeMarket tx: {tx_hash}")
+
+    # 4) Wait for receipt
+    tx_hash_bytes = HexBytes(tx_hash) if isinstance(tx_hash, str) else tx_hash
+    receipt = await asyncio.to_thread(trading.web3.eth.wait_for_transaction_receipt, tx_hash_bytes)
+
+    return _format_receipt(
+        receipt=receipt,
+        pair_index=pair_index,
+        action="close",
+    )
+
+
+async def close_all_positions_via_contract(
+    private_key: str,
+    rpc_url: Optional[str] = None,
+    pair_indices: Optional[List[int]] = None,
+) -> Dict[str, Any]:
+    """
+    Close all open positions across a range of pair indices.
+    Uses openTradesCount to find all positions efficiently.
+    """
+    from eth_account import Account
+
+    if not private_key:
+        raise ValueError("Private key is required to close positions.")
+
+    account = Account.from_key(private_key)
+    trader_address = account.address
+
+    rpc = _get_rpc_url(rpc_url)
+
+    trading = AvantisTradingContract(
+        rpc_url=rpc,
+        contract_address=settings.avantis_trading_contract_address,
+        private_key=private_key,
+    )
+
+    if not pair_indices:
+        max_pairs = getattr(settings, "avantis_max_pair_index", 32)
+        pair_indices = list(range(max_pairs))
+
+    storage = _get_trading_storage_contract(rpc)
+
+    tx_hashes: List[str] = []
+    execution_fee_wei = int(0.0003 * 10 ** 18)  # Default execution fee for closing
+
+    def _count_trades(p_idx: int) -> int:
+        return storage.functions.openTradesCount(trader_address, p_idx).call()
+
+    for pair_index in pair_indices:
+        try:
+            # Use openTradesCount to know how many trades exist for this pair
+            count = await asyncio.to_thread(_count_trades, pair_index)
+            if count == 0:
                 continue
-        
-        return {
-            "closed_count": len(tx_hashes),
-            "tx_hashes": tx_hashes,
-            "total_pnl": total_pnl
-        }
-    except Exception as e:
-        logger.error(f"Error closing all positions: {e}")
-        raise
 
-async def get_positions_via_contract(trader_client, address: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Fetches and formats all open positions."""
-    try:
-        if not trader_client.has_signer() and not address:
-            return []
-            
-        if not address:
-            address = trader_client.get_signer().get_ethereum_address()
+            # Close all trades for this pair (indices 0 to count-1)
+            for trade_index in range(count):
+                try:
+                    def _read_trade():
+                        return storage.functions.openTrades(
+                            trader_address, int(pair_index), int(trade_index)
+                        ).call()
+
+                    trade_raw = await asyncio.to_thread(_read_trade)
+                    trade = _decode_trade_struct(trade_raw)
+
+                    if not trade:
+                        continue
+
+                    amount_usdc_raw = trade["position_size_usdc_raw"]
+                    if amount_usdc_raw == 0:
+                        continue
+
+                    logger.info(
+                        f"🔒 Closing position on pair_index={pair_index}, "
+                        f"trade_index={trade_index}, size={amount_usdc_raw / 1e6:.2f} USDC"
+                    )
+
+                    tx = trading.build_close_trade_market_tx(
+                        pair_index=pair_index,
+                        index=trade_index,
+                        amount=amount_usdc_raw,
+                        execution_fee_wei=execution_fee_wei,
+                    )
+                    tx_hash = trading.sign_and_send(tx)
+                    tx_hashes.append(tx_hash)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to close position for pair_index={pair_index}, "
+                        f"trade_index={trade_index}: {e}"
+                    )
+        except Exception as e:
+            logger.warning(f"Failed to check/close positions for pair_index={pair_index}: {e}")
+
+    return {
+        "closed_count": len(tx_hashes),
+        "tx_hashes": tx_hashes,
+        "total_pnl": 0.0,
+    }
+
+
+async def get_positions_via_contract(
+    private_key: Optional[str] = None,
+    address: Optional[str] = None,
+    rpc_url: Optional[str] = None,
+    pair_indices: Optional[List[int]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Fetch open positions using TradingStorage.openTrades.
+    Uses openTradesCount to discover all positions efficiently.
+    """
+    if not private_key and not address:
+        raise ValueError("Either private_key or address is required to read positions.")
+
+    rpc = _get_rpc_url(rpc_url)
+
+    if private_key:
+        trading = AvantisTradingContract(
+            rpc_url=rpc,
+            contract_address=settings.avantis_trading_contract_address,
+            private_key=private_key,
+        )
+        if not trading.address:
+            raise ValueError("Failed to derive address from private key")
+        trader_address = trading.address
+    else:
+        # At this point, address cannot be None because we checked above
+        assert address is not None, "address must be provided when private_key is None"
+        trader_address = Web3.to_checksum_address(address)
+
+    if not pair_indices:
+        max_pairs = getattr(settings, "avantis_max_pair_index", 32)
+        pair_indices = list(range(max_pairs))
+
+    storage = _get_trading_storage_contract(rpc)
+    positions: List[Dict[str, Any]] = []
+
+    def _count_trades(p_idx: int) -> int:
+        return storage.functions.openTradesCount(trader_address, p_idx).call()
+
+    for pair_index in pair_indices:
+        try:
+            # Use openTradesCount to know how many trades exist for this pair
+            count = await asyncio.to_thread(_count_trades, pair_index)
+            if count == 0:
+                continue
+
+            # Iterate through all trade indices (0 to count-1)
+            for trade_index in range(count):
+                try:
+                    def _read_trade():
+                        return storage.functions.openTrades(
+                            trader_address, int(pair_index), int(trade_index)
+                        ).call()
+
+                    trade_raw = await asyncio.to_thread(_read_trade)
+                    trade = _decode_trade_struct(trade_raw)
+
+                    if not trade:
+                        continue
+
+                    positions.append(
+                        {
+                            "trader": trade["trader"],
+                            "pair_index": trade["pair_index"],
+                            "index": trade["index"],
+                            "initial_pos_token": trade["initial_pos_token_raw"],
+                            "position_size_usdc": trade["position_size_usdc"],
+                            "position_size_usdc_raw": trade["position_size_usdc_raw"],
+                            "open_price": trade["open_price"],
+                            "is_long": trade["is_long"],
+                            "leverage": trade["leverage"],
+                            "tp": trade["tp"],
+                            "sl": trade["sl"],
+                            "timestamp": trade["timestamp"],
+                        }
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to read position for pair_index={pair_index}, "
+                        f"trade_index={trade_index}: {e}"
+                    )
+        except Exception as e:
+            logger.warning(f"Failed to check positions for pair_index={pair_index}: {e}")
+
+    return positions
+
+
+async def update_tp_sl_via_contract(
+    pair_index: int,
+    trade_index: int,
+    new_tp: Optional[float],
+    new_sl: Optional[float],
+    private_key: str,
+    rpc_url: Optional[str] = None,
+    price_update_data: Optional[List[bytes]] = None,
+    execution_fee_wei: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Update TP/SL using Trading.updateTpAndSl.
+    """
+    if not private_key:
+        raise ValueError("Private key is required to update TP/SL.")
+
+    if new_tp is None and new_sl is None:
+        raise ValueError("At least one of new_tp or new_sl must be provided.")
+
+    rpc = _get_rpc_url(rpc_url)
+
+    trading = AvantisTradingContract(
+        rpc_url=rpc,
+        contract_address=settings.avantis_trading_contract_address,
+        private_key=private_key,
+    )
+    if not trading.address:
+        raise ValueError("Failed to derive address from private key")
+    trader_address = trading.address
+
+    logger.info(
+        f"🛠 Updating TP/SL for trader={trader_address}, pair_index={pair_index}, "
+        f"trade_index={trade_index}, new_tp={new_tp}, new_sl={new_sl}"
+    )
+
+    storage = _get_trading_storage_contract(rpc)
+    trade = storage.functions.openTrades(trader_address, int(pair_index), int(trade_index)).call()
+    if trade[0] == "0x0000000000000000000000000000000000000000":
+        raise ValueError(
+            f"No open trade found for trader={trader_address}, pair={pair_index}, index={trade_index}"
+        )
+
+    current_tp_int = int(trade[8])
+    current_sl_int = int(trade[9])
+
+    if new_tp is None:
+        new_tp_int = current_tp_int
+    else:
+        new_tp_int = int(new_tp * (10 ** PRICE_DECIMALS))
+
+    if new_sl is None:
+        new_sl_int = current_sl_int
+    else:
+        new_sl_int = int(new_sl * (10 ** PRICE_DECIMALS))
+
+    if price_update_data is None:
+        price_update_data = []
+
+    # updateTpAndSl requires value = 1 wei (not execution_fee_wei)
+    tx = trading.build_update_tp_sl_tx(
+        pair_index=pair_index,
+        index=trade_index,
+        new_sl=new_sl_int,
+        new_tp=new_tp_int,
+        price_update_data=price_update_data,
+    )
+    tx_hash = trading.sign_and_send(tx)
+    logger.info(f"🚀 Sent updateTpAndSl tx: {tx_hash}")
+
+    # Convert string hash to HexBytes for type checker
+    tx_hash_bytes = HexBytes(tx_hash) if isinstance(tx_hash, str) else tx_hash
+    receipt = await asyncio.to_thread(trading.web3.eth.wait_for_transaction_receipt, tx_hash_bytes)
+    return _format_receipt(receipt, pair_index=pair_index, action="update_tp_sl")
+
+
+async def update_margin_via_contract(
+    pair_index: int,
+    trade_index: int,
+    update_type: int,
+    amount_usdc: float,
+    private_key: str,
+    rpc_url: Optional[str] = None,
+    price_update_data: Optional[List[bytes]] = None,
+) -> Dict[str, Any]:
+    """
+    Update margin (deposit or withdraw) using Trading.updateMargin.
+    
+    Args:
+        pair_index: Trading pair index
+        trade_index: Trade index
+        update_type: 0 = DEPOSIT, 1 = WITHDRAW
+        amount_usdc: Amount in USDC (human-readable, will be converted to 6 decimals)
+        private_key: User's private key
+        rpc_url: Optional RPC URL
+        price_update_data: Optional price update data (defaults to empty list)
         
-        raw_trades, _ = await trader_client.trade.get_trades(address)
+    Returns:
+        Dictionary with transaction receipt
+    """
+    from eth_account import Account
+
+    if not private_key:
+        raise ValueError("Private key is required to update margin.")
+
+    if update_type not in [0, 1]:
+        raise ValueError("update_type must be 0 (DEPOSIT) or 1 (WITHDRAW)")
+
+    account = Account.from_key(private_key)
+    trader_address = account.address
+
+    rpc = _get_rpc_url(rpc_url)
+
+    # Verify trade exists
+    storage = _get_trading_storage_contract(rpc)
+
+    def _read_trade():
+        return storage.functions.openTrades(
+            trader_address, int(pair_index), int(trade_index)
+        ).call()
+
+    trade_raw = await asyncio.to_thread(_read_trade)
+    trade = _decode_trade_struct(trade_raw)
+
+    if not trade:
+        raise ValueError(
+            f"No open trade found for {trader_address} pair={pair_index} index={trade_index}"
+        )
+
+    # Convert human USDC amount to 6 decimals
+    amount_usdc_raw = int(amount_usdc * (10 ** USDC_DECIMALS))
+
+    trading = AvantisTradingContract(
+        rpc_url=rpc,
+        contract_address=settings.avantis_trading_contract_address,
+        private_key=private_key,
+    )
+
+    if price_update_data is None:
+        price_update_data = []
+
+    logger.info(
+        f"💰 Updating margin: trader={trader_address}, pair_index={pair_index}, "
+        f"trade_index={trade_index}, type={'DEPOSIT' if update_type == 0 else 'WITHDRAW'}, "
+        f"amount={amount_usdc:.2f} USDC"
+    )
+
+    tx = trading.build_update_margin_tx(
+        pair_index=pair_index,
+        index=trade_index,
+        update_type=update_type,
+        amount_usdc_raw=amount_usdc_raw,
+        price_update_data=price_update_data,
+    )
+    tx_hash = trading.sign_and_send(tx)
+    logger.info(f"🚀 Sent updateMargin tx: {tx_hash}")
+
+    tx_hash_bytes = HexBytes(tx_hash) if isinstance(tx_hash, str) else tx_hash
+    receipt = await asyncio.to_thread(trading.web3.eth.wait_for_transaction_receipt, tx_hash_bytes)
+
+    return _format_receipt(
+        receipt=receipt,
+        pair_index=pair_index,
+        action="update_margin",
+    )
+
+
+async def cancel_open_limit_order_via_contract(
+    pair_index: int,
+    index: int,
+    private_key: str,
+    rpc_url: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Cancel an open limit order using Trading.cancelOpenLimitOrder.
+    
+    Args:
+        pair_index: Trading pair index
+        index: Limit order index
+        private_key: User's private key
+        rpc_url: Optional RPC URL
         
-        positions = []
-        for t in raw_trades:
-            # Handle both wrapped and direct trade objects
-            trade_obj = t.trade if hasattr(t, 'trade') else t
-            positions.append({
-                'pair_index': getattr(trade_obj, 'pair_index', getattr(trade_obj, 'pairIndex', 0)),
-                'is_long': getattr(trade_obj, 'is_long', getattr(trade_obj, 'buy', False)),
-                'collateral': float(getattr(trade_obj, 'open_collateral', getattr(trade_obj, 'collateral', 0))),
-                'leverage': getattr(trade_obj, 'leverage', 1),
-                'pnl': float(t.pnl) if hasattr(t, 'pnl') else 0.0,
-                'entry_price': float(getattr(trade_obj, 'open_price', 0)) / (10**PRICE_DECIMALS) if hasattr(trade_obj, 'open_price') else 0
-            })
-        return positions
-        
-    except Exception as e:
-        logger.error(f"Error fetching positions: {e}")
-        return []
+    Returns:
+        Dictionary with transaction receipt
+    """
+    from eth_account import Account
+
+    if not private_key:
+        raise ValueError("Private key is required to cancel limit order.")
+
+    account = Account.from_key(private_key)
+    trader_address = account.address
+
+    rpc = _get_rpc_url(rpc_url)
+
+    trading = AvantisTradingContract(
+        rpc_url=rpc,
+        contract_address=settings.avantis_trading_contract_address,
+        private_key=private_key,
+    )
+
+    logger.info(
+        f"❌ Canceling limit order: trader={trader_address}, pair_index={pair_index}, index={index}"
+    )
+
+    tx = trading.build_cancel_open_limit_order_tx(
+        pair_index=pair_index,
+        index=index,
+    )
+    tx_hash = trading.sign_and_send(tx)
+    logger.info(f"🚀 Sent cancelOpenLimitOrder tx: {tx_hash}")
+
+    tx_hash_bytes = HexBytes(tx_hash) if isinstance(tx_hash, str) else tx_hash
+    receipt = await asyncio.to_thread(trading.web3.eth.wait_for_transaction_receipt, tx_hash_bytes)
+
+    return _format_receipt(
+        receipt=receipt,
+        pair_index=pair_index,
+        action="cancel_limit_order",
+    )
+
 
 # ==========================================
-# 4. Utilities
+# 4. Receipt formatter
 # ==========================================
 
 def _format_receipt(
-    receipt: Any, 
-    pair_index: int, 
+    receipt: Any,
+    pair_index: int,
     action: str,
     opening_fee: Optional[float] = None,
     total_cost: Optional[float] = None,
-    collateral_amount: Optional[float] = None
+    collateral_amount: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """Standardizes receipt output."""
-    # Handle ReceiptDict or AttributeDict
-    tx_hash = receipt.get('transactionHash') if isinstance(receipt, dict) else getattr(receipt, 'transactionHash', None)
-    if tx_hash and hasattr(tx_hash, 'hex'):
+    tx_hash = receipt.get("transactionHash") if isinstance(receipt, dict) else getattr(
+        receipt, "transactionHash", None
+    )
+    if tx_hash is not None and hasattr(tx_hash, "hex"):
         tx_hash = tx_hash.hex()
     elif isinstance(tx_hash, bytes):
         tx_hash = tx_hash.hex()
     elif not tx_hash:
-        tx_hash = str(tx_hash) if tx_hash else "unknown"
-    
-    status = receipt.get('status') if isinstance(receipt, dict) else getattr(receipt, 'status', None)
-    
-    # Check for success (1)
-    if status == 1 or status == '0x1':
-        block_number = receipt.get('blockNumber', 0) if isinstance(receipt, dict) else getattr(receipt, 'blockNumber', 0)
+        tx_hash = "unknown"
+
+    status = receipt.get("status") if isinstance(receipt, dict) else getattr(receipt, "status", None)
+
+    if status == 1 or status == "0x1":
+        block_number = receipt.get("blockNumber", 0) if isinstance(receipt, dict) else getattr(
+            receipt, "blockNumber", 0
+        )
         logger.info(f"✅ {action.capitalize()} Successful! TX: {tx_hash}")
-        
-        result = {
-            'success': True,
-            'tx_hash': str(tx_hash),
-            'pair_index': pair_index,
-            'status': 'confirmed',
-            'block': block_number,
-            'receipt': receipt
+
+        result: Dict[str, Any] = {
+            "success": True,
+            "tx_hash": str(tx_hash),
+            "pair_index": pair_index,
+            "status": "confirmed",
+            "block": block_number,
+            "receipt": receipt,
         }
-        
-        # Add fee information if provided (for open positions)
+
         if opening_fee is not None:
-            result['opening_fee'] = opening_fee
+            result["opening_fee"] = opening_fee
         if total_cost is not None:
-            result['total_cost'] = total_cost
+            result["total_cost"] = total_cost
         if collateral_amount is not None:
-            result['collateral'] = collateral_amount
-        
+            result["collateral"] = collateral_amount
+
         return result
-    else:
-        logger.error(f"❌ Transaction Reverted. TX: {tx_hash}")
-        raise ValueError(f"Transaction failed/reverted on chain. Hash: {tx_hash}")
+
+    logger.error(f"❌ Transaction Reverted. TX: {tx_hash}")
+    raise ValueError(f"Transaction failed/reverted on chain. Hash: {tx_hash}")
+
+
+# ==========================================
+# Rich Trade Helpers (for Chat Page)
+# ==========================================
+
+async def get_open_trade_full(
+    trader_address: str,
+    pair_index: int,
+    index: int,
+    rpc_url: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Return merged view of:
+    - openTrades(trader, pairIndex, index) -> Trade
+    - openTradesInfo(trader, pairIndex, index) -> TradeInfo
+    - getOpenLimitOrder(trader, pairIndex, index) -> OpenLimitOrder (if exists)
+    
+    Returns a rich trade object suitable for chat page display.
+    """
+    rpc = _get_rpc_url(rpc_url)
+    storage = _get_trading_storage_contract(rpc)
+
+    def _call_all():
+        trade_raw = storage.functions.openTrades(trader_address, pair_index, index).call()
+        info_raw = storage.functions.openTradesInfo(trader_address, pair_index, index).call()
+        # getOpenLimitOrder will return a zeroed struct if none exist; that's fine.
+        olo_raw = storage.functions.getOpenLimitOrder(trader_address, pair_index, index).call()
+        return trade_raw, info_raw, olo_raw
+
+    trade_raw, info_raw, olo_raw = await asyncio.to_thread(_call_all)
+
+    trade = _decode_trade_struct(trade_raw)
+    # If no trade at all, short-circuit
+    if not trade:
+        return {}
+
+    trade_info = _decode_trade_info_struct(info_raw)
+    open_limit = _decode_open_limit_order_struct(olo_raw)
+
+    return {
+        **trade,
+        "info": trade_info,
+        "open_limit_order": open_limit if open_limit else None,
+    }
+
+
+async def get_all_open_trades_for_trader(
+    trader_address: str,
+    max_pairs: Optional[int] = None,
+    rpc_url: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Scan across pairs and indexes using openTradesCount and return
+    full enriched trades for the given trader.
+
+    This is a good backend source for your 'open trade chat-page'.
+    
+    Args:
+        trader_address: Ethereum address of the trader
+        max_pairs: Maximum number of pairs to scan (defaults to settings.avantis_max_pair_index)
+        rpc_url: Optional RPC URL (uses settings default if not provided)
+        
+    Returns:
+        List of enriched trade dictionaries with Trade + TradeInfo + OpenLimitOrder
+    """
+    rpc = _get_rpc_url(rpc_url)
+    storage = _get_trading_storage_contract(rpc)
+
+    if max_pairs is None:
+        max_pairs = settings.avantis_max_pair_index
+
+    results: List[Dict[str, Any]] = []
+
+    def _count_for_pair(p_idx: int) -> int:
+        return storage.functions.openTradesCount(trader_address, p_idx).call()
+
+    # For each pair, use openTradesCount to know how many indices to look at
+    for pair_index in range(max_pairs):
+        try:
+            count = await asyncio.to_thread(_count_for_pair, pair_index)
+        except Exception as e:
+            logger.debug(f"Could not fetch openTradesCount for pair {pair_index}: {e}")
+            continue
+
+        if count == 0:
+            continue
+
+        # Trade indices are typically 0..(count-1), but some may be empty;
+        # we just iterate a small range and rely on empty trader address to skip.
+        for idx in range(count):
+            full = await get_open_trade_full(
+                trader_address=trader_address,
+                pair_index=pair_index,
+                index=idx,
+                rpc_url=rpc,
+            )
+            if full:
+                results.append(full)
+
+    return results

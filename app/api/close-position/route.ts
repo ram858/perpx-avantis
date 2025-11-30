@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { AvantisTradingService } from '@/lib/services/AvantisTradingService'
+import { AvantisClient } from '@/lib/services/AvantisClient'
 import { verifyTokenAndGetContext } from '@/lib/utils/authHelper'
 import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService'
 import { WebWalletService } from '@/lib/services/WebWalletService'
 
 // Lazy initialization - create services at runtime, not build time
-function getTradingService(): AvantisTradingService {
-  return new AvantisTradingService()
-}
-
 function getFarcasterWalletService(): BaseAccountWalletService {
   return new BaseAccountWalletService()
 }
@@ -19,9 +15,6 @@ function getWebWalletService(): WebWalletService {
 
 export async function POST(request: NextRequest) {
   try {
-    // Initialize services at runtime
-    const tradingService = getTradingService()
-    
     // Verify authentication
     const authHeader = request.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -118,20 +111,28 @@ export async function POST(request: NextRequest) {
 
     console.log(`[ClosePosition] Closing position with pair_index ${pairIndex} for ${authContext.context} user:`, userId)
 
-    // Use the trading service to close the position with private key
-    const result = await tradingService.closePosition(pairIndex, wallet.privateKey, userId as number)
+    // Use AvantisClient to call backend FastAPI directly (direct contract integration)
+    const avantisApiUrl = process.env.NEXT_PUBLIC_AVANTIS_API_URL || 'http://localhost:3002'
+    const avantisClient = new AvantisClient({ 
+      baseUrl: avantisApiUrl,
+      privateKey: wallet.privateKey 
+    })
     
-    if (result.success) {
+    try {
+      const result = await avantisClient.closePosition(pairIndex, wallet.privateKey)
+      
       console.log(`[ClosePosition] Successfully closed position for pair_index ${pairIndex}`)
       return NextResponse.json({
         success: true,
-        message: result.message
+        tx_hash: result.transaction_hash,
+        message: result.message || 'Position closed successfully'
       })
-    } else {
-      console.error(`[ClosePosition] Failed to close position for pair_index ${pairIndex}: ${result.message}`)
+    } catch (error) {
+      console.error(`[ClosePosition] Failed to close position for pair_index ${pairIndex}:`, error)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to close position'
       return NextResponse.json({
         success: false,
-        error: result.message
+        error: errorMessage
       }, { status: 400 })
     }
 

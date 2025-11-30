@@ -16,7 +16,7 @@ if (fs.existsSync(envPath)) {
 
 // Runtime functions to get environment variables (not evaluated at build time)
 function getAvantisApiUrl(): string {
-  return process.env.AVANTIS_API_URL || 'http://localhost:8000';
+  return process.env.AVANTIS_API_URL || 'http://localhost:3002';
 }
 
 function getBaseRpcUrl(): string {

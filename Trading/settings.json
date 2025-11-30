@@ -1,0 +1,37 @@
+{
+	"remappings": [
+		"@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+		"@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+		"forge-std/=lib/forge-std/src/",
+		"pyth-sdk-solidity/=lib/pyth-sdk-solidity/",
+		"@chainlink/=lib/chainlink/",
+		"chainlink/=lib/chainlink/",
+		"ds-test/=lib/forge-std/lib/ds-test/src/",
+		"erc4626-tests/=lib/openzeppelin-contracts-upgradeable/lib/erc4626-tests/",
+		"openzeppelin-contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/",
+		"openzeppelin-contracts/=lib/openzeppelin-contracts/",
+		"openzeppelin/=lib/openzeppelin-contracts-upgradeable/contracts/"
+	],
+	"optimizer": {
+		"enabled": true,
+		"runs": 200
+	},
+	"metadata": {
+		"useLiteralContent": false,
+		"bytecodeHash": "ipfs"
+	},
+	"outputSelection": {
+		"*": {
+			"*": [
+				"evm.bytecode",
+				"evm.deployedBytecode",
+				"devdoc",
+				"userdoc",
+				"metadata",
+				"abi"
+			]
+		}
+	},
+	"evmVersion": "london",
+	"viaIR": false
+}

@@ -4,9 +4,6 @@ uvicorn[standard]==0.32.0
 pydantic==2.9.2
 pydantic-settings==2.5.2
 
-# Avantis SDK
-avantis-trader-sdk>=0.8.10
-
 # Web3 and Ethereum
 web3>=6.15.0
 eth-account>=0.10.0

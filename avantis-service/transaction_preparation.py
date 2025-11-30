@@ -1,9 +1,10 @@
 """Transaction preparation for Base Account signing."""
 from typing import Optional, Dict, Any
 from decimal import Decimal
-from avantis_client import get_avantis_client
+from web3 import Web3
 from symbols import get_pair_index, SymbolNotFoundError
 from config import settings
+from direct_contracts import AvantisTradingContract, TradeParams
 import logging
 
 logger = logging.getLogger(__name__)
@@ -39,91 +40,68 @@ async def prepare_open_position_transaction(
         if pair_index is None:
             raise SymbolNotFoundError(f"Symbol {symbol} not found in registry")
         
-        # Create read-only client for Base Account
-        client = get_avantis_client(address=address)
-        trader_client = client.get_client()
+        # Get RPC URL
+        rpc_url = settings.get_effective_rpc_url()
         
-        # Ensure contracts are loaded
-        await trader_client.load_contracts()
+        # Create trading contract instance (read-only, no private key)
+        trading_contract = AvantisTradingContract(
+            rpc_url=rpc_url,
+            contract_address=settings.avantis_trading_contract_address,
+            private_key=None  # Read-only for Base Account
+        )
         
-        # Convert collateral to wei (USDC has 6 decimals)
-        collateral_wei = int(Decimal(str(collateral)) * Decimal(10**6))
+        # Convert values to on-chain units
+        collateral_usdc_int = int(collateral * 1e6)  # USDC has 6 decimals
+        tp_price = int(tp * 1e10) if tp else 0  # Price has 10 decimals
+        sl_price = int(sl * 1e10) if sl else 0  # Price has 10 decimals
         
-        # Prepare contract function parameters
-        function_params = {
-            'pairIndex': pair_index,
-            'collateralAmount': collateral_wei,
-            'leverage': leverage,
-            'isLong': is_long,
+        # Build trade params
+        params = TradeParams(
+            trader=Web3.to_checksum_address(address),
+            pair_index=pair_index,
+            collateral_usdc=collateral_usdc_int,
+            leverage=leverage,
+            is_long=is_long,
+            tp_price=tp_price,
+            sl_price=sl_price,
+            open_price=0,  # market order
+            index=0,
+            initial_pos_token=0,
+            timestamp=0,
+        )
+        
+        # Build trade struct
+        trade_struct = trading_contract.build_trade_struct(params)
+        
+        # Get function and encode
+        order_type = 0  # MARKET order
+        slippage_p = int(1.0 * 1e8)  # 1% slippage default
+        execution_fee_wei = int(0.0001 * 1e18)  # Default execution fee
+        
+        fn = trading_contract.open_trade_function(trade_struct, order_type, slippage_p)
+        
+        # Build transaction (without signing)
+        tx = trading_contract.build_transaction(
+            fn=fn,
+            from_address=address,
+            value_wei=execution_fee_wei
+        )
+        
+        # Encode the function call
+        encoded_data = fn.encodeABI()
+        
+        # Prepare transaction data for frontend
+        transaction_data = {
+            'to': trading_contract.contract_address,
+            'data': encoded_data,
+            'value': hex(execution_fee_wei),
+            'from': address,
+            'chainId': trading_contract.web3.eth.chain_id,
         }
         
-        # Add optional parameters
-        if tp is not None:
-            function_params['takeProfit'] = int(Decimal(str(tp)) * Decimal(10**8))
-        if sl is not None:
-            function_params['stopLoss'] = int(Decimal(str(sl)) * Decimal(10**8))
-        
-        # Get contract address and prepare transaction data
-        # Try different contract names
-        contract_names = ['Trading', 'PerpetualTrading', 'AvantisTrading', 'TradingContract']
-        function_names = ['openPosition', 'openTrade', 'createPosition']
-        
-        transaction_data = None
-        contract_address = None
-        
-        for contract_name in contract_names:
-            try:
-                # Load contract to get address
-                contract = await trader_client.load_contract(contract_name)
-                if contract and hasattr(contract, 'address'):
-                    contract_address = contract.address
-                elif isinstance(contract, dict) and 'address' in contract:
-                    contract_address = contract['address']
-                
-                # Prepare transaction data
-                # Try to get encoded transaction data from SDK if available
-                # Otherwise, return parameters for frontend encoding
-                transaction_data = {
-                    'to': contract_address or '0x0000000000000000000000000000000000000000',
-                    'data': '0x',  # Will be encoded by SDK or frontend
-                    'value': '0x0',
-                    'from': address,
-                }
-                
-                # Try to encode using SDK if available
-                try:
-                    # Check if trader_client has encoding capabilities
-                    if hasattr(trader_client, 'encode_function_call'):
-                        encoded_data = await trader_client.encode_function_call(
-                            contract_name=contract_name,
-                            function_name=function_names[0],
-                            **function_params
-                        )
-                        if encoded_data:
-                            transaction_data['data'] = encoded_data
-                    elif hasattr(trader_client, 'encode_transaction'):
-                        encoded_data = await trader_client.encode_transaction(
-                            contract_name=contract_name,
-                            function_name=function_names[0],
-                            params=function_params
-                        )
-                        if encoded_data:
-                            transaction_data['data'] = encoded_data
-                except Exception as e:
-                    logger.debug(f"Could not encode transaction via SDK: {e}. Frontend will handle encoding.")
-                
-                # Store function parameters for frontend encoding if needed
-                transaction_data['function'] = function_names[0]
-                transaction_data['contract'] = contract_name
-                transaction_data['params'] = function_params
-                
-                break
-            except Exception as e:
-                logger.debug(f"Failed to load contract {contract_name}: {e}")
-                continue
-        
-        if not transaction_data:
-            raise ValueError("Could not prepare transaction: No suitable contract found")
+        # Add gas if available
+        if 'gas' in tx:
+            transaction_data['gas'] = hex(tx['gas'])
         
         return {
             'success': True,
@@ -164,67 +142,67 @@ async def prepare_close_position_transaction(
         Dictionary with transaction data for frontend signing
     """
     try:
-        # Create read-only client for Base Account
-        client = get_avantis_client(address=address)
-        trader_client = client.get_client()
+        # Get RPC URL
+        rpc_url = settings.get_effective_rpc_url()
         
-        # Ensure contracts are loaded
-        await trader_client.load_contracts()
+        # Create trading contract instance (read-only, no private key)
+        trading_contract = AvantisTradingContract(
+            rpc_url=rpc_url,
+            contract_address=settings.avantis_trading_contract_address,
+            private_key=None  # Read-only for Base Account
+        )
         
-        # Get contract address and prepare transaction data
-        contract_names = ['Trading', 'PerpetualTrading', 'AvantisTrading', 'TradingContract']
-        function_names = ['closePosition', 'closeTrade', 'closePositionByPair']
+        # Get position size from TradingStorage
+        from contract_operations import _get_trading_storage_contract
+        storage = _get_trading_storage_contract(rpc_url)
         
-        transaction_data = None
+        # Read position to get amount
+        try:
+            trade = storage.functions.openTrades(
+                Web3.to_checksum_address(address),
+                int(pair_index),
+                0  # Default to first trade index
+            ).call()
+            
+            if trade[0] == "0x0000000000000000000000000000000000000000":
+                raise ValueError(f"No open position found for pair_index={pair_index}")
+            
+            position_size_usdc = int(trade[4])  # positionSizeUSDC
+        except Exception as e:
+            logger.warning(f"Could not read position size: {e}, using full position")
+            # Fallback: use a large amount (will close full position)
+            position_size_usdc = 2**256 - 1
         
-        for contract_name in contract_names:
-            try:
-                contract = await trader_client.load_contract(contract_name)
-                contract_address = None
-                if contract and hasattr(contract, 'address'):
-                    contract_address = contract.address
-                elif isinstance(contract, dict) and 'address' in contract:
-                    contract_address = contract['address']
-                
-                transaction_data = {
-                    'to': contract_address or '0x0000000000000000000000000000000000000000',
-                    'data': '0x',  # Will be encoded by SDK or frontend
-                    'value': '0x0',
-                    'from': address,
-                }
-                
-                # Try to encode using SDK if available
-                try:
-                    if hasattr(trader_client, 'encode_function_call'):
-                        encoded_data = await trader_client.encode_function_call(
-                            contract_name=contract_name,
-                            function_name=function_names[0],
-                            pairIndex=pair_index
-                        )
-                        if encoded_data:
-                            transaction_data['data'] = encoded_data
-                    elif hasattr(trader_client, 'encode_transaction'):
-                        encoded_data = await trader_client.encode_transaction(
-                            contract_name=contract_name,
-                            function_name=function_names[0],
-                            params={'pairIndex': pair_index}
-                        )
-                        if encoded_data:
-                            transaction_data['data'] = encoded_data
-                except Exception as e:
-                    logger.debug(f"Could not encode transaction via SDK: {e}. Frontend will handle encoding.")
-                
-                transaction_data['function'] = function_names[0]
-                transaction_data['contract'] = contract_name
-                transaction_data['params'] = {'pairIndex': pair_index}
-                
-                break
-            except Exception as e:
-                logger.debug(f"Failed to load contract {contract_name}: {e}")
-                continue
+        # Build transaction
+        execution_fee_wei = int(0.0001 * 1e18)  # Default execution fee
+        fn = trading_contract.close_trade_market_function(
+            pair_index=pair_index,
+            index=0,  # Default to first trade index
+            amount=position_size_usdc
+        )
         
-        if not transaction_data:
-            raise ValueError("Could not prepare transaction: No suitable contract found")
+        # Build transaction (without signing)
+        tx = trading_contract.build_transaction(
+            fn=fn,
+            from_address=address,
+            value_wei=execution_fee_wei
+        )
+        
+        # Encode the function call
+        encoded_data = fn.encodeABI()
+        
+        # Prepare transaction data for frontend
+        transaction_data = {
+            'to': trading_contract.contract_address,
+            'data': encoded_data,
+            'value': hex(execution_fee_wei),
+            'from': address,
+            'chainId': trading_contract.web3.eth.chain_id,
+        }
+        
+        # Add gas if available
+        if 'gas' in tx:
+            transaction_data['gas'] = hex(tx['gas'])
         
         return {
             'success': True,
@@ -256,52 +234,63 @@ async def prepare_approve_usdc_transaction(
         Dictionary with transaction data for frontend signing
     """
     try:
+        # Get RPC URL
+        rpc_url = settings.get_effective_rpc_url()
+        w3 = Web3(Web3.HTTPProvider(rpc_url))
+        if not w3.is_connected():
+            raise RuntimeError(f"Web3 provider not reachable: {rpc_url}")
+        
         # USDC token address from config
-        usdc_address = settings.usdc_token_address
+        usdc_address = Web3.to_checksum_address(settings.usdc_token_address)
+        spender_address = Web3.to_checksum_address(settings.avantis_trading_contract_address)
         
         # Convert amount to wei (USDC has 6 decimals)
-        amount_wei = int(Decimal(str(amount)) * Decimal(10**6)) if amount > 0 else 2**256 - 1  # Max uint256 for unlimited
+        if amount == 0:
+            amount_wei = 2**256 - 1  # Max uint256 for unlimited
+        else:
+            amount_wei = int(amount * 1e6)
         
-        # Avantis trading contract address
-        # Try to get from settings first, then from loaded contract
-        trading_contract_address = settings.avantis_trading_contract_address
+        # USDC approve ABI
+        usdc_abi = [
+            {
+                "constant": False,
+                "inputs": [
+                    {"name": "_spender", "type": "address"},
+                    {"name": "_value", "type": "uint256"}
+                ],
+                "name": "approve",
+                "outputs": [{"name": "", "type": "bool"}],
+                "type": "function"
+            }
+        ]
         
-        if not trading_contract_address:
-            # Try to get from loaded contract
-            client = get_avantis_client(address=address)
-            trader_client = client.get_client()
-            
-            contract_names = ['Trading', 'PerpetualTrading', 'AvantisTrading', 'TradingContract']
-            for contract_name in contract_names:
-                try:
-                    contract = await trader_client.load_contract(contract_name)
-                    if contract and hasattr(contract, 'address'):
-                        trading_contract_address = contract.address
-                        break
-                    elif isinstance(contract, dict) and 'address' in contract:
-                        trading_contract_address = contract['address']
-                        break
-                except:
-                    continue
+        usdc_contract = w3.eth.contract(address=usdc_address, abi=usdc_abi)
         
-        if not trading_contract_address:
-            raise ValueError(
-                "Could not determine Avantis trading contract address. "
-                "Please set AVANTIS_TRADING_CONTRACT_ADDRESS in environment variables."
-            )
+        # Build transaction
+        fn = usdc_contract.functions.approve(spender_address, amount_wei)
         
-        # Prepare approve transaction
+        # Estimate gas
+        try:
+            gas = w3.eth.estimate_gas({
+                "from": address,
+                "to": usdc_address,
+                "data": fn.encodeABI()
+            })
+        except Exception as e:
+            logger.warning(f"Gas estimation failed: {e}, using default")
+            gas = 100000  # Default gas limit for approve
+        
+        # Encode the function call
+        encoded_data = fn.encodeABI()
+        
+        # Prepare transaction data for frontend
         transaction_data = {
             'to': usdc_address,
-            'data': '0x',  # Frontend will encode approve(address spender, uint256 amount)
+            'data': encoded_data,
             'value': '0x0',
             'from': address,
-        }
-        
-        transaction_data['function'] = 'approve'
-        transaction_data['params'] = {
-            'spender': trading_contract_address,
-            'amount': amount_wei,
+            'chainId': w3.eth.chain_id,
+            'gas': hex(gas),
         }
         
         return {
@@ -310,7 +299,7 @@ async def prepare_approve_usdc_transaction(
             'params': {
                 'amount': amount,
                 'amount_wei': amount_wei,
-                'spender': trading_contract_address,
+                'spender': spender_address,
             },
             'address': address,
             'note': 'Sign this transaction via Base Account SDK on the frontend using eth_sendTransaction'

@@ -1,0 +1,93 @@
+# Commit Messages for Production Deployment
+
+## Commit 1: Migrate to direct contract integration (remove SDK dependency)
+
+feat: migrate from avantis_trader_sdk to direct Web3.py contract calls
+
+- Remove all SDK dependencies and references
+- Implement direct contract integration via Web3.py
+- Add AvantisTradingContract class for direct contract interactions
+- Update contract_operations.py to use direct calls
+- Add contracts/trading_abi.json for Trading contract
+- Update trade_operations.py to use new direct integration
+- Fix position queries to use openTradesCount for efficient discovery
+- Add comprehensive error handling and validation
+
+BREAKING CHANGE: Removed avantis_trader_sdk dependency. All trading operations now use direct Web3.py contract calls.
+
+---
+
+## Commit 2: Configure production contract addresses and fix port defaults
+
+feat: configure Base Mainnet contract addresses and fix port configurations
+
+- Set default Trading contract address: 0x44914408af82bC9983bbb330e3578E1105e11d4e
+- Set default TradingStorage contract address: 0x8a311D7048c35985aa31C131B9A13e03a5f7422d
+- Update config.py to use get_effective_rpc_url() for RPC configuration
+- Fix frontend API routes to use port 3002 instead of 8000
+- Fix trading-engine to use port 3002 for avantis-service API calls
+- Add extra="ignore" to Settings to handle additional .env fields gracefully
+- Update response format to include both tx_hash and transaction_hash for compatibility
+
+---
+
+## Commit 3: Fix frontend API routes to call backend directly
+
+fix: update frontend API routes to call avantis-service directly
+
+- Update /app/api/close-position/route.ts to use AvantisClient instead of TradingService
+- Update /app/api/positions/route.ts to use correct port (3002)
+- Ensure consistent API integration across frontend routes
+- Remove dependency on trading-engine for position operations
+
+---
+
+## Commit 4: Update trading engine to use correct avantis-service port
+
+fix: update trading-engine to use port 3002 for avantis-service API
+
+- Fix avantis-trading.ts default port from 8000 to 3002
+- Fix api/server.ts default port from 8000 to 3002
+- Fix avantis-address-queries.ts default port from 8000 to 3002
+- Ensure trading-engine correctly calls avantis-service backend
+
+---
+
+## Commit 5: Add end-to-end test script and improve position queries
+
+feat: add comprehensive test script and improve position discovery
+
+- Add test_direct_flow.py for end-to-end trading flow testing
+- Improve get_positions_via_contract to use openTradesCount efficiently
+- Add safety checks to prevent transactions with insufficient balance
+- Add comprehensive logging and Basescan links in test script
+- Update position queries to discover all positions across pair indices
+
+---
+
+## Commit 6: Clean up documentation and obsolete scripts
+
+chore: remove obsolete documentation and test scripts
+
+- Remove all .md documentation files (replaced by new implementation)
+- Remove obsolete test scripts (test-*.sh)
+- Remove obsolete start scripts (start-*.sh except START_SERVERS.sh)
+- Remove debug and monitoring scripts (check-*.sh, debug-*.sh, etc.)
+- Keep essential scripts: START_SERVERS.sh, STOP_SERVERS.sh, deploy.sh, setup.sh
+
+---
+
+## Alternative: Single Commit (if preferred)
+
+feat: migrate to direct contract integration and prepare for production
+
+- Migrate from avantis_trader_sdk to direct Web3.py contract calls
+- Configure Base Mainnet contract addresses (Trading, TradingStorage, USDC)
+- Fix port configurations across frontend and trading-engine (3002)
+- Update frontend API routes to call avantis-service directly
+- Add comprehensive test script (test_direct_flow.py)
+- Improve position queries using openTradesCount
+- Remove obsolete documentation and scripts
+- Add contract ABI and improve error handling
+
+BREAKING CHANGE: Removed SDK dependency. All operations now use direct contract calls.
