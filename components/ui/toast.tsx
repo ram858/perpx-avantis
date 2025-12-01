@@ -124,8 +124,9 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
       className={`
         max-w-sm w-full border rounded-lg p-4 shadow-lg backdrop-blur-sm
         transform transition-all duration-300 ease-in-out
-        ${isVisible ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'}
+        ${isVisible ? 'translate-x-0 opacity-100 scale-100' : 'translate-x-full opacity-0 scale-95'}
         ${getToastStyles()}
+        ${toast.type === 'success' ? 'animate-success-pulse' : ''}
       `}
     >
       <div className="flex items-start">

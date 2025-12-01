@@ -229,7 +229,8 @@ export function usePositions() {
       
       // Force refresh positions after successful close
       if (result.success) {
-        setTimeout(() => fetchPositions(true), 500);
+        // Small delay to allow blockchain to update
+        setTimeout(() => fetchPositions(true), 1000);
       }
       
       return result.success;

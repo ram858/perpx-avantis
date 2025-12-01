@@ -11,6 +11,10 @@ import { usePositions } from "@/lib/hooks/usePositions"
 import { useTradingSession } from "@/lib/hooks/useTradingSession"
 import { ProtectedRoute } from "@/components/ProtectedRoute"
 import { useState, useEffect, useMemo, useCallback, useRef } from "react"
+import { useToast } from "@/components/ui/toast"
+import { ProgressIndicator } from "@/components/ui/progress-indicator"
+import { EmptyState } from "@/components/ui/empty-state"
+import { BalanceSkeleton, CardSkeleton } from "@/components/ui/loading-skeleton"
 import { NavigationHeader } from "@/components/NavigationHeader"
 import { DepositModal } from "@/components/DepositModal"
 import { WalletConnectionModal } from "@/components/WalletConnectionModal"
@@ -98,6 +102,10 @@ const PortfolioBalanceCard = ({
   tradingError: string | null
   isLoading: boolean
 }) => {
+  const [displayBalance, setDisplayBalance] = useState(avantisBalance)
+  const [isAnimating, setIsAnimating] = useState(false)
+  const prevBalanceRef = useRef(avantisBalance)
+
   const formatValue = useCallback((value: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -107,6 +115,38 @@ const PortfolioBalanceCard = ({
     }).format(value)
   }, [])
 
+  // Animate balance changes
+  useEffect(() => {
+    if (prevBalanceRef.current !== avantisBalance && !isLoading) {
+      const oldBalance = prevBalanceRef.current
+      setIsAnimating(true)
+      const diff = avantisBalance - oldBalance
+      const steps = 20
+      const stepSize = diff / steps
+      let currentStep = 0
+
+      const interval = setInterval(() => {
+        currentStep++
+        if (currentStep >= steps) {
+          setDisplayBalance(avantisBalance)
+          setIsAnimating(false)
+          prevBalanceRef.current = avantisBalance // Update ref only after animation completes
+          clearInterval(interval)
+        } else {
+          setDisplayBalance(oldBalance + (stepSize * currentStep))
+        }
+      }, 30)
+
+      return () => clearInterval(interval)
+    } else if (isLoading) {
+      setDisplayBalance(avantisBalance)
+      prevBalanceRef.current = avantisBalance
+    } else if (prevBalanceRef.current === avantisBalance) {
+      // No change, just ensure display matches
+      setDisplayBalance(avantisBalance)
+    }
+  }, [avantisBalance, isLoading])
+
   const toggleBalance = useCallback(() => setIsBalanceVisible(!isBalanceVisible), [isBalanceVisible, setIsBalanceVisible])
 
   return (
@@ -114,11 +154,15 @@ const PortfolioBalanceCard = ({
       <div className="space-y-2">
         <h2 className="text-[#b4b4b4] text-sm font-medium">Trading Balance</h2>
         <div className="flex items-center space-x-3">
-          <span className="text-3xl sm:text-4xl font-bold text-white">
+          <span 
+            className={`text-3xl sm:text-4xl font-bold text-white transition-all duration-300 ${
+              isAnimating ? 'scale-110' : 'scale-100'
+            } ${avantisBalance > prevBalanceRef.current ? 'text-green-400' : avantisBalance < prevBalanceRef.current ? 'text-red-400' : 'text-white'}`}
+          >
             {isLoading && avantisBalance === 0 ? (
               <span className="text-[#9ca3af] text-2xl sm:text-3xl">Loading...</span>
             ) : (
-              isBalanceVisible ? formatValue(avantisBalance) : "••••••"
+              isBalanceVisible ? formatValue(displayBalance) : "••••••"
             )}
           </span>
           <button
@@ -816,7 +860,7 @@ const WalletInfoCard = ({
         setCopiedAddress(true)
         setTimeout(() => setCopiedAddress(false), 2000)
       } catch (err) {
-        console.error('Failed to copy address:', err)
+        // Failed to copy address
       }
     }
   }, [walletToDisplay?.address])
@@ -828,7 +872,7 @@ const WalletInfoCard = ({
         setCopiedPrivateKey(true)
         setTimeout(() => setCopiedPrivateKey(false), 2000)
       } catch (err) {
-        console.error('Failed to copy private key:', err)
+        // Failed to copy private key
       }
     }
   }, [walletToDisplay?.privateKey])
@@ -1195,6 +1239,7 @@ export default function HomePage() {
   const [recentDepositHash, setRecentDepositHash] = useState<string | null>(null)
   const [isRefreshingBalance, setIsRefreshingBalance] = useState(false)
   const hasRefreshedForTxRef = useRef<Set<string>>(new Set()) // Track which tx hashes we've already refreshed for
+  const { addToast } = useToast()
 
   // Optimized hook usage - only essential hooks
   const {
@@ -1293,7 +1338,6 @@ export default function HomePage() {
       // Only restore if user has balance (indicates they've started trading)
       refreshSessionStatus(true).catch(err => {
         // Silently fail - don't show errors for session restoration attempts
-        console.log('[HomePage] Could not restore session (this is normal if no active session):', err.message);
       });
     } else if (isConnected && !positionData?.openPositions && tradingSession && tradingSession.status !== 'running') {
       // If no positions and session is not running, clear it
@@ -1313,7 +1357,6 @@ export default function HomePage() {
         const running = sessions.filter(s => s.status === 'running');
         setActiveSessions(running);
       } catch (error) {
-        console.error('[HomePage] Failed to fetch active sessions:', error);
         setActiveSessions([]);
       } finally {
         setIsLoadingSessions(false);
@@ -1340,17 +1383,16 @@ export default function HomePage() {
     if (user?.webUserId && !isLoading && !primaryWallet && allWallets && allWallets.length === 0) {
       // Web user - wallet should already exist, try refreshing after a delay
       const timer = setTimeout(() => {
-        console.log('[HomePage] Web user detected but no wallet loaded, attempting to refresh...');
-        refreshWallets().catch(err => {
-          console.error('[HomePage] Wallet refresh error for web user:', err);
+        refreshWallets().catch(() => {
+          // Wallet refresh error
         });
       }, 2000);
       return () => clearTimeout(timer);
     } else if (user?.fid && !user?.webUserId && !isLoading && !primaryWallet && allWallets && allWallets.length === 0 && !error) {
       // Farcaster user - create wallet if needed
       const timer = setTimeout(() => {
-        createWallet('ethereum').catch(err => {
-          console.error('[HomePage] Wallet creation error:', err)
+        createWallet('ethereum').catch(() => {
+          // Wallet creation error
         })
       }, 500)
       return () => clearTimeout(timer)
@@ -1442,7 +1484,6 @@ export default function HomePage() {
                   gasEstimate = BigInt(estimatedGas)
                 }
               } catch (gasError) {
-                console.warn('[HomePage] Could not estimate gas, using default:', gasError)
                 // Use a more conservative estimate if gas estimation fails
                 gasEstimate = BigInt(25000) // Slightly higher to be safe
               }
@@ -1456,7 +1497,6 @@ export default function HomePage() {
                 })
                 gasPrice = BigInt(gasPriceHex)
               } catch (priceError) {
-                console.warn('[HomePage] Could not fetch gas price, using default:', priceError)
                 // Use 2 gwei as a safer default for Base network
                 gasPrice = BigInt('0x77359400') // ~2 gwei
               }
@@ -1476,15 +1516,13 @@ export default function HomePage() {
               }
             } else {
               // No provider available - show warning but continue (transaction will fail with better error)
-              console.warn('[HomePage] No provider available for balance check')
             }
           } catch (balanceError) {
             // If balance check fails, re-throw our custom error
             if (balanceError instanceof Error && balanceError.message.includes('Insufficient balance')) {
               throw balanceError
             }
-            // For other errors, log but continue - transaction will fail with wallet error
-            console.warn('[HomePage] Balance check error:', balanceError)
+            // For other errors, continue - transaction will fail with wallet error
           }
         }
 
@@ -1505,7 +1543,6 @@ export default function HomePage() {
           
           // Ensure we only refresh once per transaction hash
           if (hasRefreshedForTxRef.current.has(txHash)) {
-            console.log('[HomePage] Already refreshed balance for this transaction, skipping...')
             return
           }
           
@@ -1514,26 +1551,20 @@ export default function HomePage() {
           
           // Auto-refresh balance after successful deposit confirmation (ONCE ONLY)
           // Add a small delay to allow blockchain state to propagate
-          console.log('[HomePage] Deposit transaction confirmed, refreshing balance once in 2 seconds...')
           setIsRefreshingBalance(true)
           await new Promise(resolve => setTimeout(resolve, 2000))
           
           // Refresh balances to show updated balance immediately (only once)
           try {
             await refreshBalances(true) // Force refresh
-            console.log('[HomePage] Balance refreshed successfully after deposit (one-time refresh)')
           } catch (refreshError) {
-            console.warn('[HomePage] Balance refresh failed after deposit:', refreshError)
             // Don't throw - deposit was successful, just balance refresh failed
           } finally {
             setIsRefreshingBalance(false)
           }
         } catch (waitError) {
-          console.warn('[HomePage] Transaction wait timeout, refreshing anyway:', waitError)
-          
           // Ensure we only refresh once per transaction hash (even on timeout)
           if (hasRefreshedForTxRef.current.has(txHash)) {
-            console.log('[HomePage] Already refreshed balance for this transaction, skipping...')
             return
           }
           
@@ -1545,9 +1576,8 @@ export default function HomePage() {
             setIsRefreshingBalance(true)
             await new Promise(resolve => setTimeout(resolve, 3000)) // Longer delay if confirmation wait failed
             await refreshBalances(true)
-            console.log('[HomePage] Balance refreshed after deposit timeout (one-time refresh)')
           } catch (refreshError) {
-            console.warn('[HomePage] Balance refresh failed after deposit timeout:', refreshError)
+            // Balance refresh failed, but deposit was successful
           } finally {
             setIsRefreshingBalance(false)
           }
@@ -1645,7 +1675,7 @@ export default function HomePage() {
                       await refreshWallets()
                       await refreshBalances(true)
                     } catch (err) {
-                      console.error('[HomePage] Refresh failed:', err)
+                      // Refresh failed
                     }
                   }}
                   disabled={isLoading}
@@ -1690,16 +1720,20 @@ export default function HomePage() {
               hasExistingWallet={allWallets && allWallets.length > 0}
             />
           ) : (
-            <PortfolioBalanceCard
-              avantisBalance={avantisBalance}
-              totalProfits={totalProfits}
-              isBalanceVisible={isBalanceVisible}
-              setIsBalanceVisible={setIsBalanceVisible}
-              isConnected={isConnected}
-              isTradingLoading={isTradingLoading}
-              tradingError={tradingError}
-              isLoading={isLoading || isRefreshingBalance}
-            />
+            isLoading && avantisBalance === 0 ? (
+              <BalanceSkeleton />
+            ) : (
+              <PortfolioBalanceCard
+                avantisBalance={avantisBalance}
+                totalProfits={totalProfits}
+                isBalanceVisible={isBalanceVisible}
+                setIsBalanceVisible={setIsBalanceVisible}
+                isConnected={isConnected}
+                isTradingLoading={isTradingLoading}
+                tradingError={tradingError}
+                isLoading={isLoading || isRefreshingBalance}
+              />
+            )
           )}
 
           {/* Active Trading Sessions Section - Shows all running sessions */}

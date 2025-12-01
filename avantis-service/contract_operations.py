@@ -146,8 +146,10 @@ async def open_position_via_contract(
         raise
     except Exception as e:
         # If we cannot fetch min pos for some reason, we log but DO NOT block the trade.
-        # You can tighten this to 'raise' if you want to be strict.
+        # In production, you may want to make this stricter by raising the error.
+        # However, the on-chain require() will still catch BELOW_MIN_POS, so this is a safety net.
         logger.warning(f"⚠️ Could not fetch pairMinLevPosUSDC for pair_index={pair_index}: {e}")
+        logger.warning("⚠️ Proceeding with trade - on-chain validation will catch BELOW_MIN_POS if invalid")
 
     params = TradeParams(
         trader=trader_address,

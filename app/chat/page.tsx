@@ -12,6 +12,11 @@ import { useIntegratedWallet } from "@/lib/wallet/IntegratedWalletContext"
 import { useSearchParams } from "next/navigation"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { getStorageItem } from "@/lib/utils/safeStorage"
+import { QuickActions } from "@/components/ui/quick-actions"
+import { useToast } from "@/components/ui/toast"
+import { EmptyState } from "@/components/ui/empty-state"
+import { CardSkeleton } from "@/components/ui/loading-skeleton"
+import { ProgressIndicator } from "@/components/ui/progress-indicator"
 
 export default function ChatPage() {
   const searchParams = useSearchParams()
@@ -44,10 +49,12 @@ export default function ChatPage() {
     refreshSessionStatus,
     clearSession,
   } = useTradingSession()
+  const { addToast } = useToast()
 
   // Real-time position data
   const {
     positionData,
+    isLoading: positionsLoading,
     fetchPositions,
     closePosition: closeIndividualPosition,
     closeAllPositions: closeAllPositionsHook,
@@ -172,6 +179,14 @@ export default function ChatPage() {
           maxPerSession: maxPositions ? parseInt(maxPositions) : 3,
           lossThreshold: lossThreshold ? parseFloat(lossThreshold) : 10
       }, (step, message) => {
+        // Show toast for session start
+        if (step === 'session' && message.includes('✅')) {
+          addToast({
+            type: 'success',
+            title: 'Trading session started!',
+            message: 'Monitoring markets and executing trades',
+          })
+        }
         // Update progress in real-time
         setMessages(prev => {
           const lastMessage = prev[prev.length - 1];
@@ -212,7 +227,6 @@ export default function ChatPage() {
           return prev;
         });
       }).catch(error => {
-        console.error('[ChatPage] Trading start error:', error);
         const errorMessage = error instanceof Error ? error.message : String(error);
         
         // Determine the appropriate error message based on error type
@@ -372,6 +386,11 @@ export default function ChatPage() {
           const result = await response.json();
           if (result.success) {
             success = true;
+            addToast({
+              type: 'success',
+              title: 'All positions closed',
+              message: `Trading session stopped. Final PnL: $${tradingSession.pnl?.toFixed(2) || '0.00'}`,
+            })
             const closeMessage = {
               type: "bot" as const,
               content: `✅ All positions closed successfully! Trading session stopped. Final PnL: $${tradingSession.pnl?.toFixed(2) || '0.00'}`,
@@ -392,6 +411,11 @@ export default function ChatPage() {
         success = await closeIndividualPosition(positionId);
         
         if (success) {
+          addToast({
+            type: 'success',
+            title: 'Position closed',
+            message: `Position ${positionId} closed successfully`,
+          })
           const closeMessage = {
             type: "bot" as const,
             content: `✅ Position ${positionId} closed successfully!`,
@@ -401,6 +425,12 @@ export default function ChatPage() {
           
           // Refresh positions data
           await fetchPositions();
+        } else {
+          addToast({
+            type: 'error',
+            title: 'Close failed',
+            message: `Failed to close position ${positionId}`,
+          })
         }
       }
       
@@ -413,7 +443,6 @@ export default function ChatPage() {
         setMessages(prev => [...prev, errorMessage]);
       }
     } catch (error) {
-      console.error('Error closing position:', error);
       const errorMessage = {
         type: "bot" as const,
         content: `❌ Error closing position ${positionId}. Please try again.`,
@@ -436,7 +465,6 @@ export default function ChatPage() {
     setClosingPositions(allPositionIds);
     
     try {
-      console.log('[ChatPage] Closing all positions...');
       const success = await closeAllPositionsHook();
       
       if (success) {
@@ -464,7 +492,6 @@ export default function ChatPage() {
         setMessages(prev => [...prev, errorMessage]);
       }
     } catch (error) {
-      console.error('[ChatPage] Error closing all positions:', error);
       const errorMessage = {
         type: "bot" as const,
         content: `❌ Error closing all positions. Please try again.`,
@@ -847,25 +874,21 @@ export default function ChatPage() {
                 </div>
               </div>
               
-              <div className="w-full bg-[#262626] rounded-full h-2">
-                <div 
-                  className="bg-[#27c47d] h-2 rounded-full transition-all duration-300" 
-                  style={{ 
-                    width: `${Math.min(100, (() => {
-                      const pnl = positionData?.totalPnL || 0;
-                      const goal = tradingSession?.config?.profitGoal || 1;
-                      const positions = positionData?.openPositions || 0;
-                      
-                      // If PnL is 0 but we have positions, show some progress based on position count
-                      if (pnl === 0 && positions > 0) {
-                        return Math.min(20, positions * 2); // 2% per position, max 20%
-                      }
-                      
-                      return (pnl / goal) * 100;
-                    })())}%` 
-                  }}
-                ></div>
-              </div>
+              <ProgressIndicator
+                progress={Math.min(100, (() => {
+                  const pnl = positionData?.totalPnL || 0;
+                  const goal = tradingSession?.config?.profitGoal || 1;
+                  const positions = positionData?.openPositions || 0;
+                  
+                  // If PnL is 0 but we have positions, show some progress based on position count
+                  if (pnl === 0 && positions > 0) {
+                    return Math.min(20, positions * 2); // 2% per position, max 20%
+                  }
+                  
+                  return (pnl / goal) * 100;
+                })())}
+                label="Progress to goal"
+              />
               <p className="text-[#b4b4b4] text-xs mt-2">
                 Progress: {(() => {
                   const pnl = positionData?.totalPnL || 0;
@@ -883,7 +906,11 @@ export default function ChatPage() {
 
             {/* Show position cards when trading is active */}
             {/* Open Positions - Show real positions from Avantis */}
-            {positionData && positionData.openPositions > 0 && (
+            {positionsLoading ? (
+              <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4 mx-2 sm:mx-4">
+                <CardSkeleton />
+              </Card>
+            ) : positionData && positionData.openPositions > 0 ? (
               <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4 mx-2 sm:mx-4">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-white font-semibold">Open Positions</h3>
@@ -929,17 +956,22 @@ export default function ChatPage() {
                             </div>
                           </div>
                         </div>
-                        <Button
-                          onClick={() => handleClosePosition(position.coin)}
-                          disabled={closingPositions.includes(position.coin)}
-                          className="bg-red-500 hover:bg-red-600 text-white rounded-lg px-3 py-1 text-sm"
-                        >
-                          {closingPositions.includes(position.coin) ? (
-                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          ) : (
-                            "Close"
-                          )}
-                        </Button>
+                        <QuickActions
+                          position={{
+                            coin: position.coin,
+                            symbol: position.symbol,
+                            pair_index: position.pair_index,
+                            index: position.index,
+                            takeProfit: position.takeProfit,
+                            stopLoss: position.stopLoss,
+                          }}
+                          onClose={() => {
+                            fetchPositions()
+                          }}
+                          onUpdate={() => {
+                            fetchPositions()
+                          }}
+                        />
                       </div>
 
                       <div className="space-y-2 text-sm">
@@ -982,7 +1014,19 @@ export default function ChatPage() {
                   ))}
                 </div>
               </Card>
-            )}
+            ) : positionData && positionData.openPositions === 0 && tradingSession?.status === 'running' ? (
+              <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4 mx-2 sm:mx-4">
+                <EmptyState
+                  icon={
+                    <svg className="w-16 h-16 text-[#8759ff] mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                  }
+                  title="Monitoring markets"
+                  description="Your trading session is active and looking for profitable opportunities. Positions will appear here once opened."
+                />
+              </Card>
+            ) : null}
 
             {/* Show first position as LIVE POSITION card if positions exist, otherwise show fallback */}
             {tradingSession && positionData && positionData.positions && positionData.positions.length > 0 ? (
@@ -1103,19 +1147,21 @@ export default function ChatPage() {
                 </Card>
               ))
             ) : tradingSession && (!positionData || positionData.openPositions === 0) ? (
-              // Fallback: Show placeholder when session exists but no positions yet
+              // Fallback: Show empty state when session exists but no positions yet
               <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl p-4 mx-2 sm:mx-4">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-white font-semibold">Open Positions</h3>
                   <span className="text-[#b4b4b4] text-sm">{tradingSession.openPositions || 0} positions</span>
                 </div>
-
-                <div className="bg-[#2a1a2a] border border-[#262626] rounded-xl p-4 mb-4">
-                  <div className="text-center py-8">
-                    <p className="text-[#b4b4b4] text-sm">Waiting for positions to open...</p>
-                    <p className="text-[#6b7280] text-xs mt-2">The trading bot is monitoring markets and will open positions when opportunities are detected.</p>
-                  </div>
-                </div>
+                <EmptyState
+                  icon={
+                    <svg className="w-16 h-16 text-[#8759ff] mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                  }
+                  title="Monitoring markets"
+                  description="Your trading session is active and looking for profitable opportunities. Positions will appear here once opened."
+                />
               </Card>
             ) : null}
 
@@ -1616,7 +1662,6 @@ export default function ChatPage() {
                     setMessages(prev => [...prev, newMessage]);
                     
                   } catch (error) {
-                    console.error('Failed to start trading:', error);
                     // Add error message to chat
                     const errorMessage = {
                       type: "bot" as const,
