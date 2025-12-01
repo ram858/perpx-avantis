@@ -62,7 +62,6 @@ export function usePositions() {
       hasActiveSessionRef.current = !!activeSession;
       return !!activeSession;
     } catch (err) {
-      console.warn('[usePositions] Failed to check active session:', err);
       return hasActiveSessionRef.current; // Return cached value on error
     }
   }, [token]);
@@ -92,7 +91,6 @@ export function usePositions() {
       const fetchPositions = useCallback(async (force = false) => {
         // Authentication is required
         if (!token) {
-          console.warn('[usePositions] No token available, skipping fetch');
           setPositionData({ positions: [], totalPnL: 0, openPositions: 0 });
           return;
         }
@@ -101,7 +99,6 @@ export function usePositions() {
         if (!force) {
           const shouldFetch = await shouldFetchPositions();
           if (!shouldFetch) {
-            console.log('[usePositions] Conditions not met - need balance > 0 AND active trading session. Skipping fetch.');
             setPositionData({ positions: [], totalPnL: 0, openPositions: 0 });
             return;
           }
@@ -109,7 +106,6 @@ export function usePositions() {
 
         // Prevent concurrent fetches
         if (fetchInProgressRef.current && !force) {
-          console.log('[usePositions] Fetch already in progress, skipping...');
           return;
         }
 
@@ -120,7 +116,6 @@ export function usePositions() {
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => {
-            console.log('[usePositions] Request timeout, aborting...');
             controller.abort();
           }, 30000); // Increased to 30s timeout
 
@@ -144,18 +139,15 @@ export function usePositions() {
       setError(null);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch positions';
-      console.error('[usePositions] Error fetching positions:', errorMessage);
       
       // Handle AbortError gracefully
       if (err instanceof Error && err.name === 'AbortError') {
-        console.log('[usePositions] Request was aborted, likely due to timeout');
         setError('Request timeout - please check your connection');
         setPositionData({ positions: [], totalPnL: 0, openPositions: 0 });
       } else {
         // Retry logic for network errors (but not abort errors)
         if (retryCountRef.current < maxRetries && errorMessage.includes('fetch')) {
           retryCountRef.current++;
-          console.log(`[usePositions] Retrying... (${retryCountRef.current}/${maxRetries})`);
           setTimeout(() => fetchPositions(true), 2000 * retryCountRef.current);
         } else {
           setError(errorMessage);
@@ -178,7 +170,6 @@ export function usePositions() {
     // Prevent duplicate close requests
     const identifier = String(positionIdentifier);
     if (closePositionInProgressRef.current.has(identifier)) {
-      console.log(`[usePositions] Close position already in progress for ${identifier}`);
       return false;
     }
     
@@ -250,14 +241,12 @@ export function usePositions() {
     
     // Prevent duplicate close all requests
     if (closeAllInProgressRef.current) {
-      console.log('[usePositions] Close all positions already in progress');
       return false;
     }
     
     closeAllInProgressRef.current = true;
     
     try {
-      console.log('[usePositions] Calling close-all-positions API...');
       
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout for close all
@@ -279,7 +268,6 @@ export function usePositions() {
       }
       
       const result = await response.json();
-      console.log('[usePositions] Close all positions result:', result);
       
       // Force refresh positions after successful close
       if (result.success) {
@@ -312,7 +300,6 @@ export function usePositions() {
           if (cancelled) return;
           
           if (!shouldFetch) {
-            console.log('[usePositions] Conditions not met - need balance > 0 AND active trading session. Not fetching positions.');
             setPositionData({ positions: [], totalPnL: 0, openPositions: 0 });
             return;
           }

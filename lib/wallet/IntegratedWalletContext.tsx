@@ -284,9 +284,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     //   });
     // }
     
-    if (difference > 0.01) {
-      console.warn(`[IntegratedWallet] Balance calculation discrepancy: Total=$${totalPortfolioValue.toFixed(2)}, Holdings Sum=$${holdingsSum.toFixed(2)}, Diff=$${difference.toFixed(2)}`);
-    }
+    // Balance calculation discrepancy check (silent)
   }, []);
 
   // ============================================================================
@@ -321,20 +319,17 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     }
 
     if (!addressToUse || !token) {
-      console.log('[IntegratedWallet] No wallet address available, skipping balance refresh');
       return;
     }
 
     // Prevent concurrent calls
     if (isRefreshingRef.current) {
-      console.log('[IntegratedWallet] Balance refresh already in progress, skipping...');
       return;
     }
 
     // Prevent too frequent refreshes (unless force refresh)
     const timeSinceLastRefresh = Date.now() - lastUpdateTimestampRef.current;
     if (!forceRefresh && timeSinceLastRefresh < 2000) {
-      console.log('[IntegratedWallet] Skipping refresh - too soon since last update (', timeSinceLastRefresh, 'ms)');
       return;
     }
 
@@ -406,7 +401,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
             
             tradingVaultHoldings = tradingVaultHoldingsRaw;
           } catch (vaultError) {
-            console.warn('[IntegratedWallet] Unable to fetch trading vault balance:', vaultError);
+            // Unable to fetch trading vault balance
           }
         } else if (user?.webUserId) {
           // For web users, trading wallet IS the main wallet - use the main balance as avantisBalance
@@ -414,7 +409,6 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
           const usdcHolding = baseHoldings.find(h => h.token.symbol === 'USDC');
           if (usdcHolding && usdcHolding.valueUSD > 0) {
             tradingVaultTotal = usdcHolding.valueUSD;
-            console.log(`[IntegratedWallet] Web user - using USDC balance as avantisBalance: $${tradingVaultTotal.toFixed(2)}`);
           }
         } else {
           // For Farcaster users: Even if addresses are the same, fetch trading wallet separately
@@ -485,7 +479,6 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
           const isSignificantDifference = totalDifference > prev.totalPortfolioValue * 0.5; // 50% difference
           
           if (hasFewerHoldings && isSignificantDifference) {
-            console.warn('[IntegratedWallet] Skipping potentially stale data update');
             return prev; // Keep previous state
           }
         }
@@ -517,7 +510,6 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
           const usdcHolding = combinedHoldings.find(h => h.token.symbol === 'USDC');
           if (usdcHolding && usdcHolding.valueUSD > 0) {
             calculatedAvantisBalance = usdcHolding.valueUSD;
-            console.log(`[IntegratedWallet] Web user - using USDC balance as avantisBalance: $${calculatedAvantisBalance.toFixed(2)}`);
           }
         }
         
@@ -748,7 +740,6 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     if (previousWebUserId !== undefined && 
         currentWebUserId !== previousWebUserId &&
         currentWebUserId !== undefined) {
-      console.log('[IntegratedWallet] Web user changed (different phone number), resetting wallet state...');
       
       // Reset all wallet state
       setState({

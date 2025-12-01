@@ -157,24 +157,20 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const fetchBalances = useCallback(async (provider: ethers.BrowserProvider, address: string) => {
     // Prevent multiple simultaneous calls
     if (isLoadingRef.current) {
-      console.log('[WalletContext] Already loading balances, skipping...');
       return;
     }
 
     try {
       isLoadingRef.current = true;
-      console.log('[WalletContext] Fetching balances for:', address);
       setState(prev => ({ ...prev, isLoading: true, error: null }));
 
       // Get ETH balance
       const { balance: ethBalance, balanceFormatted: ethBalanceFormatted } = await getEthBalance(provider, address);
-      console.log('[WalletContext] ETH balance:', ethBalanceFormatted);
 
       // Get token balances
       const tokenBalances = await Promise.all(
         SUPPORTED_TOKENS.map(token => getTokenBalance(provider, token, address))
       );
-      console.log('[WalletContext] Token balances fetched:', tokenBalances.length);
 
       // Get Avantis balance (use Avantis wallet private key if available, otherwise use MetaMask address)
       // Note: Avantis requires private key, not just address
@@ -220,10 +216,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         dailyChange = totalPortfolioValue - lastDayPortfolioValue;
         dailyChangePercentage = lastDayPortfolioValue !== 0 ? (dailyChange / lastDayPortfolioValue) * 100 : 0;
       }
-
-      console.log('[WalletContext] Total portfolio value:', totalPortfolioValue);
-      console.log('[WalletContext] Daily change:', dailyChange);
-      console.log('[WalletContext] Daily change percentage:', dailyChangePercentage);
 
       setState(prev => ({
         ...prev,
@@ -406,7 +398,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   // Listen for trading results and update balance
   useEffect(() => {
     const unsubscribe = walletBalanceUpdater.onTradingResult((result: TradingResult) => {
-      console.log('[WalletContext] Trading result received:', result);
 
       // Update the portfolio value based on trading results
       setState(prev => ({

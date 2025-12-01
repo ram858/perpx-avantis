@@ -4,7 +4,6 @@ import { useState, useCallback, useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useBaseMiniApp } from './useBaseMiniApp';
 import { useIntegratedWallet } from '../wallet/IntegratedWalletContext';
-import { useUILogger } from './useUILogger';
 import { ethers } from 'ethers';
 import { BaseAccountTransactionService } from '../services/BaseAccountTransactionService';
 import { getNetworkConfig } from '../config/network';
@@ -31,7 +30,6 @@ export function useTradingFee() {
   const { token } = useAuth();
   const { sdk, isBaseContext } = useBaseMiniApp();
   const { primaryWallet, tradingWallet } = useIntegratedWallet();
-  const { addLog } = useUILogger();
   const [isPayingFee, setIsPayingFee] = useState(false);
   const [feeError, setFeeError] = useState<string | null>(null);
   const [tradingWalletWithKey, setTradingWalletWithKey] = useState<WalletWithKey | null>(null);
@@ -47,8 +45,6 @@ export function useTradingFee() {
     }
     
     const fetchTradingWalletWithKey = async () => {
-      addLog('info', 'Fetching trading wallet with private key...');
-      
       try {
         const response = await fetch('/api/wallet/primary-with-key', {
           headers: {
@@ -56,32 +52,17 @@ export function useTradingFee() {
           }
         });
         
-        addLog('info', `API response status: ${response.status}`);
-        
         if (response.ok) {
           const data = await response.json();
-          addLog('info', 'API response received', {
-            hasWallet: !!data.wallet,
-            address: data.wallet?.address,
-            hasPrivateKey: !!data.wallet?.privateKey,
-            privateKeyLength: data.wallet?.privateKey?.length || 0
-          });
           
           if (data.wallet && data.wallet.privateKey) {
             setTradingWalletWithKey(data.wallet);
-            addLog('success', `Successfully loaded trading wallet with private key: ${data.wallet.address.slice(0, 10)}...`);
-          } else {
-            addLog('warning', 'Wallet exists but no private key yet (may be creating)');
           }
         } else if (response.status === 404) {
           // Wallet not found yet - this is OK during initial creation
-          addLog('warning', 'Trading wallet not found yet (may be creating)');
-        } else {
-          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-          addLog('error', `API request failed: ${response.status}`, errorData);
         }
       } catch (error) {
-        addLog('error', 'Exception during wallet fetch', error);
+        // Exception during wallet fetch
       }
     };
 
@@ -261,18 +242,15 @@ export function useTradingFee() {
    */
   const fetchWalletWithKeyOnDemand = useCallback(async (): Promise<WalletWithKey | null> => {
     if (!token) {
-      addLog('warning', 'No token for on-demand fetch');
       return null;
     }
 
     // If we already have it, return it
     if (tradingWalletWithKey?.privateKey) {
-      addLog('info', 'Already have wallet with private key');
       return tradingWalletWithKey;
     }
 
     // Try to fetch it
-    addLog('info', 'Fetching wallet with private key on-demand...');
     
     try {
       const response = await fetch('/api/wallet/primary-with-key', {
@@ -286,21 +264,11 @@ export function useTradingFee() {
         if (data.wallet && data.wallet.privateKey) {
           // Validate private key format
           if (data.wallet.privateKey.length === 66 && data.wallet.privateKey.startsWith('0x')) {
-            addLog('success', 'On-demand fetch successful! Private key loaded.');
             setTradingWalletWithKey(data.wallet);
             return data.wallet;
           } else {
-            addLog('error', 'Invalid private key format received', {
-              length: data.wallet.privateKey.length,
-              startsWith0x: data.wallet.privateKey.startsWith('0x')
-            });
             return null;
           }
-        } else {
-          addLog('error', 'Wallet returned but no private key in response', {
-            hasWallet: !!data.wallet,
-            hasPrivateKey: !!data.wallet?.privateKey
-          });
         }
       } else if (response.status === 404) {
         // Wallet doesn't exist - try to create it (with safeguards)
@@ -308,18 +276,13 @@ export function useTradingFee() {
         
         // Prevent infinite loops: max 1 creation attempt per session
         if (isCreatingWallet) {
-          addLog('warning', 'Wallet creation already in progress, skipping...');
           return null;
         }
         
         if (walletCreationAttempts >= 1) {
-          addLog('error', 'Max wallet creation attempts reached. Please refresh the page.', {
-            attempts: walletCreationAttempts
-          });
           return null;
         }
         
-        addLog('warning', 'Trading wallet not found. Attempting to create...', errorData);
         setIsCreatingWallet(true);
         setWalletCreationAttempts(prev => prev + 1);
         
@@ -342,7 +305,6 @@ export function useTradingFee() {
           const createResponse = await Promise.race([createPromise, timeoutPromise]) as Response;
           
           if (createResponse.ok) {
-            addLog('success', 'Trading wallet created! Waiting 1s then retrying fetch...');
             
             // Wait a moment for DB to sync
             await new Promise(resolve => setTimeout(resolve, 1000));
@@ -363,42 +325,30 @@ export function useTradingFee() {
             if (retryResponse.ok) {
               const retryData = await retryResponse.json();
               if (retryData.wallet && retryData.wallet.privateKey) {
-                addLog('success', 'Wallet created and private key loaded!');
                 setTradingWalletWithKey(retryData.wallet);
                 setIsCreatingWallet(false);
                 return retryData.wallet;
               } else {
-                addLog('error', 'Wallet created but private key not in response');
               }
             } else {
-              addLog('warning', 'Wallet created but fetch failed, will retry on next attempt');
             }
           } else {
             const createError = await createResponse.json().catch(() => ({ error: 'Unknown error' }));
-            addLog('error', 'Failed to create trading wallet', createError);
           }
         } catch (createError) {
           if (createError instanceof Error && createError.message.includes('timeout')) {
-            addLog('error', 'Wallet creation timed out. Please try again or refresh the page.');
           } else {
-            addLog('error', 'Exception while creating wallet', createError);
           }
         } finally {
           setIsCreatingWallet(false);
         }
       }
       
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-      addLog('error', 'On-demand fetch failed', {
-        status: response.status,
-        error: errorData
-      });
       return null;
     } catch (error) {
-      addLog('error', 'On-demand fetch error', error);
       return null;
     }
-  }, [token, tradingWalletWithKey, addLog, isCreatingWallet, walletCreationAttempts]);
+  }, [token, tradingWalletWithKey, isCreatingWallet, walletCreationAttempts]);
 
   /**
    * Pay trading fee - main function
@@ -408,18 +358,14 @@ export function useTradingFee() {
     setFeeError(null);
 
     try {
-      addLog('info', 'Starting fee payment...');
       
       // Get transaction data from API first
       const txData = await getFeeTransactionData();
-      addLog('info', 'Transaction data received', { isBaseAccount: txData.isBaseAccount });
 
       // If using Base Account SDK, we don't need private key
       if (txData.isBaseAccount && isBaseContext && sdk) {
-        addLog('info', 'Using Base Account SDK for fee payment');
         const result = await payFeeWithBaseAccount(txData);
         setFeeError(null);
-        addLog('success', 'Fee payment successful via Base Account SDK');
         return result;
       }
 
@@ -427,32 +373,20 @@ export function useTradingFee() {
       let walletWithKey = tradingWalletWithKey;
       
       if (!walletWithKey?.privateKey && tradingWallet?.address) {
-        addLog('warning', 'Private key not loaded, fetching on-demand...');
         walletWithKey = await fetchWalletWithKeyOnDemand();
       }
 
       // IMPORTANT: Only use trading wallet for fee payment, never fall back to primaryWallet (Farcaster)
       // Update walletForFee with the fetched wallet - but ONLY trading wallet
       const effectiveWallet = walletWithKey || tradingWallet;
-      
-      addLog('info', 'Wallet status check', {
-        hasWallet: !!effectiveWallet,
-        walletAddress: effectiveWallet?.address ? `${effectiveWallet.address.slice(0, 10)}...` : 'none',
-        hasPrivateKey: !!effectiveWallet?.privateKey,
-        hasTradingWalletWithKey: !!walletWithKey,
-        hasTradingWallet: !!tradingWallet,
-        usingTradingWallet: true // Always use trading wallet
-      });
 
       // Check if we have trading wallet available
       if (!effectiveWallet?.address) {
-        addLog('error', 'No trading wallet available for fee payment');
         throw new Error('Trading wallet not available. Please ensure your trading wallet is set up.');
       }
       
       // Ensure we have private key for trading wallet
       if (!effectiveWallet?.privateKey) {
-        addLog('error', 'Trading wallet private key not available');
         throw new Error('Trading wallet private key not available. Cannot pay fee.');
       }
 
@@ -462,13 +396,11 @@ export function useTradingFee() {
       // Since we always use trading wallet now, txData.isBaseAccount should always be false
       // But keep this check for safety
       if (txData.isBaseAccount) {
-        addLog('error', 'Unexpected: Base Account detected but we should only use trading wallet');
         throw new Error('Fee payment must use trading wallet. Please ensure your trading wallet is set up.');
       }
       
       if (effectiveWallet?.privateKey) {
         // Use trading wallet with private key for automated trading
-        addLog('info', `Using trading wallet with private key for fee payment: ${effectiveWallet.address.slice(0, 10)}...`);
         
         // Pay fee directly with the wallet that has private key
         if (!effectiveWallet.privateKey) {
@@ -489,14 +421,12 @@ export function useTradingFee() {
         // Get the current nonce to avoid "already known" errors
         // Use 'pending' to include pending transactions in the count
         let nonce = await provider.getTransactionCount(wallet.address, 'pending');
-        addLog('info', `Using nonce ${nonce} for fee payment transaction`);
         
         // Double-check nonce after a short delay to ensure we have the latest
         await new Promise(resolve => setTimeout(resolve, 500));
         const latestNonce = await provider.getTransactionCount(wallet.address, 'pending');
         if (latestNonce > nonce) {
           nonce = latestNonce;
-          addLog('info', `Updated nonce to ${nonce} after delay`);
         }
 
         const tx = await wallet.sendTransaction({
@@ -505,9 +435,7 @@ export function useTradingFee() {
           nonce: nonce, // Explicitly set nonce to avoid conflicts
         });
 
-        addLog('info', `Transaction sent: ${tx.hash}, waiting for confirmation...`);
         await tx.wait();
-        addLog('success', `Transaction confirmed: ${tx.hash}`);
 
         result = {
           success: true,
@@ -515,20 +443,14 @@ export function useTradingFee() {
           amount: txData.amounts.eth,
           currency: 'ETH',
         };
-        addLog('success', `Fee payment successful! TX: ${tx.hash.slice(0, 10)}...`);
         // Reset wallet creation attempts on success
         setWalletCreationAttempts(0);
       } else {
         // No private key and not a Base Account
-        addLog('error', 'No private key available for trading wallet', {
-          effectiveWallet: effectiveWallet ? { address: effectiveWallet.address } : null,
-          walletWithKey: walletWithKey ? { address: walletWithKey.address, hasKey: !!walletWithKey.privateKey } : null
-        });
         throw new Error('Trading wallet private key not available. Please ensure you have deposited funds and your trading wallet is set up correctly.');
       }
 
       if (!result.success) {
-        addLog('error', 'Fee payment failed', result.error);
         setFeeError(result.error || 'Failed to pay fee');
         throw new Error(result.error || 'Failed to pay fee');
       }
@@ -539,7 +461,6 @@ export function useTradingFee() {
       return result;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to pay trading fee';
-      addLog('error', 'Fee payment error', errorMessage);
       setFeeError(errorMessage);
       throw new Error(errorMessage);
     } finally {
@@ -547,7 +468,7 @@ export function useTradingFee() {
       // Always reset creation flag in finally
       setIsCreatingWallet(false);
     }
-  }, [token, sdk, isBaseContext, tradingWalletWithKey, tradingWallet, primaryWallet, getFeeTransactionData, payFeeWithBaseAccount, fetchWalletWithKeyOnDemand, addLog]);
+  }, [token, sdk, isBaseContext, tradingWalletWithKey, tradingWallet, primaryWallet, getFeeTransactionData, payFeeWithBaseAccount, fetchWalletWithKeyOnDemand]);
 
   return {
     payTradingFee,

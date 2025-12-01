@@ -12,11 +12,6 @@ export function PerformanceMonitor() {
       if (navigation) {
         const loadTime = navigation.loadEventEnd - navigation.fetchStart
         setLoadTime(loadTime)
-        
-        // Log performance metrics
-        console.log(`[Performance] Page load time: ${loadTime.toFixed(2)}ms`)
-        console.log(`[Performance] DOM content loaded: ${(navigation.domContentLoadedEventEnd - navigation.fetchStart).toFixed(2)}ms`)
-        console.log(`[Performance] First contentful paint: ${(navigation.domContentLoadedEventStart - navigation.fetchStart).toFixed(2)}ms`)
       }
     }
   }, [])

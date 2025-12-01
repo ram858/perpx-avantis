@@ -92,11 +92,6 @@ export function PerformanceMonitor({ onMetricsUpdate, enableLogging = false }: P
   const updateMetrics = (newMetrics: Partial<PerformanceMetrics>) => {
     setMetrics(prev => {
       const updated = { ...prev, ...newMetrics }
-      
-      if (enableLogging) {
-        console.log('Performance Metrics:', updated)
-      }
-      
       onMetricsUpdate?.(updated)
       return updated
     })
@@ -128,10 +123,6 @@ export function usePerformanceMonitor(componentName: string) {
       const endTime = performance.now()
       const duration = endTime - startTime
       setRenderTime(duration)
-      
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`${componentName} render time: ${duration.toFixed(2)}ms`)
-      }
     }
   }, [componentName])
 

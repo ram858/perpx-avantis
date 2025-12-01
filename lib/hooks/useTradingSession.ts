@@ -57,17 +57,15 @@ export function useTradingSession() {
             } : null);
           } else if (session.status === 'error' || session.status === 'completed' || session.status === 'stopped') {
             // Only clear if session is definitively ended (not just temporarily unavailable)
-            console.log('[useTradingSession] Session ended, clearing:', session.status);
             setTradingSession(null);
           }
           // If status is 'not_found' or other transient states, keep existing session to prevent flickering
         } else {
           // Session not found - but don't clear immediately (might be transient)
-          console.log('[useTradingSession] Session not found in API response, keeping existing session state');
           // Don't clear - keep existing session to prevent flickering
         }
       } catch (err) {
-        console.warn('[useTradingSession] Failed to refresh session status (non-critical):', err);
+        // Failed to refresh session status (non-critical)
         // Don't clear session on error - keep existing state to prevent flickering
         // Only log the error, don't update state
       }
@@ -103,16 +101,14 @@ export function useTradingSession() {
             }
           };
           setTradingSession(sessionState);
-          console.log('[useTradingSession] Restored active session:', activeSession.id);
         } else {
           // No active session found - clear any stale session state
           if (tradingSession) {
-            console.log('[useTradingSession] No active session found, clearing stale session');
             setTradingSession(null);
           }
         }
       } catch (err) {
-        console.error('Failed to restore session:', err);
+        // Failed to restore session
         // On error, clear session to avoid showing stale data
         if (tradingSession) {
           setTradingSession(null);
@@ -171,13 +167,6 @@ export function useTradingSession() {
       
       // Step 4: Start trading session (this should return quickly)
       onProgress?.('session', 'Starting trading session...');
-      console.log('[useTradingSession] Starting trading session with config:', {
-        totalBudget: budget,
-        profitGoal: config.profitGoal || config.targetProfit || 10,
-        maxPositions: config.maxPerSession || 3,
-        leverage: calculatedLeverage, // Balance-based: $10-20=2x-3x, $20+=5x default
-        lossThreshold: config.lossThreshold || 10
-      });
       
       try {
         const session = await startTradingAPI({
@@ -188,8 +177,7 @@ export function useTradingSession() {
           lossThreshold: config.lossThreshold || 10
         });
         
-        console.log('[useTradingSession] Session started successfully:', session.id);
-          onProgress?.('session', `✅ Session started: ${session.id.slice(0, 8)}...`);
+        onProgress?.('session', `✅ Session started: ${session.id.slice(0, 8)}...`);
 
         // Create session state
         const sessionState: TradingSessionState = {
@@ -212,10 +200,8 @@ export function useTradingSession() {
 
         setTradingSession(sessionState);
         onProgress?.('complete', '✅ Trading session ready!');
-        console.log('[useTradingSession] Trading session ready, positions will open on Avantis');
         return session.id;
       } catch (sessionError) {
-        console.error('[useTradingSession] Error starting session:', sessionError);
         throw sessionError;
       }
     } catch (err) {
@@ -242,7 +228,6 @@ export function useTradingSession() {
       
       return true;
     } catch (err) {
-      console.error('Failed to stop trading:', err);
       return false;
     }
   }, [tradingSession, stopTradingAPI]);
