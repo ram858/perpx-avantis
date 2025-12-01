@@ -1,6 +1,9 @@
 import adaptiveConfig from './adaptiveConfig.json';
 import { Regime } from './regime';
 
+// Avantis service URL for API calls
+const AVANTIS_SERVICE_URL = process.env.AVANTIS_SERVICE_URL || process.env.AVANTIS_API_URL || 'http://localhost:3002';
+
 // Hyperliquid SDK budget limits
 const HYPERLIQUID_BUDGET_LIMITS = {
   MIN_BUDGET_PER_POSITION: 1, // $1 minimum per position
@@ -16,23 +19,49 @@ export function getBudgetAndLeverage(regime: Regime, symbol?: string, userBudget
   // Use user's budget - no fallback to regime-based budget
   const budget = userBudget ?? 200; // Default to $200 if no user budget provided
   
-
+  // ========================================================
+  // RISK MANAGEMENT: Leverage based on budget size
+  // Smaller budgets = lower leverage to prevent liquidation
+  // ========================================================
+  let leverage: number;
   
-  // Get symbol-specific leverage limit if available - use MAX leverage
-  let leverage = 50; // Default high leverage
+  // Budget-based leverage limits for risk management
+  if (budget < 20) {
+    // Very small balance: max 5x to give 20% buffer before liquidation
+    leverage = 5;
+    console.log(`⚠️ Small balance ($${budget}): Using conservative 5x leverage`);
+  } else if (budget < 50) {
+    // Small balance: max 10x leverage
+    leverage = 10;
+    console.log(`📊 Medium balance ($${budget}): Using moderate 10x leverage`);
+  } else if (budget < 100) {
+    // Medium balance: max 15x leverage  
+    leverage = 15;
+    console.log(`📊 Good balance ($${budget}): Using 15x leverage`);
+  } else if (budget < 500) {
+    // Larger balance: max 20x leverage
+    leverage = 20;
+    console.log(`💪 Solid balance ($${budget}): Using 20x leverage`);
+  } else {
+    // Large balance: allow higher leverage (max 25x for safety)
+    leverage = 25;
+    console.log(`🚀 Large balance ($${budget}): Using 25x leverage`);
+  }
   
+  // Get symbol-specific leverage limit if available
   if (symbol && adaptiveConfig.hyperliquidLeverageLimits && symbol in adaptiveConfig.hyperliquidLeverageLimits) {
     const symbolConfig = (adaptiveConfig.hyperliquidLeverageLimits as any)[symbol];
     const symbolMaxLeverage = symbolConfig.maxLeverage;
     
-    // Use MAXIMUM leverage for all symbols - no regime-based reduction
-    leverage = symbolMaxLeverage;
-    
-    console.log(`🎯 ${symbol} max leverage: ${leverage}x`);
+    // Cap at symbol's maximum allowed leverage
+    if (leverage > symbolMaxLeverage) {
+      leverage = symbolMaxLeverage;
+      console.log(`🎯 ${symbol} leverage capped at ${leverage}x (symbol limit)`);
+    }
   }
   
-  // Apply only minimum safety limit, allow maximum leverage
-  const minLeverage = adaptiveConfig.leverageSafetySettings?.minLeverage ?? 1;
+  // Apply minimum safety limit
+  const minLeverage = adaptiveConfig.leverageSafetySettings?.minLeverage ?? 2;
   leverage = Math.max(minLeverage, leverage);
 
   return { budget, leverage };
@@ -234,4 +263,193 @@ export function validateAndCapBudget(
   };
 
   return result;
+}
+
+/**
+ * Validate that a position meets Avantis minimum position size requirements.
+ * 
+ * This function queries the Avantis service to get the on-chain minimum position
+ * size requirement and validates that the provided collateral meets it.
+ * 
+ * @param symbol - Trading symbol (e.g., "BTC", "ETH")
+ * @param pairIndex - Avantis pair index
+ * @param collateral - Collateral amount in USDC
+ * @param leverage - Leverage multiplier
+ * @param avantisServiceUrl - Optional Avantis service URL (defaults to env var or localhost:3002)
+ * @returns Validation result with isValid flag and detailed information
+ */
+export async function validateAvantisMinPosition(
+  symbol: string,
+  pairIndex: number,
+  collateral: number,
+  leverage: number,
+  avantisServiceUrl: string = AVANTIS_SERVICE_URL
+): Promise<{
+  isValid: boolean;
+  requiredMinCollateral?: number;
+  pairMinLevPosUSDC?: number;
+  reason?: string;
+}> {
+  try {
+    const url = `${avantisServiceUrl}/api/min-position?pair_index=${pairIndex}&leverage=${leverage}`;
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      // If the contract call reverts (pair index doesn't exist), this is non-blocking
+      // The backend validation will catch BELOW_MIN_POS errors anyway
+      if (errorText.includes('execution reverted') || errorText.includes('no data')) {
+        console.warn(`[validateAvantisMinPosition] On-chain minimum not available for pair ${pairIndex} (contract may not have this pair configured). Allowing trade to proceed - backend will validate.`);
+        return {
+          isValid: true, // Non-blocking: allow trade, backend will catch BELOW_MIN_POS
+          reason: `On-chain minimum not available for this pair, but allowing trade to proceed`
+        };
+      }
+      return {
+        isValid: false,
+        reason: `Failed to fetch minimum position size: ${response.status} ${response.statusText}. ${errorText}`
+      };
+    }
+
+    const data = await response.json() as {
+      pair_index: number;
+      leverage: number;
+      pair_min_lev_pos_usdc: number;
+      min_collateral_usdc: number;
+      status: string;
+      error?: string;
+    };
+
+    if (data.status === 'error' || data.error) {
+      const errorMsg = data.error || 'Failed to fetch minimum position size from contract';
+      // If the contract call reverts (pair index doesn't exist or not configured), 
+      // this is non-blocking - the backend validation will catch BELOW_MIN_POS errors anyway
+      if (errorMsg.includes('execution reverted') || errorMsg.includes('no data')) {
+        console.warn(`[validateAvantisMinPosition] On-chain minimum not available for pair ${pairIndex} (contract may not have this pair configured). Allowing trade to proceed - backend will validate.`);
+        return {
+          isValid: true, // Non-blocking: allow trade, backend will catch BELOW_MIN_POS
+          reason: `On-chain minimum not available for this pair, but allowing trade to proceed`
+        };
+      }
+      return {
+        isValid: false,
+        reason: errorMsg
+      };
+    }
+
+    const requiredMinCollateral = data.min_collateral_usdc;
+
+    if (collateral < requiredMinCollateral) {
+      return {
+        isValid: false,
+        requiredMinCollateral,
+        pairMinLevPosUSDC: data.pair_min_lev_pos_usdc,
+        reason: `Position size below Avantis contract minimum for ${symbol}. With ${leverage}x leverage you must use at least ≈ ${requiredMinCollateral.toFixed(2)} USDC collateral. Current: ${collateral.toFixed(2)} USDC. (Contract pairMinLevPosUSDC = ${(data.pair_min_lev_pos_usdc / 1e6).toFixed(2)} USDC)`
+      };
+    }
+
+    console.log(`✅ ${symbol} position validated: collateral=${collateral.toFixed(2)} USDC, leverage=${leverage}x, min_required=${requiredMinCollateral.toFixed(2)} USDC`);
+    
+    return {
+      isValid: true,
+      requiredMinCollateral,
+      pairMinLevPosUSDC: data.pair_min_lev_pos_usdc
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`[validateAvantisMinPosition] Error validating position for ${symbol}:`, errorMessage);
+    return {
+      isValid: false,
+      reason: `Error validating position: ${errorMessage}`
+    };
+  }
+}
+
+/**
+ * Validate and cap budget with Avantis-specific minimum position size checks.
+ * 
+ * This function combines basic budget validation with on-chain Avantis minimum
+ * position size validation when pairIndex and leverage are provided.
+ * 
+ * @param totalBudget - Total budget available
+ * @param maxPositions - Maximum number of positions
+ * @param options - Optional configuration including symbol, pairIndex, leverage, etc.
+ * @returns Validation result with budget per position and detailed information
+ */
+export async function validateAndCapBudgetWithAvantis(
+  totalBudget: number,
+  maxPositions: number,
+  options?: {
+    symbol?: string;
+    pairIndex?: number;
+    leverage?: number;
+    avantisServiceUrl?: string;
+    platform?: 'hyperliquid' | 'avantis';
+  }
+): Promise<{
+  budgetPerPosition: number;
+  isValid: boolean;
+  reason?: string;
+  warnings?: string[];
+  requiredMinCollateral?: number;
+  pairMinLevPosUSDC?: number;
+}> {
+  // First, do basic budget validation
+  const basicValidation = validateAndCapBudget(
+    totalBudget,
+    maxPositions,
+    options?.symbol,
+    options?.platform || 'avantis'
+  );
+
+  if (!basicValidation.isValid) {
+    return basicValidation;
+  }
+
+  // If Avantis-specific validation is requested and we have the required info
+  if (options?.platform === 'avantis' && options?.pairIndex !== undefined && options?.leverage !== undefined && options?.symbol) {
+    try {
+      const avantisValidation = await validateAvantisMinPosition(
+        options.symbol,
+        options.pairIndex,
+        basicValidation.budgetPerPosition,
+        options.leverage,
+        options.avantisServiceUrl
+      );
+
+      if (!avantisValidation.isValid) {
+        return {
+          budgetPerPosition: basicValidation.budgetPerPosition,
+          isValid: false,
+          reason: avantisValidation.reason,
+          warnings: basicValidation.warnings,
+          requiredMinCollateral: avantisValidation.requiredMinCollateral,
+          pairMinLevPosUSDC: avantisValidation.pairMinLevPosUSDC
+        };
+      }
+
+      // If Avantis validation passed, return with additional info
+      return {
+        budgetPerPosition: basicValidation.budgetPerPosition,
+        isValid: true,
+        warnings: basicValidation.warnings,
+        requiredMinCollateral: avantisValidation.requiredMinCollateral,
+        pairMinLevPosUSDC: avantisValidation.pairMinLevPosUSDC
+      };
+    } catch (error) {
+      // If Avantis validation fails due to network/API error, log but don't block
+      // (the on-chain validation will catch it anyway)
+      console.warn(`[validateAndCapBudgetWithAvantis] Avantis validation error (non-blocking):`, error);
+      return basicValidation;
+    }
+  }
+
+  // Return basic validation if Avantis-specific check not needed
+  return basicValidation;
 }

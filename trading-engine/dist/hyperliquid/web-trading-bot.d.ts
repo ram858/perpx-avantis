@@ -19,6 +19,12 @@ export declare class WebTradingBot {
     private pnl;
     private openPositions;
     private cycle;
+    private totalLossToday;
+    private tradesOpenedToday;
+    private sessionStartTime;
+    private readonly MAX_DAILY_LOSS_PERCENT;
+    private readonly MAX_TRADES_PER_DAY;
+    private readonly MIN_TIME_BETWEEN_TRADES_MS;
     startTrading(config: TradingConfig): Promise<void>;
     stopTrading(): void;
     private runTradingLoop;

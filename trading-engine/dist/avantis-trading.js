@@ -3,10 +3,44 @@
  * Avantis Trading Functions
  * This module provides functions to interact with Avantis API for opening/closing positions
  */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.openAvantisPositionSafe = openAvantisPositionSafe;
 exports.openAvantisPosition = openAvantisPosition;
 exports.closeAvantisPosition = closeAvantisPosition;
 exports.getAvantisPositions = getAvantisPositions;
@@ -21,7 +55,7 @@ if (fs_1.default.existsSync(envPath)) {
 }
 // Runtime functions to get environment variables (not evaluated at build time)
 function getAvantisApiUrl() {
-    return process.env.AVANTIS_API_URL || 'http://localhost:8000';
+    return process.env.AVANTIS_API_URL || 'http://localhost:3002';
 }
 function getBaseRpcUrl() {
     return process.env.BASE_RPC_URL || 'https://mainnet.base.org';
@@ -187,6 +221,96 @@ function isTransientError(error) {
     ];
     const errorLower = error.toLowerCase();
     return transientPatterns.some(pattern => errorLower.includes(pattern));
+}
+/**
+ * Get pair index for a symbol from Avantis service
+ * This is a helper function to map symbols to pair indices for validation
+ * Uses the same mapping as the backend symbol registry
+ */
+async function getPairIndexForSymbol(symbol) {
+    // Symbol to pair index mapping (must match backend symbol_registry.py)
+    const symbolToPairIndex = {
+        'BTC': 0,
+        'ETH': 1,
+        'SOL': 2,
+        'AVAX': 3,
+        'MATIC': 4,
+        'ARB': 5,
+        'OP': 6,
+        'LINK': 7,
+        'UNI': 8,
+        'AAVE': 9,
+        'ATOM': 10,
+        'DOT': 11,
+        'ADA': 12,
+        'XRP': 13,
+        'DOGE': 14,
+        'BNB': 15,
+    };
+    const upperSymbol = symbol.toUpperCase().trim();
+    const pairIndex = symbolToPairIndex[upperSymbol];
+    if (pairIndex !== undefined) {
+        console.log(`[AVANTIS] ✅ Resolved pair index ${pairIndex} for symbol ${upperSymbol}`);
+    }
+    else {
+        console.warn(`[AVANTIS] ⚠️ Symbol ${upperSymbol} not found in pair index mapping`);
+    }
+    return pairIndex;
+}
+/**
+ * Open a position on Avantis with pre-validation to prevent BELOW_MIN_POS errors.
+ *
+ * This function validates position size against on-chain minimum requirements
+ * before sending the transaction, preventing gas waste from reverts.
+ */
+async function openAvantisPositionSafe(params, options) {
+    console.log(`[AVANTIS] 🔍 Pre-validating position for ${params.symbol}...`);
+    console.log(`[AVANTIS]    Collateral: $${params.collateral} | Leverage: ${params.leverage}x`);
+    // Get pair index for validation
+    let pairIndex = options?.pairIndex;
+    if (!pairIndex) {
+        pairIndex = await getPairIndexForSymbol(params.symbol);
+        if (!pairIndex) {
+            console.warn(`[AVANTIS] ⚠️ Could not resolve pair index for ${params.symbol}, skipping pre-validation`);
+            // Continue without validation - the backend will catch it
+        }
+    }
+    // Validate minimum position size if we have pair index
+    if (pairIndex !== undefined) {
+        try {
+            const { validateAvantisMinPosition } = await Promise.resolve().then(() => __importStar(require('./hyperliquid/BudgetAndLeverage')));
+            const validation = await validateAvantisMinPosition(params.symbol, pairIndex, params.collateral, params.leverage);
+            // Only block if validation explicitly says invalid AND it's not a contract revert error
+            if (!validation.isValid && !validation.reason?.includes('On-chain minimum not available')) {
+                console.error(`[AVANTIS] ❌ BELOW_MIN_POS pre-check FAILED for ${params.symbol}`);
+                console.error(`[AVANTIS]    ${validation.reason}`);
+                console.error(`[AVANTIS] ⏭️ Skipping ${params.symbol}: BELOW_MIN_POS`);
+                return {
+                    success: false,
+                    error: validation.reason || 'Position size below minimum requirement'
+                };
+            }
+            if (validation.isValid) {
+                if (validation.requiredMinCollateral) {
+                    console.log(`[AVANTIS] ✅ BELOW_MIN_POS pre-check PASSED for ${params.symbol}`);
+                    console.log(`[AVANTIS]    Required min: $${validation.requiredMinCollateral.toFixed(2)} USDC`);
+                }
+                else {
+                    console.log(`[AVANTIS] ⚠️ BELOW_MIN_POS pre-check: On-chain minimum not available, proceeding (backend will validate)`);
+                }
+            }
+        }
+        catch (validationError) {
+            // If validation fails due to API error, log but continue
+            // The backend validation will catch it anyway
+            console.warn(`[AVANTIS] ⚠️ Pre-validation error (non-blocking):`, validationError);
+        }
+    }
+    else {
+        console.log(`[AVANTIS] ⚠️ Pair index not available for ${params.symbol}, skipping pre-validation (backend will validate)`);
+    }
+    // If validation passed (or was skipped), proceed with normal position opening
+    return openAvantisPosition(params, options);
 }
 /**
  * Open a position on Avantis with retry logic and verification

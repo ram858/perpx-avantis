@@ -5,6 +5,8 @@ from .symbol_registry import (
     is_symbol_supported,
     get_all_supported_symbols,
     update_pair_index,
+    ensure_pair_map_initialized,
+    ensure_pair_map_initialized_sync,
     SymbolNotFoundError,
 )
 
@@ -14,6 +16,7 @@ __all__ = [
     "is_symbol_supported",
     "get_all_supported_symbols",
     "update_pair_index",
+    "ensure_pair_map_initialized",
     "SymbolNotFoundError",
 ]
 

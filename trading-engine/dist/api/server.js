@@ -220,7 +220,7 @@ app.post('/api/close-all-positions', async (req, res) => {
         // For Avantis: Call Avantis service
         // Get Avantis API URL at runtime
         function getAvantisApiUrl() {
-            return process.env.AVANTIS_API_URL || 'http://localhost:8000';
+            return process.env.AVANTIS_API_URL || 'http://localhost:3002';
         }
         const avantisApiUrl = getAvantisApiUrl();
         try {
@@ -292,7 +292,7 @@ app.post('/api/close-position', async (req, res) => {
         // For Avantis: Call Avantis service
         // Get Avantis API URL at runtime
         function getAvantisApiUrl() {
-            return process.env.AVANTIS_API_URL || 'http://localhost:8000';
+            return process.env.AVANTIS_API_URL || 'http://localhost:3002';
         }
         const avantisApiUrl = getAvantisApiUrl();
         try {
@@ -350,7 +350,7 @@ app.get('/api/positions', async (req, res) => {
             });
         }
         // Get positions from Avantis service using private key
-        const avantisApiUrl = process.env.AVANTIS_API_URL || 'http://localhost:8000';
+        const avantisApiUrl = process.env.AVANTIS_API_URL || 'http://localhost:3002';
         try {
             const avantisResponse = await fetch(`${avantisApiUrl}/api/positions?private_key=${encodeURIComponent(privateKey)}`, {
                 method: 'GET',

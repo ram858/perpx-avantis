@@ -6,13 +6,125 @@ from avantis_client import get_avantis_client
 from symbols import get_symbol
 from config import settings
 from utils import retry_on_network_error
-from contract_operations import (
-    get_positions_via_contract,
-    get_all_open_trades_for_trader,
-)
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Try to import SDK for position fetching (more reliable than direct contract calls)
+try:
+    from avantis_trader_sdk import TraderClient, FeedClient
+    SDK_AVAILABLE = True
+except ImportError:
+    SDK_AVAILABLE = False
+    logger.debug("Avantis SDK not available; using direct contract calls for positions.")
+
+
+async def _get_positions_via_sdk(trader_address: str) -> List[Dict[str, Any]]:
+    """
+    Get positions using Avantis SDK (more reliable than direct contract calls).
+    """
+    if not SDK_AVAILABLE:
+        raise RuntimeError("SDK not available")
+    
+    feed_client = FeedClient()
+    rpc_url = settings.get_effective_rpc_url()
+    trader_client = TraderClient(provider_url=rpc_url, feed_client=feed_client)
+    
+    # get_trades returns (long_trades, short_trades) tuples
+    long_trades, short_trades = await trader_client.trade.get_trades(trader_address)
+    
+    positions = []
+    
+    # Process long trades
+    for trade in long_trades:
+        symbol = get_symbol(trade.trade.pair_index)
+        positions.append({
+            "pair_index": trade.trade.pair_index,
+            "trade_index": trade.trade.trade_index,
+            "symbol": symbol,
+            "is_long": trade.trade.is_long,
+            "collateral": trade.trade.open_collateral,
+            "leverage": trade.trade.leverage,
+            "entry_price": trade.trade.open_price,
+            "current_price": trade.trade.open_price,  # Will be updated from price fetch
+            "pnl": 0,  # Will calculate from price difference
+            "pnl_percentage": 0,
+            "take_profit": trade.trade.tp if trade.trade.tp > 0 else None,
+            "stop_loss": trade.trade.sl if trade.trade.sl > 0 else None,
+            "liquidation_price": trade.liquidation_price,
+            "open_interest_usdc": trade.additional_info.open_interest_usdc if trade.additional_info else 0,
+            "timestamp": trade.trade.timestamp,
+        })
+    
+    # Process short trades
+    for trade in short_trades:
+        symbol = get_symbol(trade.trade.pair_index)
+        positions.append({
+            "pair_index": trade.trade.pair_index,
+            "trade_index": trade.trade.trade_index,
+            "symbol": symbol,
+            "is_long": trade.trade.is_long,
+            "collateral": trade.trade.open_collateral,
+            "leverage": trade.trade.leverage,
+            "entry_price": trade.trade.open_price,
+            "current_price": trade.trade.open_price,
+            "pnl": 0,
+            "pnl_percentage": 0,
+            "take_profit": trade.trade.tp if trade.trade.tp > 0 else None,
+            "stop_loss": trade.trade.sl if trade.trade.sl > 0 else None,
+            "liquidation_price": trade.liquidation_price,
+            "open_interest_usdc": trade.additional_info.open_interest_usdc if trade.additional_info else 0,
+            "timestamp": trade.trade.timestamp,
+        })
+    
+    # Try to get current prices to calculate PnL
+    if positions and SDK_AVAILABLE:
+        try:
+            pair_names = []
+            for pos in positions:
+                if pos["symbol"]:
+                    pair_names.append(f"{pos['symbol']}/USD")
+            
+            if pair_names:
+                price_data = await feed_client.get_latest_price_updates(list(set(pair_names)))
+                
+                if price_data and hasattr(price_data, 'parsed') and price_data.parsed:
+                    price_map = {}
+                    for p in price_data.parsed:
+                        # Extract symbol from feed
+                        if hasattr(p, 'id') or hasattr(p, 'symbol'):
+                            sym = getattr(p, 'symbol', None) or str(getattr(p, 'id', ''))
+                            if '/' in sym:
+                                sym = sym.split('/')[0]
+                            price_map[sym.upper()] = p.converted_price
+                    
+                    # Update positions with current prices and PnL
+                    for pos in positions:
+                        sym = pos.get("symbol", "").upper()
+                        if sym in price_map:
+                            current_price = price_map[sym]
+                            pos["current_price"] = current_price
+                            
+                            # Calculate PnL
+                            entry_price = pos["entry_price"]
+                            collateral = pos["collateral"]
+                            leverage = pos["leverage"]
+                            is_long = pos["is_long"]
+                            
+                            if entry_price > 0:
+                                price_diff = current_price - entry_price
+                                if not is_long:
+                                    price_diff = -price_diff  # Reverse for shorts
+                                
+                                pnl_pct = (price_diff / entry_price) * leverage * 100
+                                pnl_usd = (price_diff / entry_price) * collateral * leverage
+                                
+                                pos["pnl"] = pnl_usd
+                                pos["pnl_percentage"] = pnl_pct
+        except Exception as e:
+            logger.warning(f"Could not fetch current prices: {e}")
+    
+    return positions
 
 
 @retry_on_network_error()
@@ -22,6 +134,8 @@ async def get_positions(
 ) -> List[Dict[str, Any]]:
     """
     Get all open positions for a user.
+    
+    Uses Avantis SDK for more reliable position fetching.
     
     Args:
         private_key: User's private key (for traditional wallets)
@@ -41,64 +155,55 @@ async def get_positions(
         else:
             trader_address = Web3.to_checksum_address(address)
         
-        # Get all open trades with full enrichment (Trade + TradeInfo + OpenLimitOrder)
-        trades = await get_all_open_trades_for_trader(
-            trader_address=trader_address
-        )
+        # Use SDK for position fetching (more reliable)
+        if SDK_AVAILABLE:
+            positions = await _get_positions_via_sdk(trader_address)
+            logger.debug(f"Retrieved {len(positions)} positions via SDK")
+            return positions
         
-        # Format positions for API response and add symbol information
+        # Fallback to direct contract calls if SDK not available
+        from contract_operations import get_all_open_trades_for_trader
+        
+        trades = await get_all_open_trades_for_trader(trader_address=trader_address)
+        
+        # Format positions for API response
         formatted_positions = []
         for trade in trades:
             pair_index = trade.get("pair_index")
             symbol = get_symbol(pair_index) if pair_index is not None else None
             
-            # Extract trade data
             open_price = trade.get("open_price", 0)
             leverage = trade.get("leverage", 1)
             is_long = trade.get("is_long", False)
             position_size_usdc = trade.get("position_size_usdc", 0)
             
-            # Calculate liquidation price
-            # Formula: For LONG: Entry * (1 - (1/Leverage)), For SHORT: Entry * (1 + (1/Leverage))
-            # This is a simplified calculation - actual Avantis liquidation considers maintenance margin
             liquidation_price = None
             if open_price > 0 and leverage > 0:
                 if is_long:
-                    # Long position: liquidates when price drops
                     liquidation_price = open_price * (1 - (1.0 / leverage))
                 else:
-                    # Short position: liquidates when price rises
                     liquidation_price = open_price * (1 + (1.0 / leverage))
             
-            # Extract trade info if available
             trade_info = trade.get("info", {})
-            open_limit_order = trade.get("open_limit_order")
             
             formatted_positions.append({
                 "pair_index": pair_index,
                 "symbol": symbol,
                 "is_long": is_long,
-                "size": position_size_usdc,  # Position size in USDC
-                "entry_price": open_price,
-                "current_price": open_price,  # TODO: Fetch current price from oracle if needed
+                "collateral": position_size_usdc / leverage if leverage > 0 else 0,
                 "leverage": leverage,
-                "collateral": position_size_usdc / leverage if leverage > 0 else 0,  # Collateral = size / leverage
-                "pnl": 0,  # TODO: Calculate PnL from current price if needed
-                "pnl_percentage": 0,  # TODO: Calculate PnL percentage if needed
+                "entry_price": open_price,
+                "current_price": open_price,
+                "pnl": 0,
+                "pnl_percentage": 0,
                 "liquidation_price": liquidation_price,
                 "take_profit": trade.get("tp"),
                 "stop_loss": trade.get("sl"),
                 "timestamp": trade.get("timestamp"),
-                # Additional enriched data for chat page
                 "open_interest_usdc": trade_info.get("open_interest_usdc", 0),
-                "tp_last_updated": trade_info.get("tp_last_updated"),
-                "sl_last_updated": trade_info.get("sl_last_updated"),
-                "being_market_closed": trade_info.get("being_market_closed", False),
-                "loss_protection": trade_info.get("loss_protection", 0),
-                "open_limit_order": open_limit_order,
             })
         
-        logger.debug(f"Retrieved {len(formatted_positions)} positions")
+        logger.debug(f"Retrieved {len(formatted_positions)} positions via direct contract")
         return formatted_positions
         
     except Exception as e:
@@ -169,16 +274,19 @@ async def get_balance(
         except Exception:
             margin_used = 0.0
         
-        # Available balance = wallet balance - margin used
-        available_balance = max(0.0, usdc_balance - margin_used)
+        # Total balance = wallet USDC + collateral in positions (margin used)
+        # Available balance = wallet USDC only (not in positions)
+        total_balance = usdc_balance + margin_used
+        available_balance = usdc_balance
         
         return {
             "address": user_address,
-            "total_balance": usdc_balance,
-            "available_balance": available_balance,
-            "margin_used": margin_used,
+            "total_balance": total_balance,  # USDC + collateral in positions
+            "available_balance": available_balance,  # Free USDC in wallet
+            "margin_used": margin_used,  # Collateral locked in positions
             "usdc_balance": usdc_balance,  # Wallet USDC balance (for trading)
             "usdc_allowance": usdc_allowance,
+            "total_collateral": margin_used,  # Alias for margin_used (backwards compat)
         }
         
     except Exception as e:

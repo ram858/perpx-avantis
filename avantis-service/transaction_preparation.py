@@ -2,7 +2,7 @@
 from typing import Optional, Dict, Any
 from decimal import Decimal
 from web3 import Web3
-from symbols import get_pair_index, SymbolNotFoundError
+from symbols import get_pair_index, ensure_pair_map_initialized, SymbolNotFoundError
 from config import settings
 from direct_contracts import AvantisTradingContract, TradeParams
 import logging
@@ -35,6 +35,10 @@ async def prepare_open_position_transaction(
         Dictionary with transaction data for frontend signing
     """
     try:
+        # Ensure pair map is initialized from SDK (if available) - sync wrapper
+        from symbols.symbol_registry import ensure_pair_map_initialized_sync
+        ensure_pair_map_initialized_sync()
+        
         # Get pair index for symbol
         pair_index = get_pair_index(symbol)
         if pair_index is None:

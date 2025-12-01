@@ -1,7 +1,7 @@
 """Trade execution operations."""
 from typing import Optional, Dict, Any
 from avantis_client import get_avantis_client
-from symbols import get_pair_index, SymbolNotFoundError
+from symbols import get_pair_index, ensure_pair_map_initialized, SymbolNotFoundError
 from config import settings
 from utils import retry_on_network_error
 from contract_operations import (
@@ -77,7 +77,11 @@ async def open_position(
         
         logger.info(f"✅ [TRADE_OPS] Address verified: {client_address}")
         
-        # Get pair index from our registry (no SDK)
+        # Ensure pair map is initialized from SDK (if available) - sync wrapper
+        from symbols.symbol_registry import ensure_pair_map_initialized_sync
+        ensure_pair_map_initialized_sync()
+        
+        # Get pair index from our cached registry
         pair_index = get_pair_index(symbol)
         if pair_index is None:
             raise SymbolNotFoundError(f"Symbol {symbol} not found in registry")

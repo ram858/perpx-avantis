@@ -30,6 +30,13 @@ class WebTradingBot {
         this.pnl = 0;
         this.openPositions = 0;
         this.cycle = 0;
+        this.totalLossToday = 0;
+        this.tradesOpenedToday = 0;
+        this.sessionStartTime = new Date();
+        // Risk management constants
+        this.MAX_DAILY_LOSS_PERCENT = 20; // Stop trading if daily loss exceeds 20% of budget
+        this.MAX_TRADES_PER_DAY = 50; // Max trades per day to prevent overtrading
+        this.MIN_TIME_BETWEEN_TRADES_MS = 30000; // 30 seconds between trades
     }
     async startTrading(config) {
         this.config = config;
@@ -39,8 +46,12 @@ class WebTradingBot {
         this.pnl = 0;
         this.openPositions = 0;
         this.cycle = 0;
+        this.totalLossToday = 0;
+        this.tradesOpenedToday = 0;
+        this.sessionStartTime = new Date();
         log('WEB_BOT', `Starting trading session ${this.sessionId}`);
         log('WEB_BOT', `Config: Budget=$${config.maxBudget}, Goal=$${config.profitGoal}, MaxPos=${config.maxPerSession}`);
+        log('WEB_BOT', `Risk Limits: Max Daily Loss=${this.MAX_DAILY_LOSS_PERCENT}%, Max Trades/Day=${this.MAX_TRADES_PER_DAY}`);
         // Log trading platform
         if (config.privateKey) {
             log('AVANTIS', `✅ Trading on AVANTIS platform with private key: ${config.privateKey.slice(0, 10)}...${config.privateKey.slice(-4)}`);
@@ -132,11 +143,29 @@ class WebTradingBot {
                         const avantisPositions = await (0, avantis_trading_1.getAvantisPositions)(this.config.privateKey);
                         totalPnL = avantisPositions.reduce((sum, pos) => sum + (pos.pnl || 0), 0);
                         log('AVANTIS', `💰 Total PnL from Avantis: $${totalPnL.toFixed(2)}`);
+                        // Update daily loss tracker
+                        if (totalPnL < 0) {
+                            this.totalLossToday = Math.abs(totalPnL);
+                        }
                     }
                     catch (err) {
                         log('ERROR', `Failed to get Avantis PnL: ${err}`);
                         // Don't fallback to Hyperliquid - we only use Avantis
                         totalPnL = 0;
+                    }
+                    // ==========================================
+                    // RISK CHECK: Stop if daily loss limit exceeded
+                    // ==========================================
+                    const maxLossAmount = (maxBudget * this.MAX_DAILY_LOSS_PERCENT) / 100;
+                    if (this.totalLossToday >= maxLossAmount) {
+                        log('RISK', `🛑 DAILY LOSS LIMIT REACHED! Loss: $${this.totalLossToday.toFixed(2)} >= Max: $${maxLossAmount.toFixed(2)}`);
+                        log('RISK', `🛑 Stopping trading to protect capital. Session will resume tomorrow.`);
+                        return { shouldRestart: false, reason: 'daily_loss_limit', pnl: totalPnL, finalStatus: 'stopped' };
+                    }
+                    // RISK CHECK: Max trades per day
+                    if (this.tradesOpenedToday >= this.MAX_TRADES_PER_DAY) {
+                        log('RISK', `🛑 MAX TRADES PER DAY REACHED (${this.MAX_TRADES_PER_DAY}). Stopping for today.`);
+                        return { shouldRestart: false, reason: 'max_trades_reached', pnl: totalPnL, finalStatus: 'completed' };
                     }
                 }
                 else {
@@ -240,21 +269,65 @@ class WebTradingBot {
                             if (this.config && this.config.privateKey) {
                                 try {
                                     const isLong = direction === "long";
+                                    // ========================================================
+                                    // RISK MANAGEMENT: Calculate SL and TP for protection
+                                    // ========================================================
+                                    // Get current price for SL/TP calculation
+                                    let currentPrice = 0;
+                                    try {
+                                        currentPrice = await (0, hyperliquid_1.fetchPrice)(symbol);
+                                    }
+                                    catch (e) {
+                                        log('AVANTIS', `⚠️ Could not fetch price for SL/TP calculation: ${e}`);
+                                    }
+                                    // Calculate Stop Loss and Take Profit
+                                    // For high leverage positions, we MUST have a stop loss to prevent liquidation
+                                    let sl;
+                                    let tp;
+                                    if (currentPrice > 0) {
+                                        // Stop Loss: Set at 50% of liquidation distance to give buffer
+                                        // With 25x leverage, liquidation is at ~4% move against you
+                                        // So we set SL at ~2% to exit before liquidation
+                                        const slPercentage = Math.min(2.5, 50 / leverage); // 2.5% max, or 50%/leverage
+                                        // Take Profit: Set at 2x the SL distance (risk:reward = 1:2)
+                                        const tpPercentage = slPercentage * 2;
+                                        if (isLong) {
+                                            // Long position: SL below entry, TP above entry
+                                            sl = currentPrice * (1 - slPercentage / 100);
+                                            tp = currentPrice * (1 + tpPercentage / 100);
+                                        }
+                                        else {
+                                            // Short position: SL above entry, TP below entry
+                                            sl = currentPrice * (1 + slPercentage / 100);
+                                            tp = currentPrice * (1 - tpPercentage / 100);
+                                        }
+                                        log('AVANTIS', `🛡️ RISK PROTECTION: SL=${sl?.toFixed(2)}, TP=${tp?.toFixed(2)} (${slPercentage.toFixed(1)}% SL / ${tpPercentage.toFixed(1)}% TP)`);
+                                    }
+                                    else {
+                                        log('AVANTIS', `⚠️ WARNING: Opening position WITHOUT Stop Loss - liquidation risk!`);
+                                    }
                                     log('AVANTIS', `🚀 Opening ${symbol} ${isLong ? 'LONG' : 'SHORT'} on REAL AVANTIS PLATFORM...`);
                                     log('AVANTIS', `   Collateral: $${perPositionBudget.toFixed(2)} | Leverage: ${leverage}x`);
-                                    const avantisResult = await (0, avantis_trading_1.openAvantisPosition)({
+                                    if (sl)
+                                        log('AVANTIS', `   Stop Loss: $${sl.toFixed(2)} | Take Profit: $${tp?.toFixed(2)}`);
+                                    const avantisResult = await (0, avantis_trading_1.openAvantisPositionSafe)({
                                         symbol,
                                         collateral: perPositionBudget,
                                         leverage,
                                         is_long: isLong,
-                                        private_key: this.config.privateKey
+                                        private_key: this.config.privateKey,
+                                        sl, // Add Stop Loss for protection
+                                        tp // Add Take Profit for profit-taking
                                     });
                                     if (avantisResult && avantisResult.success) {
+                                        // Increment daily trade counter
+                                        this.tradesOpenedToday++;
                                         log('AVANTIS', `✅✅✅ Position SUCCESSFULLY opened on Avantis Dashboard!`);
                                         log('AVANTIS', `   Symbol: ${symbol} | Direction: ${isLong ? 'LONG' : 'SHORT'}`);
                                         log('AVANTIS', `   Transaction: ${avantisResult.tx_hash?.slice(0, 16)}...`);
                                         log('AVANTIS', `   Pair Index: ${avantisResult.pair_index}`);
                                         log('AVANTIS', `   Collateral: $${perPositionBudget.toFixed(2)} | Leverage: ${leverage}x`);
+                                        log('AVANTIS', `   Trades Today: ${this.tradesOpenedToday}/${this.MAX_TRADES_PER_DAY}`);
                                         log('AVANTIS', `   ==========================================`);
                                         log('AVANTIS', `   📊 POSITION IS NOW LIVE ON AVANTIS DASHBOARD`);
                                         log('AVANTIS', `   📊 Visit avantisfi.com and connect your backend wallet`);

@@ -91,7 +91,10 @@ const PortfolioBalanceCard = ({
   isConnected,
   isTradingLoading,
   tradingError,
-  isLoading
+  isLoading,
+  positionCollateral = 0,
+  positionPnL = 0,
+  openPositions = 0
 }: {
   avantisBalance: number
   totalProfits: number
@@ -101,10 +104,17 @@ const PortfolioBalanceCard = ({
   isTradingLoading: boolean
   tradingError: string | null
   isLoading: boolean
+  positionCollateral?: number
+  positionPnL?: number
+  openPositions?: number
 }) => {
-  const [displayBalance, setDisplayBalance] = useState(avantisBalance)
+  // Total trading value = free USDC + collateral in positions + unrealized PnL
+  const totalTradingValue = avantisBalance + positionCollateral + positionPnL
+  const hasActivePositions = openPositions > 0
+  
+  const [displayBalance, setDisplayBalance] = useState(totalTradingValue)
   const [isAnimating, setIsAnimating] = useState(false)
-  const prevBalanceRef = useRef(avantisBalance)
+  const prevBalanceRef = useRef(totalTradingValue)
 
   const formatValue = useCallback((value: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -117,10 +127,10 @@ const PortfolioBalanceCard = ({
 
   // Animate balance changes
   useEffect(() => {
-    if (prevBalanceRef.current !== avantisBalance && !isLoading) {
+    if (prevBalanceRef.current !== totalTradingValue && !isLoading) {
       const oldBalance = prevBalanceRef.current
       setIsAnimating(true)
-      const diff = avantisBalance - oldBalance
+      const diff = totalTradingValue - oldBalance
       const steps = 20
       const stepSize = diff / steps
       let currentStep = 0
@@ -128,9 +138,9 @@ const PortfolioBalanceCard = ({
       const interval = setInterval(() => {
         currentStep++
         if (currentStep >= steps) {
-          setDisplayBalance(avantisBalance)
+          setDisplayBalance(totalTradingValue)
           setIsAnimating(false)
-          prevBalanceRef.current = avantisBalance // Update ref only after animation completes
+          prevBalanceRef.current = totalTradingValue // Update ref only after animation completes
           clearInterval(interval)
         } else {
           setDisplayBalance(oldBalance + (stepSize * currentStep))
@@ -139,13 +149,13 @@ const PortfolioBalanceCard = ({
 
       return () => clearInterval(interval)
     } else if (isLoading) {
-      setDisplayBalance(avantisBalance)
-      prevBalanceRef.current = avantisBalance
-    } else if (prevBalanceRef.current === avantisBalance) {
+      setDisplayBalance(totalTradingValue)
+      prevBalanceRef.current = totalTradingValue
+    } else if (prevBalanceRef.current === totalTradingValue) {
       // No change, just ensure display matches
-      setDisplayBalance(avantisBalance)
+      setDisplayBalance(totalTradingValue)
     }
-  }, [avantisBalance, isLoading])
+  }, [totalTradingValue, isLoading])
 
   const toggleBalance = useCallback(() => setIsBalanceVisible(!isBalanceVisible), [isBalanceVisible, setIsBalanceVisible])
 
@@ -157,9 +167,9 @@ const PortfolioBalanceCard = ({
           <span 
             className={`text-3xl sm:text-4xl font-bold text-white transition-all duration-300 ${
               isAnimating ? 'scale-110' : 'scale-100'
-            } ${avantisBalance > prevBalanceRef.current ? 'text-green-400' : avantisBalance < prevBalanceRef.current ? 'text-red-400' : 'text-white'}`}
+            } ${totalTradingValue > prevBalanceRef.current ? 'text-green-400' : totalTradingValue < prevBalanceRef.current ? 'text-red-400' : 'text-white'}`}
           >
-            {isLoading && avantisBalance === 0 ? (
+            {isLoading && totalTradingValue === 0 ? (
               <span className="text-[#9ca3af] text-2xl sm:text-3xl">Loading...</span>
             ) : (
               isBalanceVisible ? formatValue(displayBalance) : "••••••"
@@ -205,7 +215,15 @@ const PortfolioBalanceCard = ({
         
         {/* Simplified status info focused on trading */}
         <div className="text-xs text-[#9ca3af] mt-2">
-          Available for automated trading • {avantisBalance >= 10 ? 'Ready to trade' : 'Minimum $10 required'}
+          {hasActivePositions ? (
+            <span className="text-green-400">
+              {openPositions} active position{openPositions > 1 ? 's' : ''} • 
+              Collateral: ${positionCollateral.toFixed(2)} • 
+              PnL: <span className={positionPnL >= 0 ? 'text-green-400' : 'text-red-400'}>${positionPnL.toFixed(2)}</span>
+            </span>
+          ) : (
+            <>Available for automated trading • {totalTradingValue >= 10 ? 'Ready to trade' : 'Minimum $10 required'}</>
+          )}
         </div>
         
         {/* Trading Profits Breakdown */}
@@ -1720,7 +1738,7 @@ export default function HomePage() {
               hasExistingWallet={allWallets && allWallets.length > 0}
             />
           ) : (
-            isLoading && avantisBalance === 0 ? (
+            isLoading && avantisBalance === 0 && !((positionData?.openPositions ?? 0) > 0) ? (
               <BalanceSkeleton />
             ) : (
               <PortfolioBalanceCard
@@ -1732,6 +1750,9 @@ export default function HomePage() {
                 isTradingLoading={isTradingLoading}
                 tradingError={tradingError}
                 isLoading={isLoading || isRefreshingBalance}
+                positionCollateral={positionData?.positions?.reduce((sum, p) => sum + (p.collateral || 0), 0) || 0}
+                positionPnL={positionData?.totalPnL || 0}
+                openPositions={positionData?.openPositions || 0}
               />
             )
           )}

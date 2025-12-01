@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyTokenAndGetContext } from '@/lib/utils/authHelper'
 import { BaseAccountWalletService } from '@/lib/services/BaseAccountWalletService'
 import { WebWalletService } from '@/lib/services/WebWalletService'
-import { AvantisTradingService } from '@/lib/services/AvantisTradingService'
+import { AvantisClient } from '@/lib/services/AvantisClient'
 
 // Lazy initialization - create services at runtime, not build time
 function getFarcasterWalletService(): BaseAccountWalletService {
@@ -13,14 +13,8 @@ function getWebWalletService(): WebWalletService {
   return new WebWalletService()
 }
 
-function getTradingService(): AvantisTradingService {
-  return new AvantisTradingService()
-}
-
 export async function POST(request: NextRequest) {
   try {
-    // Initialize services at runtime
-    const tradingService = getTradingService()
     console.log('[API] Close all positions endpoint called')
 
     // Verify authentication
@@ -32,8 +26,9 @@ export async function POST(request: NextRequest) {
     const token = authHeader.substring(7)
     const authContext = await verifyTokenAndGetContext(token)
 
-    // Get user's wallet and ID based on context
-    let userId: number
+    // Get user's wallet based on context
+    let wallet: { address: string; privateKey: string } | null = null
+    let userId: string | number
     
     if (authContext.context === 'farcaster') {
       // Farcaster user
@@ -46,12 +41,17 @@ export async function POST(request: NextRequest) {
       
       userId = authContext.fid
       const farcasterWalletService = getFarcasterWalletService()
-      const wallet = await farcasterWalletService.getWalletWithKey(authContext.fid, 'ethereum')
+      const farcasterWallet = await farcasterWalletService.getWalletWithKey(authContext.fid, 'ethereum')
       
-      if (!wallet || !wallet.privateKey) {
+      if (!farcasterWallet || !farcasterWallet.privateKey) {
         return NextResponse.json({ 
           error: 'No wallet found with private key' 
         }, { status: 404 })
+      }
+      
+      wallet = {
+        address: farcasterWallet.address,
+        privateKey: farcasterWallet.privateKey
       }
     } else {
       // Web user
@@ -78,17 +78,77 @@ export async function POST(request: NextRequest) {
           error: 'Wallet private key not available' 
         }, { status: 404 })
       }
+      
+      wallet = {
+        address: webWallet.address,
+        privateKey: privateKey
+      }
     }
 
-    // Use Avantis trading service to close all positions
-    const result = await tradingService.closeAllPositions(userId)
+    if (!wallet || !wallet.privateKey) {
+      return NextResponse.json({ 
+        error: 'No wallet found with private key' 
+      }, { status: 404 })
+    }
+
+    console.log(`[CloseAllPositions] Closing all positions for ${authContext.context} user:`, userId)
+
+    // Use AvantisClient to call backend FastAPI directly
+    const avantisApiUrl = process.env.NEXT_PUBLIC_AVANTIS_API_URL || 'http://localhost:3002'
+    const avantisClient = new AvantisClient({ 
+      baseUrl: avantisApiUrl,
+      privateKey: wallet.privateKey 
+    })
     
-    if (result.success) {
-      return NextResponse.json(result)
-    } else {
-      return NextResponse.json(result, { status: 400 })
+    try {
+      // First get all positions
+      const positions = await avantisClient.getPositions()
+      
+      if (!positions || positions.length === 0) {
+        return NextResponse.json({
+          success: true,
+          message: 'No positions to close',
+          closed: 0
+        })
+      }
+      
+      console.log(`[CloseAllPositions] Found ${positions.length} positions to close`)
+      
+      // Close each position
+      const results: Array<{ pair_index: number; success: boolean; error?: string }> = []
+      
+      for (const position of positions) {
+        try {
+          const result = await avantisClient.closePosition(position.pair_index, wallet.privateKey)
+          results.push({ pair_index: position.pair_index, success: true })
+          console.log(`[CloseAllPositions] Closed position ${position.pair_index}: ${position.symbol}`)
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+          results.push({ pair_index: position.pair_index, success: false, error: errorMessage })
+          console.error(`[CloseAllPositions] Failed to close position ${position.pair_index}:`, error)
+        }
+      }
+      
+      const closedCount = results.filter(r => r.success).length
+      const failedCount = results.filter(r => !r.success).length
+      
+      return NextResponse.json({
+        success: failedCount === 0,
+        message: failedCount === 0 
+          ? `Successfully closed all ${closedCount} positions`
+          : `Closed ${closedCount} positions, ${failedCount} failed`,
+        closed: closedCount,
+        failed: failedCount,
+        results
+      })
+    } catch (error) {
+      console.error(`[CloseAllPositions] Failed to close positions:`, error)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to close positions'
+      return NextResponse.json({
+        success: false,
+        error: errorMessage
+      }, { status: 400 })
     }
-
 
   } catch (error) {
     console.error('[API] Error closing all positions:', error)

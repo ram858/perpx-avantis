@@ -23,13 +23,14 @@ from position_queries import (
     get_usdc_allowance,
     approve_usdc
 )
-from symbols import SymbolNotFoundError, get_all_supported_symbols
+from symbols import SymbolNotFoundError, get_all_supported_symbols, ensure_pair_map_initialized
 from utils import map_exception_to_http_status
 from transaction_preparation import (
     prepare_open_position_transaction,
     prepare_close_position_transaction,
     prepare_approve_usdc_transaction
 )
+from contract_operations import get_min_position_size_for_pair
 
 # Configure logging
 logging.basicConfig(
@@ -111,6 +112,16 @@ async def lifespan(app: FastAPI):
     """Application lifespan events."""
     logger.info("Starting Avantis Trading Service...")
     logger.info(f"Network: Base Mainnet")
+    
+    # Initialize pair map from SDK (if available) on startup
+    try:
+        from symbols.symbol_registry import ensure_pair_map_initialized
+        # Await directly since we're in an async context
+        await ensure_pair_map_initialized()
+        logger.info("✅ Pair index map initialized (from SDK or static defaults)")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not initialize pair map from SDK: {e}. Using static defaults.")
+    
     logger.info(f"Supported symbols: {', '.join(get_all_supported_symbols())}")
     yield
     logger.info("Shutting down Avantis Trading Service...")
@@ -398,6 +409,51 @@ async def api_get_total_pnl(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get total PnL: {str(e)}"
+        )
+
+
+@app.get("/api/min-position")
+async def api_get_min_position(
+    pair_index: int = Query(..., ge=0, description="Avantis pair index"),
+    leverage: int = Query(..., ge=1, description="Leverage multiplier (>= 1)")
+):
+    """
+    Get minimum position size requirement for a pair at a given leverage.
+    
+    This endpoint queries the on-chain pairMinLevPosUSDC value and calculates
+    the minimum collateral required for a position at the specified leverage.
+    
+    Returns:
+        - pair_index: The pair index
+        - leverage: The leverage multiplier
+        - pair_min_lev_pos_usdc: Minimum leveraged position size in USDC (raw wei, 6 decimals)
+        - min_collateral_usdc: Minimum collateral required in USDC (human-readable)
+        - status: "success" or "error"
+        - error: Error message if status is "error"
+    """
+    try:
+        result = await get_min_position_size_for_pair(
+            pair_index=pair_index,
+            leverage=leverage
+        )
+        
+        if result.get("status") == "error":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("error", "Failed to fetch minimum position size")
+            )
+        
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error in get_min_position_size_for_pair: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get minimum position size: {str(e)}"
         )
 
 

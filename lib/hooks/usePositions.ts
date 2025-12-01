@@ -67,25 +67,29 @@ export function usePositions() {
   }, [token]);
   
   // Check if positions should be fetched
-  // Only fetch if BOTH conditions are met:
-  // 1. User has deposited funds (balance > 0)
-  // 2. User has started trading (active trading session with status === 'running')
+  // Fetch positions if there's an active trading session
+  // NOTE: We don't check avantisBalance > 0 because when a position is opened,
+  // all USDC goes into the position as collateral, making wallet balance = $0
+  // The user should still see their active positions even with $0 free balance
   const shouldFetchPositions = useCallback(async (): Promise<boolean> => {
     if (!token) return false;
     
-    // Must have balance > 0 (user has deposited funds)
-    if (!avantisBalance || avantisBalance <= 0) {
-      return false;
-    }
-    
     // Check if there's an active trading session
     const hasActiveSession = await checkActiveSession();
-    if (!hasActiveSession) {
-      return false;
+    
+    // If there's an active session, always allow fetching positions
+    // Positions contain collateral value even when wallet balance is $0
+    if (hasActiveSession) {
+      return true;
     }
     
-    // Both conditions met - allow fetching positions
-    return true;
+    // No active session - only fetch if user has deposited funds
+    // This handles the case where user deposited but hasn't started trading yet
+    if (avantisBalance && avantisBalance > 0) {
+      return true;
+    }
+    
+    return false;
   }, [token, avantisBalance, checkActiveSession]);
 
       const fetchPositions = useCallback(async (force = false) => {

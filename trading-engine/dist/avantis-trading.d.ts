@@ -16,6 +16,25 @@ export interface ClosePositionParams {
     private_key: string;
 }
 /**
+ * Open a position on Avantis with pre-validation to prevent BELOW_MIN_POS errors.
+ *
+ * This function validates position size against on-chain minimum requirements
+ * before sending the transaction, preventing gas waste from reverts.
+ */
+export declare function openAvantisPositionSafe(params: OpenPositionParams, options?: {
+    skipBalanceCheck?: boolean;
+    skipVerification?: boolean;
+    maxRetries?: number;
+    pairIndex?: number;
+}): Promise<{
+    success: boolean;
+    tx_hash?: string;
+    pair_index?: number;
+    message?: string;
+    error?: string;
+    verified?: boolean;
+}>;
+/**
  * Open a position on Avantis with retry logic and verification
  */
 export declare function openAvantisPosition(params: OpenPositionParams, options?: {

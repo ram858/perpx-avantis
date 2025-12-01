@@ -106,75 +106,76 @@ async def open_position_via_contract(
     trader_address = trading.address
     logger.info(f"🔍 Trading from address: {trader_address}")
 
-    # Convert human values → on-chain units
-    collateral_usdc_int = int(collateral_amount * (10 ** USDC_DECIMALS))
+    # Convert human values → on-chain units (matching Avantis SDK format)
+    # - positionSizeUSDC: 6-decimal format (15 USDC = 15,000,000)
+    # - leverage: 10-decimal format (25x = 250,000,000,000) - CRITICAL!
+    # - prices (tp, sl, openPrice): 10-decimal format
+    LEVERAGE_PRECISION = 10 ** 10  # Avantis uses 1e10 for leverage
+    collateral_usdc_int = int(collateral_amount * (10 ** USDC_DECIMALS))  # 6 decimals
+    leverage_int = int(leverage * LEVERAGE_PRECISION)  # 10 decimals
     tp_price = int(take_profit * (10 ** PRICE_DECIMALS)) if take_profit else 0
     sl_price = int(stop_loss * (10 ** PRICE_DECIMALS)) if stop_loss else 0
 
     # ------------------------------------------------------------------
+    # Fetch current market price from Avantis SDK
+    # The SDK requires openPrice to be set even for market orders
+    # Price is in 10-decimal precision (1e10)
+    # CRITICAL: Without a valid openPrice, the keeper will CANCEL the order!
+    # ------------------------------------------------------------------
+    open_price = 0
+    try:
+        from avantis_trader_sdk import FeedClient
+        from symbols.symbol_registry import PAIR_INDEX_TO_SYMBOL
+        
+        feed_client = FeedClient()
+        # Get symbol for this pair index
+        symbol = PAIR_INDEX_TO_SYMBOL.get(pair_index)
+        if symbol:
+            pair_name = f"{symbol}/USD"
+            try:
+                # Await directly since we're in an async function
+                price_data = await feed_client.get_latest_price_updates([pair_name])
+                if price_data and hasattr(price_data, 'parsed') and price_data.parsed:
+                    open_price = int(price_data.parsed[0].converted_price * (10 ** PRICE_DECIMALS))
+                    logger.info(f"📈 Fetched market price for pair {pair_index} ({symbol}): ${open_price / (10 ** PRICE_DECIMALS):.2f}")
+            except Exception as e:
+                logger.warning(f"Could not fetch price from SDK for {pair_name}: {e}")
+        
+        if open_price == 0:
+            logger.error(f"❌ CRITICAL: Could not fetch market price for pair {pair_index}. Order will likely be cancelled by keeper!")
+    except Exception as e:
+        logger.error(f"❌ Price fetch error: {e}. Order will likely be cancelled by keeper!")
+
+    # ------------------------------------------------------------------
     # BELOW_MIN_POS protection (on-chain rule):
     # positionSizeUSDC * leverage >= pairMinLevPosUSDC(pairIndex)
-    # Here we treat positionSizeUSDC = collateral_usdc_int (as used in struct).
     # ------------------------------------------------------------------
-    try:
-        min_pos_raw = await _get_pair_min_lev_pos_usdc(pair_index, rpc_url=rpc)
-        position_value_raw = collateral_usdc_int * leverage  # USDC * 1e6
-
-        if position_value_raw < min_pos_raw:
-            # Compute the minimum collateral required at this leverage
-            min_collateral_usdc = min_pos_raw / (float(10 ** USDC_DECIMALS) * leverage)
-            logger.error(
-                "❌ BELOW_MIN_POS pre-check failed: "
-                f"pair_index={pair_index}, leverage={leverage}, "
-                f"collateral={collateral_amount:.4f} USDC, "
-                f"required_min_collateral≈{min_collateral_usdc:.4f} USDC"
-            )
-            raise ValueError(
-                f"Position size below contract minimum for this pair. "
-                f"With leverage {leverage}x you must use at least "
-                f"≈ {min_collateral_usdc:.2f} USDC collateral. "
-                f"(pairMinLevPosUSDC = {min_pos_raw / 1e6:.2f} USDC)"
-            )
-        else:
-            logger.info(
-                "✅ BELOW_MIN_POS pre-check passed: "
-                f"collateral={collateral_amount:.4f} USDC, leverage={leverage}x, "
-                f"pairMinLevPosUSDC={min_pos_raw / 1e6:.4f} USDC"
-            )
-    except ValueError:
-        # Re-raise ValueError (our validation error) - this should block the trade
-        raise
-    except Exception as e:
-        # STRICT MODE: If we cannot fetch min pos, we MUST block the trade.
-        # This prevents sending transactions that will fail on-chain and waste gas.
-        # The on-chain require() will catch BELOW_MIN_POS, but failing here saves gas fees.
-        logger.error(
-            f"❌ CRITICAL: Could not fetch pairMinLevPosUSDC for pair_index={pair_index}: {e}"
-        )
-        logger.error(
-            "❌ BLOCKING TRADE: Cannot validate position size without minimum position data. "
-            "This prevents potential gas loss from on-chain transaction failures."
-        )
-        raise ValueError(
-            f"Cannot validate position size: Failed to fetch minimum position requirement for pair {pair_index}. "
-            f"Please check your connection and try again. Error: {str(e)}"
-        )
+    logger.info(
+        f"ℹ️ Position details: Collateral: ${collateral_amount:.2f} USDC, "
+        f"Leverage: {leverage}x, Notional: ${collateral_amount * leverage:.2f}"
+    )
 
     params = TradeParams(
         trader=trader_address,
         pair_index=pair_index,
-        collateral_usdc=collateral_usdc_int,
-        leverage=leverage,
+        collateral_usdc=collateral_usdc_int,  # 1e12 precision
+        leverage=leverage_int,  # 1e10 precision
         is_long=is_long,
         tp_price=tp_price,
         sl_price=sl_price,
-        open_price=0,  # market
+        open_price=open_price,  # Set actual market price (1e10 precision)
         index=0,
         initial_pos_token=0,
         timestamp=0,
     )
+    
+    logger.info(
+        f"📊 Trade params (Avantis precision): positionSizeUSDC={collateral_usdc_int}, "
+        f"leverage={leverage_int}, openPrice={open_price}"
+    )
 
-    slippage_p = int(slippage_percentage * 1e8)  # 1% = 1e8
+    # Slippage percentage: 1% = 10000000000 (1e10) matching SDK format
+    slippage_p = int(slippage_percentage * (10 ** PRICE_DECIMALS))
 
     if execution_fee_wei is None:
         # default for Base – you can tune this or estimate via a view method if Avantis exposes one
@@ -495,6 +496,52 @@ async def get_min_position_size_usdc(
     except Exception as e:
         logger.error(f"Error getting min position size for pair_index={pair_index}, leverage={leverage}: {e}")
         raise
+
+
+async def get_min_position_size_for_pair(
+    pair_index: int,
+    leverage: int,
+    rpc_url: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Get minimum position size information for a pair at a given leverage.
+    
+    This function provides detailed information about minimum position requirements
+    for API endpoints and validation purposes.
+    
+    Args:
+        pair_index: Trading pair index
+        leverage: Leverage multiplier (e.g., 10 for 10x)
+        rpc_url: Optional RPC URL (uses settings default if not provided)
+        
+    Returns:
+        Dictionary with:
+        - pair_index: The pair index
+        - leverage: The leverage multiplier
+        - pair_min_lev_pos_usdc: Minimum leveraged position size in USDC (raw wei, 6 decimals)
+        - min_collateral_usdc: Minimum collateral required in USDC (human-readable)
+        - status: "success" or "error"
+        - error: Error message if status is "error"
+    """
+    try:
+        min_pos_raw = await _get_pair_min_lev_pos_usdc(pair_index, rpc_url=rpc_url)
+        min_collateral_usdc = min_pos_raw / (float(10 ** USDC_DECIMALS) * leverage)
+        
+        return {
+            "pair_index": pair_index,
+            "leverage": leverage,
+            "pair_min_lev_pos_usdc": int(min_pos_raw),
+            "min_collateral_usdc": min_collateral_usdc,
+            "status": "success"
+        }
+    except Exception as e:
+        logger.error(f"Error getting min position size for pair_index={pair_index}, leverage={leverage}: {e}")
+        return {
+            "pair_index": pair_index,
+            "leverage": leverage,
+            "status": "error",
+            "error": str(e)
+        }
 
 
 async def close_position_via_contract(
@@ -1068,7 +1115,23 @@ def _format_receipt(
         return result
 
     logger.error(f"❌ Transaction Reverted. TX: {tx_hash}")
-    raise ValueError(f"Transaction failed/reverted on chain. Hash: {tx_hash}")
+    
+    # Try to extract revert reason for better error messages
+    error_msg = f"Transaction failed/reverted on chain. Hash: {tx_hash}"
+    
+    # Check if this is a BELOW_MIN_POS error by examining the receipt
+    try:
+        receipt_str = str(receipt)
+        if 'BELOW_MIN_POS' in receipt_str or '42454c4f575f4d494e5f504f53' in receipt_str.lower():
+            error_msg = (
+                f"Transaction reverted: BELOW_MIN_POS - Position size below contract minimum. "
+                f"Your collateral (${collateral_amount or 'unknown'}) × leverage is too small for this pair. "
+                f"Try increasing your budget per position to at least $50-100. Hash: {tx_hash}"
+            )
+    except Exception:
+        pass  # If we can't extract reason, use generic message
+    
+    raise ValueError(error_msg)
 
 
 # ==========================================
