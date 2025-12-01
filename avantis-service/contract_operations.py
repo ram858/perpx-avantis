@@ -145,11 +145,20 @@ async def open_position_via_contract(
         # Re-raise ValueError (our validation error) - this should block the trade
         raise
     except Exception as e:
-        # If we cannot fetch min pos for some reason, we log but DO NOT block the trade.
-        # In production, you may want to make this stricter by raising the error.
-        # However, the on-chain require() will still catch BELOW_MIN_POS, so this is a safety net.
-        logger.warning(f"⚠️ Could not fetch pairMinLevPosUSDC for pair_index={pair_index}: {e}")
-        logger.warning("⚠️ Proceeding with trade - on-chain validation will catch BELOW_MIN_POS if invalid")
+        # STRICT MODE: If we cannot fetch min pos, we MUST block the trade.
+        # This prevents sending transactions that will fail on-chain and waste gas.
+        # The on-chain require() will catch BELOW_MIN_POS, but failing here saves gas fees.
+        logger.error(
+            f"❌ CRITICAL: Could not fetch pairMinLevPosUSDC for pair_index={pair_index}: {e}"
+        )
+        logger.error(
+            "❌ BLOCKING TRADE: Cannot validate position size without minimum position data. "
+            "This prevents potential gas loss from on-chain transaction failures."
+        )
+        raise ValueError(
+            f"Cannot validate position size: Failed to fetch minimum position requirement for pair {pair_index}. "
+            f"Please check your connection and try again. Error: {str(e)}"
+        )
 
     params = TradeParams(
         trader=trader_address,

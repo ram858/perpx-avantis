@@ -31,12 +31,13 @@
 - ✅ Blocks requests < $10 before any contract interaction
 - ✅ Prevents "Transfer First, Validate Later" pattern
 
-### Layer 2: Pre-Contract Validation (contract_operations.py:119-150)
+### Layer 2: Pre-Contract Validation (contract_operations.py:119-152)
 - ✅ **BELOW_MIN_POS pre-check**: Fetches `pairMinLevPosUSDC` from contract
 - ✅ Calculates: `positionSizeUSDC * leverage >= pairMinLevPosUSDC`
 - ✅ Raises ValueError if check fails (blocks trade)
-- ⚠️ **WARNING**: If fetch fails, logs warning but doesn't block (line 150)
-  - **Recommendation**: Consider making this stricter in production
+- ✅ **STRICT MODE**: If fetch fails, raises ValueError and blocks trade (line 147-152)
+  - **Status**: ✅ **IMPLEMENTED** - Trade is blocked if minimum position cannot be validated
+  - **Benefit**: Prevents gas loss from transactions that would fail on-chain
 
 ### Layer 3: Contract-Level Protection (Trading.sol:275)
 - ✅ **BELOW_MIN_POS require**: On-chain validation
