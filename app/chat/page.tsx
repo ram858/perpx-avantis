@@ -97,7 +97,7 @@ export default function ChatPage() {
     const investment = searchParams.get('investment')
     const mode = searchParams.get('mode')
     const lossThreshold = searchParams.get('lossThreshold')
-    const maxPositions = searchParams.get('maxPositions') // 'real' or 'simulation'
+    const maxPositions = searchParams.get('maxPositions')
     const view = searchParams.get('view') // 'positions' for viewing existing trades
     
     // Handle view=positions case (viewing existing trades)
@@ -116,168 +116,136 @@ export default function ChatPage() {
       const profitNum = parseInt(profit)
       const investmentNum = parseInt(investment)
       
-      // Determine trading mode - prioritize mode parameter
-      const isRealTradingMode = mode === 'real' && isConnected
-      const isSimulationMode = mode === 'simulation' || (!isConnected && mode !== 'real')
-      
-      if (isRealTradingMode) {
-        // Real trading mode - check wallet requirements
-        if (!isConnected) {
-          setMessages([{
-            type: "bot",
-            content: "❌ Please connect your wallet first to start real trading.",
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          }])
-          return
-        }
-        
-        if (totalPortfolioValue === 0) {
-          setMessages([{
-            type: "bot",
-            content: "❌ Your wallet balance is $0. Please add funds to your wallet before starting real trading.",
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          }])
-          return
-        }
-        
-        // Check minimum Avantis balance requirement ($10)
-        if (avantisBalance < 10) {
-          setMessages([{
-            type: "bot",
-            content: `⚠️ **Insufficient Balance**\n\nYour current Avantis trading balance is **$${avantisBalance.toFixed(2)}**. The minimum required balance to start trading is **$10.00**.\n\n**Please deposit at least $${(10 - avantisBalance).toFixed(2)} more** to your Avantis trading vault before starting a trading session.\n\n💡 You can deposit funds from the Home page using your Base wallet.`,
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          }])
-          return
-        }
-        
-        // Check if investment amount exceeds available balance
-        if (investmentNum > avantisBalance) {
-          setMessages([{
-            type: "bot",
-            content: `⚠️ **Investment Amount Exceeds Balance**\n\nYou're trying to invest **$${investmentNum}** but your Avantis balance is only **$${avantisBalance.toFixed(2)}**.\n\n**Please either:**\n• Reduce your investment amount to $${avantisBalance.toFixed(2)} or less\n• Deposit more funds to your Avantis trading vault\n\n💡 You can deposit funds from the Home page.`,
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          }])
-          return
-        }
-        
-        // Start real trading with progress updates
-        const progressMessageId = Date.now().toString();
+      // Only real trading mode - require wallet connection
+      if (!isConnected) {
         setMessages([{
           type: "bot",
-          content: `💰 **Starting REAL TRADING**\n\n📊 Investment: $${investmentNum}\n🎯 Target Profit: $${profitNum}\n\n⏳ **Initializing...**\n\n🔄 Starting trading session...`,
+          content: "❌ **Wallet Required**\n\nPlease connect your wallet first to start trading. Real trading requires a connected wallet with funds.",
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         }])
-        
-        let successMessageAdded = false; // Prevent duplicate messages
-        
-        startTrading({
-          profitGoal: profitNum,
-          maxBudget: investmentNum,
-          maxPerSession: maxPositions ? parseInt(maxPositions) : 3,
-          lossThreshold: lossThreshold ? parseFloat(lossThreshold) : 10
-        }, (step, message) => {
-          // Update progress in real-time
-          setMessages(prev => {
-            const lastMessage = prev[prev.length - 1];
-            if (lastMessage && lastMessage.type === "bot") {
-              let content = lastMessage.content;
-              
-              // Update the relevant step (fee step is skipped now)
-              if (step === 'session') {
-                content = content.replace(/🔄 Starting trading session\.\.\./, `✅ ${message}`);
-                // Only add the active message if not already present
-                if (!content.includes('🚀 **Trading session is now active!**')) {
-                  content += `\n\n🚀 **Trading session is now active!**\n\n📈 Monitoring markets and executing trades on Avantis...`;
-                }
-              } else if (step === 'complete') {
-                content = content.replace(/🔄.*/, '');
-                content += `\n\n${message}`;
-              }
-              
-              return [...prev.slice(0, -1), { ...lastMessage, content }];
-            }
-            return prev;
-          });
-        }).then(() => {
-          // Only add success message once (check if it already exists)
-          setMessages(prev => {
-            const hasSuccessMessage = prev.some(msg => 
-              msg.type === "bot" && 
-              msg.content.includes("Trading session started successfully")
-            );
-            
-            if (!hasSuccessMessage) {
-              return [...prev, {
-                type: "bot",
-                content: `✅ **Trading session started successfully!**\n\n📊 The bot is now actively monitoring markets and will open positions on Avantis when profitable opportunities are detected.\n\n💡 Positions will appear in your Avantis dashboard when opened.\n\n💡 You can monitor your positions and PnL in real-time above.`,
-                timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-              }];
-            }
-            return prev;
-          });
-        }).catch(error => {
-          console.error('[ChatPage] Trading start error:', error);
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          
-          // Determine the appropriate error message based on error type
-          let userFriendlyMessage = '';
-          
-          if (errorMessage.includes('Trading engine is not accessible') || 
-              errorMessage.includes('Failed to connect to trading engine') ||
-              errorMessage.includes('ECONNREFUSED') ||
-              errorMessage.includes('fetch failed')) {
-            userFriendlyMessage = '🔌 **Trading Engine Connection Error**\n\nThe trading engine service is not accessible. This is a server connectivity issue, not a problem with your balance or wallet.\n\n**Possible causes:**\n• Trading engine service is not running\n• Network connectivity issues\n• Server configuration problem\n\nPlease contact support or try again later.';
-          } else if (errorMessage.includes('Trading engine request timed out') || 
-                     errorMessage.includes('timeout') || 
-                     errorMessage.includes('AbortError')) {
-            userFriendlyMessage = '⏱️ **Request Timeout**\n\nThe trading engine did not respond in time. This is a server connectivity issue.\n\n**Please try:**\n• Waiting a moment and trying again\n• Checking if the trading engine service is running\n• Contacting support if the issue persists';
-          } else if (errorMessage.includes('Network') || errorMessage.includes('Failed to fetch')) {
-            userFriendlyMessage = '🌐 **Network Connection Error**\n\nUnable to connect to the trading service. Please check your internet connection and try again.';
-          } else if (errorMessage.includes('already known') || errorMessage.includes('nonce')) {
-            userFriendlyMessage = '⚠️ **Transaction Error**\n\nA transaction conflict was detected. Please wait a moment and try again.';
-          } else if (errorMessage.includes('Insufficient') || errorMessage.includes('balance') || errorMessage.includes('Balance')) {
-            userFriendlyMessage = `💰 **Balance Issue**\n\n${errorMessage}\n\nPlease check your trading balance and deposit funds if needed.`;
-          } else if (errorMessage.includes('Missing required') || errorMessage.includes('required')) {
-            userFriendlyMessage = `⚠️ **Configuration Error**\n\n${errorMessage}\n\nPlease check your trading parameters and try again.`;
-          } else {
-            // For unknown errors, show the actual error message without suggesting balance check
-            userFriendlyMessage = `❌ **Error**\n\n${errorMessage}\n\nIf this issue persists, please contact support.`;
-          }
-          
-          setMessages(prev => [...prev, {
-            type: "bot",
-            content: `❌ **Failed to start trading**\n\n${userFriendlyMessage}`,
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          }])
-        })
-        
-      } else if (isSimulationMode) {
-        // Simulation mode
-        setMessages([{
-          type: "bot",
-          content: `🎮 Starting SIMULATION with $${investmentNum} virtual investment targeting $${profitNum} profit. No real money involved!`,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        }])
-        
-        startTrading({
-          profitGoal: profitNum,
-          maxBudget: investmentNum,
-          maxPerSession: maxPositions ? parseInt(maxPositions) : 3,
-          lossThreshold: lossThreshold ? parseFloat(lossThreshold) : 10
-        }).catch(error => {
-          setMessages(prev => [...prev, {
-            type: "bot",
-            content: `❌ Failed to start simulation: ${error.message}`,
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          }])
-        })
-      } else {
-        setMessages([{
-          type: "bot",
-          content: `🤔 I see you want to trade with $${investmentNum} targeting $${profitNum} profit. Would you like to:\n\n💰 **Real Trading** (uses actual money)\n🎮 **Simulation** (no real money)\n\nPlease visit the trading page to choose your mode.`,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        }])
+        return
       }
+      
+      // Real trading mode - check wallet requirements
+      if (totalPortfolioValue === 0) {
+        setMessages([{
+          type: "bot",
+          content: "❌ Your wallet balance is $0. Please add funds to your wallet before starting real trading.",
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        }])
+        return
+      }
+      
+      // Check minimum Avantis balance requirement ($10)
+      if (avantisBalance < 10) {
+        setMessages([{
+          type: "bot",
+          content: `⚠️ **Insufficient Balance**\n\nYour current Avantis trading balance is **$${avantisBalance.toFixed(2)}**. The minimum required balance to start trading is **$10.00**.\n\n**Please deposit at least $${(10 - avantisBalance).toFixed(2)} more** to your Avantis trading vault before starting a trading session.\n\n💡 You can deposit funds from the Home page using your Base wallet.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        }])
+        return
+      }
+      
+      // Check if investment amount exceeds available balance
+      if (investmentNum > avantisBalance) {
+        setMessages([{
+          type: "bot",
+          content: `⚠️ **Investment Amount Exceeds Balance**\n\nYou're trying to invest **$${investmentNum}** but your Avantis balance is only **$${avantisBalance.toFixed(2)}**.\n\n**Please either:**\n• Reduce your investment amount to $${avantisBalance.toFixed(2)} or less\n• Deposit more funds to your Avantis trading vault\n\n💡 You can deposit funds from the Home page.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        }])
+        return
+      }
+      
+      // Start real trading with progress updates
+      const progressMessageId = Date.now().toString();
+      setMessages([{
+        type: "bot",
+        content: `💰 **Starting REAL TRADING**\n\n📊 Investment: $${investmentNum}\n🎯 Target Profit: $${profitNum}\n\n⏳ **Initializing...**\n\n🔄 Starting trading session...`,
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      }])
+      
+      let successMessageAdded = false; // Prevent duplicate messages
+      
+      startTrading({
+          profitGoal: profitNum,
+          maxBudget: investmentNum,
+          maxPerSession: maxPositions ? parseInt(maxPositions) : 3,
+          lossThreshold: lossThreshold ? parseFloat(lossThreshold) : 10
+      }, (step, message) => {
+        // Update progress in real-time
+        setMessages(prev => {
+          const lastMessage = prev[prev.length - 1];
+          if (lastMessage && lastMessage.type === "bot") {
+            let content = lastMessage.content;
+            
+            // Update the relevant step (fee step is skipped now)
+            if (step === 'session') {
+              content = content.replace(/🔄 Starting trading session\.\.\./, `✅ ${message}`);
+              // Only add the active message if not already present
+              if (!content.includes('🚀 **Trading session is now active!**')) {
+                content += `\n\n🚀 **Trading session is now active!**\n\n📈 Monitoring markets and executing trades on Avantis...`;
+              }
+            } else if (step === 'complete') {
+              content = content.replace(/🔄.*/, '');
+              content += `\n\n${message}`;
+            }
+            
+            return [...prev.slice(0, -1), { ...lastMessage, content }];
+          }
+          return prev;
+        });
+      }).then(() => {
+        // Only add success message once (check if it already exists)
+        setMessages(prev => {
+          const hasSuccessMessage = prev.some(msg => 
+            msg.type === "bot" && 
+            msg.content.includes("Trading session started successfully")
+          );
+          
+          if (!hasSuccessMessage) {
+            return [...prev, {
+              type: "bot",
+              content: `✅ **Trading session started successfully!**\n\n📊 The bot is now actively monitoring markets and will open positions on Avantis when profitable opportunities are detected.\n\n💡 Positions will appear in your Avantis dashboard when opened.\n\n💡 You can monitor your positions and PnL in real-time above.`,
+              timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            }];
+          }
+          return prev;
+        });
+      }).catch(error => {
+        console.error('[ChatPage] Trading start error:', error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        
+        // Determine the appropriate error message based on error type
+        let userFriendlyMessage = '';
+        
+        if (errorMessage.includes('Trading engine is not accessible') || 
+            errorMessage.includes('Failed to connect to trading engine') ||
+            errorMessage.includes('ECONNREFUSED') ||
+            errorMessage.includes('fetch failed')) {
+          userFriendlyMessage = '🔌 **Trading Engine Connection Error**\n\nThe trading engine service is not accessible. This is a server connectivity issue, not a problem with your balance or wallet.\n\n**Possible causes:**\n• Trading engine service is not running\n• Network connectivity issues\n• Server configuration problem\n\nPlease contact support or try again later.';
+        } else if (errorMessage.includes('Trading engine request timed out') || 
+                   errorMessage.includes('timeout') || 
+                   errorMessage.includes('AbortError')) {
+          userFriendlyMessage = '⏱️ **Request Timeout**\n\nThe trading engine did not respond in time. This is a server connectivity issue.\n\n**Please try:**\n• Waiting a moment and trying again\n• Checking if the trading engine service is running\n• Contacting support if the issue persists';
+        } else if (errorMessage.includes('Network') || errorMessage.includes('Failed to fetch')) {
+          userFriendlyMessage = '🌐 **Network Connection Error**\n\nUnable to connect to the trading service. Please check your internet connection and try again.';
+        } else if (errorMessage.includes('already known') || errorMessage.includes('nonce')) {
+          userFriendlyMessage = '⚠️ **Transaction Error**\n\nA transaction conflict was detected. Please wait a moment and try again.';
+        } else if (errorMessage.includes('Insufficient') || errorMessage.includes('balance') || errorMessage.includes('Balance')) {
+          userFriendlyMessage = `💰 **Balance Issue**\n\n${errorMessage}\n\nPlease check your trading balance and deposit funds if needed.`;
+        } else if (errorMessage.includes('Missing required') || errorMessage.includes('required')) {
+          userFriendlyMessage = `⚠️ **Configuration Error**\n\n${errorMessage}\n\nPlease check your trading parameters and try again.`;
+        } else {
+          // For unknown errors, show the actual error message without suggesting balance check
+          userFriendlyMessage = `❌ **Error**\n\n${errorMessage}\n\nIf this issue persists, please contact support.`;
+        }
+        
+        setMessages(prev => [...prev, {
+          type: "bot",
+          content: `❌ **Failed to start trading**\n\n${userFriendlyMessage}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        }])
+      })
     }
   }, [searchParams, tradingSession, isConnected, totalPortfolioValue, avantisBalance, startTrading, clearSession])
 
@@ -287,7 +255,7 @@ export default function ChatPage() {
     if (!searchParams.get('profit') && !searchParams.get('investment') && !view && messages.length === 0) {
       setMessages([{
         type: "bot",
-        content: "🎮 Starting simulation mode - no real money involved!",
+        content: "💰 **Welcome to Real Trading**\n\nConnect your wallet and set your trading parameters to start trading on Avantis with real funds.",
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       }])
     }
@@ -1607,16 +1575,23 @@ export default function ChatPage() {
                   }
                   
                   try {
-                    // Check if we're in simulation mode
-                    const isSimulationMode = !isConnected || totalPortfolioValue === 0
-                    
-                    if (isSimulationMode) {
-                      // Add simulation message
+                    // Real trading only - check wallet connection
+                    if (!isConnected) {
                       setMessages(prev => [...prev, {
                         type: "bot",
-                        content: "🎮 Starting simulation mode - no real money involved!",
+                        content: "❌ **Wallet Required**\n\nPlease connect your wallet first to start trading. Real trading requires a connected wallet with funds.",
                         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
                       }])
+                      return
+                    }
+                    
+                    if (totalPortfolioValue === 0 || avantisBalance < 10) {
+                      setMessages(prev => [...prev, {
+                        type: "bot",
+                        content: `⚠️ **Insufficient Balance**\n\nYour current Avantis trading balance is **$${avantisBalance.toFixed(2)}**. The minimum required balance to start trading is **$10.00**.\n\n**Please deposit funds** to your Avantis trading vault before starting a trading session.`,
+                        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                      }])
+                      return
                     }
                     
                     // Start trading with the specified parameters

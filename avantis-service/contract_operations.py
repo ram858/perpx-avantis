@@ -1,6 +1,9 @@
 # avantis-service/contract_operations.py
 """
 Contract interaction operations for Avantis trading (direct Web3, no SDK).
+
+This module integrates with BaseScan transaction examples to ensure
+our contract calls match real-world patterns from the blockchain.
 """
 
 import asyncio
@@ -14,6 +17,18 @@ from config import settings
 from direct_contracts import AvantisTradingContract, TradeParams
 
 logger = logging.getLogger(__name__)
+
+# Optional BaseScan integration (import only if needed)
+try:
+    from basescan_integration import (
+        BaseScanParser,
+        validate_against_basescan_example,
+        get_basescan_link,
+    )
+    BASESCAN_AVAILABLE = True
+except ImportError:
+    BASESCAN_AVAILABLE = False
+    logger.debug("BaseScan integration not available")
 
 # --- Constants ---
 MIN_COLLATERAL_USDC = 10.0   # Protocol minimum (matches Avantis UI)
@@ -167,17 +182,28 @@ async def open_position_via_contract(
     )
     tx_hash = trading.sign_and_send(tx)
     logger.info(f"🚀 Sent openTrade tx: {tx_hash}")
+    
+    # Log BaseScan link for verification
+    if BASESCAN_AVAILABLE:
+        basescan_url = get_basescan_link(tx_hash)
+        logger.info(f"🔗 View on BaseScan: {basescan_url}")
 
     # Convert string hash to HexBytes for type checker
     tx_hash_bytes = HexBytes(tx_hash) if isinstance(tx_hash, str) else tx_hash
     receipt = await asyncio.to_thread(trading.web3.eth.wait_for_transaction_receipt, tx_hash_bytes)
 
-    return _format_receipt(
+    result = _format_receipt(
         receipt,
         pair_index=pair_index,
         action="open",
         collateral_amount=collateral_amount,
     )
+    
+    # Add BaseScan link to result
+    if BASESCAN_AVAILABLE:
+        result["basescan_url"] = get_basescan_link(tx_hash)
+    
+    return result
 
 
 # ==========================================
@@ -527,16 +553,27 @@ async def close_position_via_contract(
     )
     tx_hash = trading.sign_and_send(tx)
     logger.info(f"🚀 Sent closeTradeMarket tx: {tx_hash}")
+    
+    # Log BaseScan link for verification
+    if BASESCAN_AVAILABLE:
+        basescan_url = get_basescan_link(tx_hash)
+        logger.info(f"🔗 View on BaseScan: {basescan_url}")
 
     # 4) Wait for receipt
     tx_hash_bytes = HexBytes(tx_hash) if isinstance(tx_hash, str) else tx_hash
     receipt = await asyncio.to_thread(trading.web3.eth.wait_for_transaction_receipt, tx_hash_bytes)
 
-    return _format_receipt(
+    result = _format_receipt(
         receipt=receipt,
         pair_index=pair_index,
         action="close",
     )
+    
+    # Add BaseScan link to result
+    if BASESCAN_AVAILABLE:
+        result["basescan_url"] = get_basescan_link(tx_hash)
+    
+    return result
 
 
 async def close_all_positions_via_contract(
@@ -784,11 +821,23 @@ async def update_tp_sl_via_contract(
     )
     tx_hash = trading.sign_and_send(tx)
     logger.info(f"🚀 Sent updateTpAndSl tx: {tx_hash}")
+    
+    # Log BaseScan link for verification
+    if BASESCAN_AVAILABLE:
+        basescan_url = get_basescan_link(tx_hash)
+        logger.info(f"🔗 View on BaseScan: {basescan_url}")
 
     # Convert string hash to HexBytes for type checker
     tx_hash_bytes = HexBytes(tx_hash) if isinstance(tx_hash, str) else tx_hash
     receipt = await asyncio.to_thread(trading.web3.eth.wait_for_transaction_receipt, tx_hash_bytes)
-    return _format_receipt(receipt, pair_index=pair_index, action="update_tp_sl")
+    
+    result = _format_receipt(receipt, pair_index=pair_index, action="update_tp_sl")
+    
+    # Add BaseScan link to result
+    if BASESCAN_AVAILABLE:
+        result["basescan_url"] = get_basescan_link(tx_hash)
+    
+    return result
 
 
 async def update_margin_via_contract(
@@ -871,15 +920,26 @@ async def update_margin_via_contract(
     )
     tx_hash = trading.sign_and_send(tx)
     logger.info(f"🚀 Sent updateMargin tx: {tx_hash}")
+    
+    # Log BaseScan link for verification
+    if BASESCAN_AVAILABLE:
+        basescan_url = get_basescan_link(tx_hash)
+        logger.info(f"🔗 View on BaseScan: {basescan_url}")
 
     tx_hash_bytes = HexBytes(tx_hash) if isinstance(tx_hash, str) else tx_hash
     receipt = await asyncio.to_thread(trading.web3.eth.wait_for_transaction_receipt, tx_hash_bytes)
 
-    return _format_receipt(
+    result = _format_receipt(
         receipt=receipt,
         pair_index=pair_index,
         action="update_margin",
     )
+    
+    # Add BaseScan link to result
+    if BASESCAN_AVAILABLE:
+        result["basescan_url"] = get_basescan_link(tx_hash)
+    
+    return result
 
 
 async def cancel_open_limit_order_via_contract(
@@ -926,15 +986,26 @@ async def cancel_open_limit_order_via_contract(
     )
     tx_hash = trading.sign_and_send(tx)
     logger.info(f"🚀 Sent cancelOpenLimitOrder tx: {tx_hash}")
+    
+    # Log BaseScan link for verification
+    if BASESCAN_AVAILABLE:
+        basescan_url = get_basescan_link(tx_hash)
+        logger.info(f"🔗 View on BaseScan: {basescan_url}")
 
     tx_hash_bytes = HexBytes(tx_hash) if isinstance(tx_hash, str) else tx_hash
     receipt = await asyncio.to_thread(trading.web3.eth.wait_for_transaction_receipt, tx_hash_bytes)
 
-    return _format_receipt(
+    result = _format_receipt(
         receipt=receipt,
         pair_index=pair_index,
         action="cancel_limit_order",
     )
+    
+    # Add BaseScan link to result
+    if BASESCAN_AVAILABLE:
+        result["basescan_url"] = get_basescan_link(tx_hash)
+    
+    return result
 
 
 # ==========================================

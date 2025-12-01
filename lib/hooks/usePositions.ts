@@ -9,6 +9,7 @@ export interface Position {
   coin: string;
   symbol?: string; // Symbol name (e.g., "BTC")
   pair_index?: number; // Avantis pair index (required for closing positions)
+  index?: number; // Trade index (required for closing positions when multiple positions exist on same pair)
   size: string;
   side: 'long' | 'short';
   entryPrice: number;
