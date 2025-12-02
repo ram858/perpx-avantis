@@ -501,21 +501,28 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         // Trading holdings: only from trading vault (for Holdings section)
         const newTradingHoldings = shouldUpdateHoldings ? tradingOnlyHoldings : prev.tradingHoldings;
         
-        // Calculate avantis balance - ONLY USDC (not ETH or other tokens)
+        // Calculate avantis balance - ONLY USDC from TRADING WALLET (not Farcaster/Base wallet)
         // This is the trading balance used for Avantis trading
         let calculatedAvantisBalance = 0;
         
-        // First, try to get USDC from trading vault holdings (most accurate)
-        const tradingVaultUSDC = tradingVaultHoldings.find(h => h.token.symbol === 'USDC');
-        if (tradingVaultUSDC && tradingVaultUSDC.valueUSD > 0) {
-          calculatedAvantisBalance = tradingVaultUSDC.valueUSD;
-        } else {
-          // Fallback: try to get USDC from combined holdings (for web users where trading wallet = main wallet)
-          const usdcHolding = combinedHoldings.find(h => h.token.symbol === 'USDC');
-          if (usdcHolding && usdcHolding.valueUSD > 0) {
-            calculatedAvantisBalance = usdcHolding.valueUSD;
+        // CRITICAL: Only show balance from trading wallet, NOT from Farcaster/Base wallet
+        // If no trading wallet exists, balance should be $0
+        if (tradingAddress) {
+          // Trading wallet exists - get USDC from trading vault holdings ONLY
+          const tradingVaultUSDC = tradingVaultHoldings.find(h => h.token.symbol === 'USDC');
+          if (tradingVaultUSDC && tradingVaultUSDC.valueUSD > 0) {
+            calculatedAvantisBalance = tradingVaultUSDC.valueUSD;
+          } else if (user?.webUserId) {
+            // For web users ONLY: trading wallet = main wallet, so use main wallet USDC
+            const usdcHolding = baseHoldings.find(h => h.token.symbol === 'USDC');
+            if (usdcHolding && usdcHolding.valueUSD > 0) {
+              calculatedAvantisBalance = usdcHolding.valueUSD;
+            }
           }
+          // For Farcaster users: if no USDC in trading vault, balance stays $0
+          // This prevents showing Farcaster wallet balance
         }
+        // If no trading wallet exists (tradingAddress is null), balance stays $0
         
         // Only update avantis balance if it's valid or if we're forcing an update
         const newAvantisBalance = isValidNumber(calculatedAvantisBalance) && calculatedAvantisBalance >= 0
