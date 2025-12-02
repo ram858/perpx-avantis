@@ -501,12 +501,16 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         // Trading holdings: only from trading vault (for Holdings section)
         const newTradingHoldings = shouldUpdateHoldings ? tradingOnlyHoldings : prev.tradingHoldings;
         
-        // Calculate avantis balance
-        // For web users: use USDC balance from main wallet (trading wallet = main wallet)
-        // For Farcaster users: use trading vault total (separate trading wallet)
-        let calculatedAvantisBalance = tradingVaultTotal;
-        if (user?.webUserId && tradingVaultTotal === 0) {
-          // For web users, if no separate trading vault, use USDC from main wallet
+        // Calculate avantis balance - ONLY USDC (not ETH or other tokens)
+        // This is the trading balance used for Avantis trading
+        let calculatedAvantisBalance = 0;
+        
+        // First, try to get USDC from trading vault holdings (most accurate)
+        const tradingVaultUSDC = tradingVaultHoldings.find(h => h.token.symbol === 'USDC');
+        if (tradingVaultUSDC && tradingVaultUSDC.valueUSD > 0) {
+          calculatedAvantisBalance = tradingVaultUSDC.valueUSD;
+        } else {
+          // Fallback: try to get USDC from combined holdings (for web users where trading wallet = main wallet)
           const usdcHolding = combinedHoldings.find(h => h.token.symbol === 'USDC');
           if (usdcHolding && usdcHolding.valueUSD > 0) {
             calculatedAvantisBalance = usdcHolding.valueUSD;
