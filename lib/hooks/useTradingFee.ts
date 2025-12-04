@@ -79,10 +79,15 @@ export function useTradingFee() {
 
   /**
    * Get fee payment transaction data from API
+   * @param tradingAmount - The amount user wants to trade with (required for fee calculation)
    */
-  const getFeeTransactionData = useCallback(async () => {
+  const getFeeTransactionData = useCallback(async (tradingAmount: number) => {
     if (!token) {
       throw new Error('Not authenticated');
+    }
+
+    if (!tradingAmount || tradingAmount <= 0) {
+      throw new Error('Trading amount is required for fee calculation');
     }
 
     const response = await fetch('/api/trading/pay-fee', {
@@ -91,6 +96,7 @@ export function useTradingFee() {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
+      body: JSON.stringify({ tradingAmount }),
     });
 
     if (!response.ok) {
@@ -352,15 +358,19 @@ export function useTradingFee() {
 
   /**
    * Pay trading fee - main function
+   * @param tradingAmount - The amount user wants to trade with (required for 1% fee calculation)
    */
-  const payTradingFee = useCallback(async (): Promise<FeePaymentResult> => {
+  const payTradingFee = useCallback(async (tradingAmount: number): Promise<FeePaymentResult> => {
     setIsPayingFee(true);
     setFeeError(null);
 
     try {
+      if (!tradingAmount || tradingAmount <= 0) {
+        throw new Error('Trading amount is required for fee calculation');
+      }
       
-      // Get transaction data from API first
-      const txData = await getFeeTransactionData();
+      // Get transaction data from API first (includes balance validation)
+      const txData = await getFeeTransactionData(tradingAmount);
 
       // If using Base Account SDK, we don't need private key
       if (txData.isBaseAccount && isBaseContext && sdk) {

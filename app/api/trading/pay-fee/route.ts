@@ -87,8 +87,10 @@ async function calculateEthAmount(feeAmountUSD: number): Promise<string> {
 }
 
 /**
- * POST /api/trading/pay-fee - Pay 1% of total wallet balance as trading fee
+ * POST /api/trading/pay-fee - Pay 1% of TRADING AMOUNT as trading fee
  * This endpoint prepares the transaction data for the client to sign
+ * 
+ * Request body: { tradingAmount: number } - The amount user wants to trade with
  */
 export async function POST(request: NextRequest) {
   try {
@@ -107,6 +109,24 @@ export async function POST(request: NextRequest) {
     if (!payload.fid) {
       return NextResponse.json(
         { error: 'Base Account (FID) required' },
+        { status: 400 }
+      );
+    }
+
+    // Parse request body for trading amount
+    let tradingAmount = 0;
+    try {
+      const body = await request.json();
+      tradingAmount = body.tradingAmount || 0;
+    } catch {
+      // If no body, tradingAmount stays 0
+    }
+
+    // Validate trading amount
+    const MIN_TRADING_AMOUNT = 10; // Minimum $10 to trade
+    if (tradingAmount < MIN_TRADING_AMOUNT) {
+      return NextResponse.json(
+        { error: `Minimum trading amount is $${MIN_TRADING_AMOUNT}` },
         { status: 400 }
       );
     }
@@ -136,16 +156,34 @@ export async function POST(request: NextRequest) {
     const walletAddress = tradingWallet.address;
     const isBaseAccount = false; // Always use trading wallet, never Base Account for fees
 
-    // Calculate total wallet balance (ETH + tokens + Avantis)
+    // Get current wallet balance to validate user has enough
     const totalWalletBalance = await calculateTotalWalletBalance(payload.fid, walletAddress);
     
-    // Calculate fee as 1% of total wallet balance
-    const feeAmountUSD = totalWalletBalance * FEE_PERCENTAGE;
+    // Calculate fee as 1% of TRADING AMOUNT (not total balance)
+    const feeAmountUSD = tradingAmount * FEE_PERCENTAGE;
     
     // Minimum fee of $0.01 to avoid dust transactions
     const finalFeeAmountUSD = Math.max(feeAmountUSD, 0.01);
     
-    console.log(`[API] Fee calculation: ${totalWalletBalance.toFixed(2)} * ${(FEE_PERCENTAGE * 100).toFixed(0)}% = $${finalFeeAmountUSD.toFixed(2)}`);
+    // Total required = trading amount + fee
+    const totalRequired = tradingAmount + finalFeeAmountUSD;
+    
+    // Validate user has enough balance
+    if (totalWalletBalance < totalRequired) {
+      const shortfall = totalRequired - totalWalletBalance;
+      return NextResponse.json(
+        { 
+          error: `Insufficient balance. You need $${totalRequired.toFixed(2)} (Trading: $${tradingAmount.toFixed(2)} + Fee: $${finalFeeAmountUSD.toFixed(2)}) but only have $${totalWalletBalance.toFixed(2)}. Please deposit $${shortfall.toFixed(2)} more.`,
+          insufficientBalance: true,
+          required: totalRequired,
+          available: totalWalletBalance,
+          shortfall: shortfall
+        },
+        { status: 400 }
+      );
+    }
+    
+    console.log(`[API] Fee calculation: Trading $${tradingAmount.toFixed(2)} * ${(FEE_PERCENTAGE * 100).toFixed(0)}% = $${finalFeeAmountUSD.toFixed(2)} (Balance: $${totalWalletBalance.toFixed(2)})`);
 
     // Calculate fee amounts in ETH and USDC
     const ethAmount = await calculateEthAmount(finalFeeAmountUSD);
@@ -156,8 +194,10 @@ export async function POST(request: NextRequest) {
     // Client will handle signing based on wallet type (Base Account vs fallback)
     return NextResponse.json({
       success: true,
+      tradingAmount,
       feeAmountUSD: finalFeeAmountUSD,
       feePercentage: FEE_PERCENTAGE * 100, // 1%
+      totalRequired,
       totalWalletBalance,
       feeRecipient: FEE_RECIPIENT,
       isBaseAccount,

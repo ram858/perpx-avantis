@@ -137,27 +137,30 @@ export function useTradingSession() {
     setError(null);
 
     try {
-      // Step 1: Pay trading fee - COMMENTED OUT FOR TESTING
-      // onProgress?.('fee', 'Paying trading fee...');
-      // console.log('[useTradingSession] Paying trading fee...');
-      // const feeResult = await payTradingFee();
-      // 
-      // if (!feeResult.success) {
-      //   throw new Error(feeResult.error || 'Failed to pay trading fee');
-      // }
-      // 
-      // onProgress?.('fee', `✅ Fee paid: ${feeResult.amount} ${feeResult.currency}`);
-      // console.log(`[useTradingSession] Fee paid successfully: ${feeResult.amount} ${feeResult.currency} (tx: ${feeResult.transactionHash})`);
+      // Get the trading amount for fee calculation
+      const tradingAmount = config.maxBudget || config.investmentAmount || 50;
+      
+      // Step 1: Pay 1% trading fee to platform (1% of trading amount)
+      onProgress?.('fee', `Paying 1% trading fee ($${(tradingAmount * 0.01).toFixed(2)})...`);
+      console.log(`[useTradingSession] Paying trading fee: 1% of $${tradingAmount} = $${(tradingAmount * 0.01).toFixed(2)}`);
+      const feeResult = await payTradingFee(tradingAmount);
+      
+      if (!feeResult.success) {
+        throw new Error(feeResult.error || 'Failed to pay trading fee');
+      }
+      
+      onProgress?.('fee', `✅ Fee paid: ${feeResult.amount} ${feeResult.currency}`);
+      console.log(`[useTradingSession] Fee paid successfully: ${feeResult.amount} ${feeResult.currency} (tx: ${feeResult.transactionHash})`);
 
-      // Step 2: Refresh balances (non-blocking) - COMMENTED OUT SINCE NO FEE PAYMENT
-      // onProgress?.('balance', 'Updating balances...');
-      // refreshBalances(true).then(() => {
-      //   console.log('[useTradingSession] Balances refreshed after fee payment');
-      //   onProgress?.('balance', '✅ Balances updated');
-      // }).catch((refreshError) => {
-      //   console.warn('[useTradingSession] Failed to refresh balances after fee payment:', refreshError);
-      //   // Don't fail the trading start if balance refresh fails
-      // });
+      // Step 2: Refresh balances after fee payment (non-blocking)
+      onProgress?.('balance', 'Updating balances...');
+      refreshBalances(true).then(() => {
+        console.log('[useTradingSession] Balances refreshed after fee payment');
+        onProgress?.('balance', '✅ Balances updated');
+      }).catch((refreshError) => {
+        console.warn('[useTradingSession] Failed to refresh balances after fee payment:', refreshError);
+        // Don't fail the trading start if balance refresh fails
+      });
 
       // Step 3: Calculate leverage based on balance if not specified
       const budget = config.maxBudget || config.investmentAmount || 50;

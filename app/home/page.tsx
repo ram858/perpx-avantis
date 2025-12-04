@@ -288,15 +288,32 @@ const TradingCard = ({
   const [maxPositions, setMaxPositions] = useState('3')
   
   // Min/Max validation constants
-  const MIN_INVESTMENT = 10 // Minimum $10
-  const MAX_INVESTMENT = avantisBalance // Maximum is user's available balance
+  const MIN_INVESTMENT = 10 // Minimum $10 to trade
+  const FEE_PERCENTAGE = 0.01 // 1% commission fee
   
   // Parse investment amount for validation
   const investmentNum = parseFloat(investmentAmount) || 0
+  
+  // Calculate commission fee (1% of trading amount)
+  const commissionFee = investmentNum * FEE_PERCENTAGE
+  
+  // Total required = trading amount + commission fee
+  const totalRequired = investmentNum + commissionFee
+  
+  // Maximum investment = balance - fee (so user can pay both)
+  // For max, we need to solve: amount + (amount * 0.01) = balance
+  // amount * 1.01 = balance => amount = balance / 1.01
+  const MAX_INVESTMENT = avantisBalance / (1 + FEE_PERCENTAGE)
+  
+  // Minimum balance needed = $10 + $0.10 fee = $10.10
+  const MIN_BALANCE_REQUIRED = MIN_INVESTMENT * (1 + FEE_PERCENTAGE)
+  
+  // Validation checks
   const isInvestmentBelowMin = investmentNum > 0 && investmentNum < MIN_INVESTMENT
   const isInvestmentAboveMax = investmentNum > MAX_INVESTMENT && MAX_INVESTMENT > 0
-  const isInvestmentValid = investmentNum >= MIN_INVESTMENT && investmentNum <= MAX_INVESTMENT
-  const isBalanceTooLow = avantisBalance < MIN_INVESTMENT
+  const hasEnoughForFee = avantisBalance >= totalRequired
+  const isInvestmentValid = investmentNum >= MIN_INVESTMENT && investmentNum <= MAX_INVESTMENT && hasEnoughForFee
+  const isBalanceTooLow = avantisBalance < MIN_BALANCE_REQUIRED
 
   const explorerBaseUrl = process.env.NEXT_PUBLIC_AVANTIS_NETWORK === 'base-mainnet'
     ? 'https://basescan.org'
@@ -419,10 +436,13 @@ const TradingCard = ({
                   <div>
                     <p className="text-yellow-400 text-sm font-medium">Insufficient Balance</p>
                     <p className="text-yellow-300 text-xs mt-1">
-                      Minimum ${MIN_INVESTMENT.toFixed(2)} required. Your balance: ${avantisBalance.toFixed(2)}
+                      Minimum ${MIN_BALANCE_REQUIRED.toFixed(2)} required (${MIN_INVESTMENT.toFixed(2)} trading + ${(MIN_INVESTMENT * FEE_PERCENTAGE).toFixed(2)} fee)
                     </p>
                     <p className="text-yellow-300 text-xs mt-1">
-                      💡 Deposit ${(MIN_INVESTMENT - avantisBalance).toFixed(2)} more to start trading.
+                      Your balance: ${avantisBalance.toFixed(2)}
+                    </p>
+                    <p className="text-yellow-300 text-xs mt-1">
+                      💡 Deposit ${(MIN_BALANCE_REQUIRED - avantisBalance).toFixed(2)} more to start trading.
                     </p>
                   </div>
                 </div>
@@ -443,7 +463,45 @@ const TradingCard = ({
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                   <path d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
                 </svg>
-                Maximum investment is ${MAX_INVESTMENT.toFixed(2)} (your available balance)
+                Maximum investment is ${MAX_INVESTMENT.toFixed(2)} (balance minus 1% fee)
+              </div>
+            )}
+            
+            {/* Show fee breakdown when valid amount entered */}
+            {investmentNum >= MIN_INVESTMENT && hasEnoughForFee && (
+              <div className="bg-[#1f2937]/50 border border-[#374151] rounded-lg p-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[#9ca3af]">Trading Amount:</span>
+                  <span className="text-white">${investmentNum.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs mt-1">
+                  <span className="text-[#9ca3af]">Platform Fee (1%):</span>
+                  <span className="text-yellow-400">-${commissionFee.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs mt-1 pt-1 border-t border-[#374151]">
+                  <span className="text-[#9ca3af]">Total Required:</span>
+                  <span className="text-white font-medium">${totalRequired.toFixed(2)}</span>
+                </div>
+              </div>
+            )}
+            
+            {/* Warning when not enough for fee */}
+            {investmentNum >= MIN_INVESTMENT && !hasEnoughForFee && (
+              <div className="bg-red-900/20 border border-red-500/50 rounded-lg p-3">
+                <div className="flex items-start space-x-2">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-red-400 flex-shrink-0 mt-0.5">
+                    <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  <div>
+                    <p className="text-red-400 text-sm font-medium">Not enough for fee</p>
+                    <p className="text-red-300 text-xs mt-1">
+                      Need ${totalRequired.toFixed(2)} (${investmentNum.toFixed(2)} + ${commissionFee.toFixed(2)} fee) but have ${avantisBalance.toFixed(2)}
+                    </p>
+                    <p className="text-red-300 text-xs mt-1">
+                      💡 Reduce investment to ${MAX_INVESTMENT.toFixed(2)} max or deposit more.
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
           </>
