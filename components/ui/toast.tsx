@@ -60,7 +60,7 @@ function ToastContainer() {
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed top-4 right-4 z-50 space-y-2">
+    <div className="fixed top-4 left-4 right-4 sm:left-auto sm:right-4 z-[100] space-y-3 flex flex-col items-center sm:items-end">
       {toasts.map(toast => (
         <ToastItem key={toast.id} toast={toast} onRemove={removeToast} />
       ))}
@@ -122,37 +122,52 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
   return (
     <div
       className={`
-        max-w-sm w-full border rounded-lg p-4 shadow-lg backdrop-blur-sm
-        transform transition-all duration-300 ease-in-out
-        ${isVisible ? 'translate-x-0 opacity-100 scale-100' : 'translate-x-full opacity-0 scale-95'}
+        w-full max-w-[340px] sm:max-w-sm border-l-4 rounded-xl px-4 py-4 shadow-2xl backdrop-blur-md
+        transform transition-all duration-300 ease-out
+        ${isVisible ? 'translate-y-0 opacity-100 scale-100' : '-translate-y-4 opacity-0 scale-95'}
         ${getToastStyles()}
-        ${toast.type === 'success' ? 'animate-success-pulse' : ''}
       `}
+      style={{
+        boxShadow: toast.type === 'success' 
+          ? '0 10px 40px rgba(34, 197, 94, 0.2)' 
+          : toast.type === 'error'
+          ? '0 10px 40px rgba(239, 68, 68, 0.2)'
+          : '0 10px 40px rgba(0, 0, 0, 0.3)'
+      }}
     >
-      <div className="flex items-start">
-        <div className="flex-shrink-0">
+      <div className="flex items-start gap-3">
+        {/* Icon with background */}
+        <div className={`
+          flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center
+          ${toast.type === 'success' ? 'bg-green-500/20' : ''}
+          ${toast.type === 'error' ? 'bg-red-500/20' : ''}
+          ${toast.type === 'warning' ? 'bg-yellow-500/20' : ''}
+          ${toast.type === 'info' ? 'bg-blue-500/20' : ''}
+        `}>
           {getIcon()}
         </div>
-        <div className="ml-3 w-0 flex-1">
-          <p className="text-sm font-medium">
+        
+        {/* Content */}
+        <div className="flex-1 min-w-0 pt-0.5">
+          <p className="text-base font-semibold leading-tight">
             {toast.title}
           </p>
           {toast.message && (
-            <p className="mt-1 text-sm opacity-90">
+            <p className="mt-1.5 text-sm opacity-80 leading-relaxed">
               {toast.message}
             </p>
           )}
         </div>
-        <div className="ml-4 flex-shrink-0 flex">
-          <button
-            className="inline-flex text-current opacity-70 hover:opacity-100 transition-opacity"
-            onClick={() => onRemove(toast.id)}
-          >
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </div>
+        
+        {/* Close button */}
+        <button
+          className="flex-shrink-0 p-1.5 rounded-lg hover:bg-white/10 text-current opacity-60 hover:opacity-100 transition-all"
+          onClick={() => onRemove(toast.id)}
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+          </svg>
+        </button>
       </div>
     </div>
   )

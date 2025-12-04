@@ -18,6 +18,7 @@ import { BalanceSkeleton, CardSkeleton } from "@/components/ui/loading-skeleton"
 import { NavigationHeader } from "@/components/NavigationHeader"
 import { DepositModal } from "@/components/DepositModal"
 import { WalletConnectionModal } from "@/components/WalletConnectionModal"
+import { WithdrawModal } from "@/components/WithdrawModal"
 import { BuildTimestamp } from "@/components/BuildTimestamp"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -285,6 +286,17 @@ const TradingCard = ({
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false)
   const [lossThreshold, setLossThreshold] = useState('10')
   const [maxPositions, setMaxPositions] = useState('3')
+  
+  // Min/Max validation constants
+  const MIN_INVESTMENT = 10 // Minimum $10
+  const MAX_INVESTMENT = avantisBalance // Maximum is user's available balance
+  
+  // Parse investment amount for validation
+  const investmentNum = parseFloat(investmentAmount) || 0
+  const isInvestmentBelowMin = investmentNum > 0 && investmentNum < MIN_INVESTMENT
+  const isInvestmentAboveMax = investmentNum > MAX_INVESTMENT && MAX_INVESTMENT > 0
+  const isInvestmentValid = investmentNum >= MIN_INVESTMENT && investmentNum <= MAX_INVESTMENT
+  const isBalanceTooLow = avantisBalance < MIN_INVESTMENT
 
   const explorerBaseUrl = process.env.NEXT_PUBLIC_AVANTIS_NETWORK === 'base-mainnet'
     ? 'https://basescan.org'
@@ -384,11 +396,57 @@ const TradingCard = ({
                 type="number"
                 value={investmentAmount}
                 onChange={(e) => setInvestmentAmount(e.target.value)}
-                className="bg-[#2a2a2a] border-[#444] text-white text-sm"
+                className={`bg-[#2a2a2a] border-[#444] text-white text-sm ${
+                  (isInvestmentBelowMin || isInvestmentAboveMax) ? 'border-red-500' : ''
+                }`}
                 placeholder="50"
+                min={MIN_INVESTMENT}
+                max={MAX_INVESTMENT > 0 ? MAX_INVESTMENT : undefined}
               />
             </div>
           </div>
+        )}
+        
+        {/* Investment Amount Validation Messages */}
+        {!hasActivePositions && (
+          <>
+            {isBalanceTooLow && (
+              <div className="bg-yellow-900/20 border border-yellow-500/50 rounded-lg p-3">
+                <div className="flex items-start space-x-2">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-yellow-400 flex-shrink-0 mt-0.5">
+                    <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  <div>
+                    <p className="text-yellow-400 text-sm font-medium">Insufficient Balance</p>
+                    <p className="text-yellow-300 text-xs mt-1">
+                      Minimum ${MIN_INVESTMENT.toFixed(2)} required. Your balance: ${avantisBalance.toFixed(2)}
+                    </p>
+                    <p className="text-yellow-300 text-xs mt-1">
+                      💡 Deposit ${(MIN_INVESTMENT - avantisBalance).toFixed(2)} more to start trading.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {isInvestmentBelowMin && !isBalanceTooLow && (
+              <div className="text-red-400 text-xs flex items-center gap-1">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+                Minimum investment is ${MIN_INVESTMENT.toFixed(2)}
+              </div>
+            )}
+            
+            {isInvestmentAboveMax && (
+              <div className="text-red-400 text-xs flex items-center gap-1">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+                Maximum investment is ${MAX_INVESTMENT.toFixed(2)} (your available balance)
+              </div>
+            )}
+          </>
         )}
         
         {/* Advance Settings Button */}
@@ -520,14 +578,16 @@ const TradingCard = ({
           onClick={hasActivePositions ? (onViewTrades || (() => {})) : handleStartTrading}
           disabled={
             isTrading || 
-            avantisBalance === 0 || 
             positionsLoading || 
-            !targetProfit || 
-            !investmentAmount || 
-            (targetProfit ? parseFloat(targetProfit) <= 0 : false) || 
-            (investmentAmount ? parseFloat(investmentAmount) <= 0 : false)
+            (!hasActivePositions && (
+              isBalanceTooLow ||
+              !targetProfit || 
+              !investmentAmount || 
+              parseFloat(targetProfit) <= 0 || 
+              !isInvestmentValid
+            ))
           }
-          className="w-full bg-[#8759ff] hover:bg-[#7C3AED] text-white font-semibold py-3 rounded-xl disabled:opacity-50"
+          className="w-full bg-[#8759ff] hover:bg-[#7C3AED] text-white font-semibold py-3 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isTrading ? '🔄 Starting...' : hasActivePositions ? '👁️ View Trades' : '🚀 Start Trading'}
         </Button>
@@ -1257,6 +1317,13 @@ export default function HomePage() {
   const [recentDepositHash, setRecentDepositHash] = useState<string | null>(null)
   const [isRefreshingBalance, setIsRefreshingBalance] = useState(false)
   const hasRefreshedForTxRef = useRef<Set<string>>(new Set()) // Track which tx hashes we've already refreshed for
+  
+  // Withdraw modal state
+  const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false)
+  const [isWithdrawing, setIsWithdrawing] = useState(false)
+  const [withdrawError, setWithdrawError] = useState<string | null>(null)
+  const [recentWithdrawHash, setRecentWithdrawHash] = useState<string | null>(null)
+  
   const { addToast } = useToast()
 
   // Optimized hook usage - only essential hooks
@@ -1623,6 +1690,70 @@ export default function HomePage() {
     ]
   )
 
+  // Handle withdraw from trading wallet
+  const handleWithdraw = useCallback(
+    async ({ amount, recipientAddress }: { amount: string; recipientAddress: string }) => {
+      setWithdrawError(null)
+      setRecentWithdrawHash(null)
+      setIsWithdrawing(true)
+
+      try {
+        if (!token) {
+          throw new Error('Authentication required')
+        }
+
+        // Call backend API to execute withdrawal
+        const response = await fetch('/api/wallet/withdraw', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            amount,
+            recipientAddress,
+            asset: 'USDC'
+          }),
+        })
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Withdrawal failed')
+        }
+
+        setRecentWithdrawHash(data.txHash)
+        
+        // Refresh balance after successful withdrawal
+        setIsRefreshingBalance(true)
+        try {
+          await new Promise(resolve => setTimeout(resolve, 3000))
+          await refreshBalances(true)
+        } finally {
+          setIsRefreshingBalance(false)
+        }
+        
+        addToast({
+          title: 'Withdrawal Successful',
+          message: `Successfully withdrew $${amount} USDC`,
+          type: 'success'
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Withdrawal failed'
+        setWithdrawError(message)
+        addToast({
+          title: 'Withdrawal Failed',
+          message: message,
+          type: 'error'
+        })
+        throw error
+      } finally {
+        setIsWithdrawing(false)
+      }
+    },
+    [token, refreshBalances, addToast]
+  )
+
   // Memoized holdings calculation - use tradingHoldings for Holdings section
   // This ensures Holdings section shows trading wallet balance (matches main balance)
   const realHoldings = useMemo(() => {
@@ -1686,7 +1817,22 @@ export default function HomePage() {
           actions={
             isConnected && hasCompletedInitialLoad ? (
               <div className="flex items-center gap-2">
-                <BuildTimestamp />
+                {/* Withdraw Button - shown for Farcaster users with balance */}
+                {!user?.webUserId && avantisBalance > 0 && (
+                  <Button
+                    onClick={() => setIsWithdrawModalOpen(true)}
+                    className="bg-[#8759ff] hover:bg-[#7c4dff] text-white px-3 py-2 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center gap-1.5 text-sm font-medium"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-white">
+                      <path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    Withdraw
+                  </Button>
+                )}
+                
+                {/* Show BuildTimestamp for web users or when no balance */}
+                {(user?.webUserId || avantisBalance === 0) && <BuildTimestamp />}
+                
                 <Button
                   onClick={async () => {
                     try {
@@ -2040,6 +2186,18 @@ export default function HomePage() {
           {/* Your Holdings - Only show when connected and has holdings */}
           <HoldingsSection holdings={realHoldings} />
         </div>
+        
+        {/* Withdraw Modal */}
+        <WithdrawModal
+          isOpen={isWithdrawModalOpen}
+          onClose={() => setIsWithdrawModalOpen(false)}
+          onWithdraw={handleWithdraw}
+          isWithdrawing={isWithdrawing}
+          withdrawError={withdrawError}
+          recentWithdrawHash={recentWithdrawHash}
+          tradingWalletAddress={tradingWalletAddress || tradingWallet?.address || null}
+          avantisBalance={avantisBalance}
+        />
       </div>
     </ProtectedRoute>
   )

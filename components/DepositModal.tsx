@@ -128,20 +128,11 @@ export function DepositModal({
       />
       
       {/* Modal */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <Card className="bg-[#1a1a1a] border-[#262626] p-6 rounded-2xl max-w-md w-full mx-auto relative">
-          {/* Close button */}
-          <button
-            onClick={handleClose}
-            className="absolute top-4 right-4 text-[#9ca3af] hover:text-white transition-colors"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-
-          <div className="space-y-4">
-            <div className="flex items-center space-x-2 mb-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <Card className="bg-[#1a1a1a] border-[#262626] rounded-2xl max-w-md w-full mx-auto relative max-h-[90vh] my-auto flex flex-col">
+          {/* Fixed Header with Close button */}
+          <div className="flex items-center justify-between p-4 sm:p-6 pb-0 sticky top-0 bg-[#1a1a1a] z-10">
+            <div className="flex items-center space-x-2">
               <div className="w-10 h-10 bg-[#8759ff] rounded-lg flex items-center justify-center">
                 <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -149,6 +140,18 @@ export function DepositModal({
               </div>
               <h3 className="text-white font-semibold text-xl">Deposit Funds</h3>
             </div>
+            <button
+              onClick={handleClose}
+              className="p-2 rounded-lg hover:bg-[#262626] text-[#9ca3af] hover:text-white transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Scrollable Content */}
+          <div className="p-4 sm:p-6 pt-4 overflow-y-auto flex-1 space-y-4">
 
             <p className="text-[#9ca3af] text-sm">
               Transfer {depositAsset} from your Base wallet to your trading vault to fund your automated trading.
