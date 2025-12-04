@@ -1395,6 +1395,7 @@ export default function HomePage() {
     ethBalanceFormatted,
     holdings,
     tradingHoldings, // Trading wallet holdings only (for Holdings section)
+    baseHoldings, // Farcaster/Base wallet holdings only (for Deposit Modal)
     dailyChange,
     dailyChangePercentage,
     isLoading,
@@ -2211,7 +2212,7 @@ export default function HomePage() {
               depositError={depositError}
               recentDepositHash={recentDepositHash}
               isBaseContextAvailable={isBaseTxAvailable}
-              holdings={holdings}
+              holdings={baseHoldings} // Use Farcaster/Base wallet holdings for deposit source
               ethBalanceFormatted={ethBalanceFormatted}
               onViewTrades={handleViewTrades}
               isRefreshingBalance={isRefreshingBalance}
@@ -2237,7 +2238,7 @@ export default function HomePage() {
               isDepositing={isDepositing}
               depositError={depositError}
               recentDepositHash={recentDepositHash}
-              holdings={holdings}
+              holdings={baseHoldings} // Use Farcaster/Base wallet holdings for deposit source
             />
           )}
 

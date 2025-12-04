@@ -38,6 +38,7 @@ export interface IntegratedWalletState {
   ethBalanceFormatted: string;
   holdings: TokenBalance[];
   tradingHoldings: TokenBalance[]; // Holdings from trading wallet only (for Holdings section)
+  baseHoldings: TokenBalance[]; // Holdings from Farcaster/Base wallet only (for Deposit Modal)
   totalPortfolioValue: number;
   dailyChange: number;
   dailyChangePercentage: number;
@@ -139,6 +140,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
     ethBalanceFormatted: '0.00 ETH',
     holdings: [],
     tradingHoldings: [], // Trading wallet holdings only
+    baseHoldings: [], // Farcaster/Base wallet holdings only (for Deposit Modal)
     totalPortfolioValue: 0,
     dailyChange: 0,
     dailyChangePercentage: 0,
@@ -538,6 +540,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
                              prev.ethBalanceFormatted,
           holdings: newHoldings,
           tradingHoldings: newTradingHoldings, // Trading wallet holdings only
+          baseHoldings: shouldUpdateHoldings ? baseHoldings : prev.baseHoldings, // Farcaster/Base wallet holdings (for Deposit Modal)
           totalPortfolioValue: newTotalPortfolioValue,
           dailyChange: isValidNumber(balanceData.dailyChange) ? balanceData.dailyChange : prev.dailyChange,
           dailyChangePercentage: isValidNumber(balanceData.dailyChangePercentage) ? balanceData.dailyChangePercentage : prev.dailyChangePercentage,
@@ -764,6 +767,7 @@ export function IntegratedWalletProvider({ children }: { children: React.ReactNo
         ethBalanceFormatted: '0.00 ETH',
         holdings: [],
         tradingHoldings: [], // Clear trading holdings
+        baseHoldings: [], // Clear base wallet holdings
         totalPortfolioValue: 0,
         dailyChange: 0,
         dailyChangePercentage: 0,
