@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
@@ -44,6 +44,8 @@ export function DepositModal({
   const [depositAsset, setDepositAsset] = useState<'USDC' | 'ETH'>('USDC')
   const [depositAmount, setDepositAmount] = useState('')
   const [hasSuccessfulDeposit, setHasSuccessfulDeposit] = useState(false)
+  const [showAvailableFunds, setShowAvailableFunds] = useState(true)
+  const inputRef = useRef<HTMLInputElement>(null)
   
   // Find available balance for selected asset
   const rawBalance = depositAsset === 'ETH' 
@@ -157,55 +159,70 @@ export function DepositModal({
               Transfer {depositAsset} from your Base wallet to your trading vault to fund your automated trading.
             </p>
 
-            {/* Available Funds Section */}
+            {/* Available Funds Section - Collapsible */}
             {holdings.length > 0 && (
-              <div className="bg-[#0d0d0d] border border-[#374151] rounded-lg p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-white text-sm font-medium">💼 Your Available Funds</h4>
-                  <span className="text-[#9ca3af] text-xs">Farcaster Wallet</span>
-                </div>
+              <div className="bg-[#0d0d0d] border border-[#374151] rounded-lg overflow-hidden">
+                <button
+                  onClick={() => setShowAvailableFunds(!showAvailableFunds)}
+                  className="w-full p-3 flex items-center justify-between hover:bg-[#1a1a1a] transition-colors"
+                >
+                  <div className="flex items-center space-x-2">
+                    <span className="text-white text-sm font-medium">💼 Your Available Funds</span>
+                    <span className="text-[#9ca3af] text-xs">Farcaster Wallet</span>
+                  </div>
+                  <svg 
+                    className={`w-4 h-4 text-[#9ca3af] transition-transform ${showAvailableFunds ? 'rotate-180' : ''}`} 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
                 
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {/* ETH Balance */}
-                  {ethBalance && parseFloat(ethBalance) > 0 && (
-                    <div className="flex items-center justify-between p-2 bg-[#1a1a1a] rounded-lg hover:bg-[#262626] transition-colors">
-                      <div className="flex items-center space-x-2">
-                        <div className="w-8 h-8 rounded-full bg-[#627eea] flex items-center justify-center text-white font-bold text-xs">
-                          Ξ
+                {showAvailableFunds && (
+                  <div className="px-3 pb-3 space-y-2">
+                    {/* ETH Balance */}
+                    {ethBalance && parseFloat(ethBalance) > 0 && (
+                      <div className="flex items-center justify-between p-2 bg-[#1a1a1a] rounded-lg">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-7 h-7 rounded-full bg-[#627eea] flex items-center justify-center text-white font-bold text-[10px]">
+                            Ξ
+                          </div>
+                          <div>
+                            <p className="text-white text-xs font-medium">ETH</p>
+                            <p className="text-[#9ca3af] text-[10px]">Ethereum</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-white text-sm font-medium">ETH</p>
-                          <p className="text-[#9ca3af] text-xs">Ethereum</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-white text-sm font-semibold">{parseFloat(ethBalance).toFixed(4)}</p>
-                        <p className="text-[#9ca3af] text-xs">
-                          ${(holdings.find(h => h.token.symbol === 'ETH')?.valueUSD || 0).toFixed(2)}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Other Token Holdings */}
-                  {holdings.filter(h => h.token.symbol !== 'ETH' && parseFloat(h.balance) > 0).map((holding, index) => (
-                    <div key={index} className="flex items-center justify-between p-2 bg-[#1a1a1a] rounded-lg hover:bg-[#262626] transition-colors">
-                      <div className="flex items-center space-x-2">
-                        <div className="w-8 h-8 rounded-full bg-[#2775ca] flex items-center justify-center text-white font-bold text-xs">
-                          {holding.token.symbol.charAt(0)}
-                        </div>
-                        <div>
-                          <p className="text-white text-sm font-medium">{holding.token.symbol}</p>
-                          <p className="text-[#9ca3af] text-xs">{holding.token.name}</p>
+                        <div className="text-right">
+                          <p className="text-white text-xs font-semibold">{parseFloat(ethBalance).toFixed(4)}</p>
+                          <p className="text-[#9ca3af] text-[10px]">
+                            ${(holdings.find(h => h.token.symbol === 'ETH')?.valueUSD || 0).toFixed(2)}
+                          </p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-white text-sm font-semibold">{holding.balanceFormatted}</p>
-                        <p className="text-[#9ca3af] text-xs">${holding.valueUSD.toFixed(2)}</p>
+                    )}
+                    
+                    {/* Other Token Holdings */}
+                    {holdings.filter(h => h.token.symbol !== 'ETH' && parseFloat(h.balance) > 0).map((holding, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 bg-[#1a1a1a] rounded-lg">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-7 h-7 rounded-full bg-[#2775ca] flex items-center justify-center text-white font-bold text-[10px]">
+                            {holding.token.symbol.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="text-white text-xs font-medium">{holding.token.symbol}</p>
+                            <p className="text-[#9ca3af] text-[10px]">{holding.token.name}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-white text-xs font-semibold">{holding.balanceFormatted}</p>
+                          <p className="text-[#9ca3af] text-[10px]">${holding.valueUSD.toFixed(2)}</p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -236,8 +253,8 @@ export function DepositModal({
               </div>
             </div>
 
-            {/* Amount Input */}
-            <div className="space-y-2">
+            {/* Amount Input - with scroll-into-view on focus */}
+            <div className="space-y-2 scroll-mt-4">
               <div className="flex items-center justify-between">
                 <label className="block text-sm text-white font-medium">
                   Amount ({depositAsset})
@@ -251,11 +268,20 @@ export function DepositModal({
               </div>
               <div className="relative">
                 <Input
+                  ref={inputRef}
                   type="number"
                   min="0"
                   step="0.0001"
                   value={depositAmount}
                   onChange={(e) => setDepositAmount(e.target.value)}
+                  onFocus={(e) => {
+                    // Auto-collapse the Available Funds section when input is focused on mobile
+                    setShowAvailableFunds(false)
+                    // Scroll the input into view after a brief delay to account for keyboard
+                    setTimeout(() => {
+                      e.target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                    }, 300)
+                  }}
                   className="bg-[#2a2a2a] border-[#374151] text-white placeholder:text-[#6b7280] pr-16"
                   placeholder={depositAsset === 'USDC' ? 'Enter USDC amount' : 'Enter ETH amount'}
                 />
